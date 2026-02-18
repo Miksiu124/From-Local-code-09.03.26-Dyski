@@ -1,0 +1,124 @@
+# ═══════════════════════════════════════════════════════════════
+# Content Platform — Docker Compose (Updated for Local Access)
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ── Go API Server ─────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: content-api
+    restart: unless-stopped
+    volumes:
+      - ./uploads:/app/uploads
+    env_file: .env
+    environment:
+      # Wewnątrz sieci Dockera serwer łączy się po nazwie hosta "postgres"
+      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD:-insecure_change_me}@postgres:5432/content_platform?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # ── Next.js Frontend ─────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: content-frontend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - API_HOST=api
+      - API_URL=http://api:8080/api
+      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD:-supersecure}@postgres:5432/content_platform?sslmode=disable
+      - AUTH_SECRET=${JWT_SECRET}
+      - AUTH_URL=http://localhost:3000
+      - NEXT_PUBLIC_APP_URL=http://localhost
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - R2_ENDPOINT=${R2_ENDPOINT}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - internal
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: content-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: content_platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insecure_change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    # DODANO: Pozwala na połączenie z Twojego systemu (localhost:5432)
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U platform -d content_platform" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ── Redis ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: content-redis
+    restart: unless-stopped
+    command: >
+      redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1000 --appendonly yes
+    volumes:
+      - redis_data:/data
+    # DODANO: Pozwala na połączenie z Twojego systemu (localhost:6379)
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ── Nginx Reverse Proxy ──────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: content-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - api
+    networks:
+      - internal
+
+volumes:
+  postgres_data:
+  redis_data:
+
+
+networks:
+  internal:
+    driver: bridge
