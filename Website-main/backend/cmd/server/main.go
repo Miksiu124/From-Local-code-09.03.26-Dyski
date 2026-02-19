@@ -17,6 +17,7 @@ import (
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/jobs"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
 	"content-platform-backend/internal/purchases"
@@ -61,13 +62,69 @@ func main() {
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
 
+	// Custom HTTP Error Handler to ensure all errors are JSON
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		code := http.StatusInternalServerError
+		if he, ok := err.(*echo.HTTPError); ok {
+			code = he.Code
+		}
+		
+		// If headers were already sent, just return
+		if c.Response().Committed {
+			return
+		}
+
+		// Send JSON error — never expose internal details to the client
+		msg := http.StatusText(code)
+		if he, ok2 := err.(*echo.HTTPError); ok2 && he.Message != nil {
+			if s, ok3 := he.Message.(string); ok3 {
+				msg = s
+			}
+		}
+		if code == http.StatusInternalServerError {
+			log.Printf("[HTTP] Internal error: %v", err)
+			msg = "Internal server error"
+		}
+		_ = c.JSON(code, map[string]interface{}{
+			"error":   http.StatusText(code),
+			"message": msg,
+		})
+	}
+
 	// ── Services ─────────────────────────────────────────────────────────
 	authService := auth.NewService(cfg, pgPool, redisClient)
 	r2Client := content.NewR2Client(cfg)
+	contentService := content.NewService(pgPool, r2Client, cfg)
 
 	// ── Auth middleware ──────────────────────────────────────────────────
 	authMW := middleware.NewAuthMiddleware(cfg, redisClient)
 	adminMW := middleware.NewAdminMiddleware(cfg)
+
+    // ── Jobs ─────────────────────────────────────────────────────────────
+    scheduler := jobs.NewScheduler()
+    // Run sync immediately on startup
+    go func() {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("[PANIC] RunFullSync crashed: %v", r)
+            }
+        }()
+        contentService.RunFullSync()
+    }()
+    // Then run sync every hour
+    _, err = scheduler.AddJob("@hourly", func() {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("[PANIC] Scheduled RunFullSync crashed: %v", r)
+            }
+        }()
+        contentService.RunFullSync()
+    })
+    if err != nil {
+        log.Printf("Failed to schedule R2 sync: %v", err)
+    }
+    scheduler.Start()
+    defer scheduler.Stop()
 
 	// ── Rate limiter ─────────────────────────────────────────────────────
 	rateLimiter := middleware.NewRateLimiter(redisClient)
@@ -88,6 +145,7 @@ func main() {
 	api.GET("/models", modelsHandler.List)
 	api.GET("/models/stats", modelsHandler.GetStats) // Added
 	api.GET("/models/:slug", modelsHandler.GetBySlug)
+	api.GET("/models/:slug/content", modelsHandler.ListContent) // Added pagination endpoint
 	api.GET("/models/:modelId/access", modelsHandler.CheckAccess, authMW.OptionalAuth)
 
 	// Meta & Helpers
@@ -100,9 +158,12 @@ func main() {
 	
 	// Model images (public)
 	api.GET("/models/:slug/avatar", contentHandler.ModelAvatar)
+	api.GET("/models/:slug/header", contentHandler.ModelHeader)
 	api.GET("/models/:slug/thumbnail", contentHandler.ModelAvatar)
 
 	contentGroup := api.Group("/content")
+	contentGroup.GET("/:slug/:contentItemId/details", contentHandler.GetContentDetails, authMW.OptionalAuth)
+	contentGroup.GET("/:id/thumbnail", contentHandler.Thumbnail, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail/:filename", contentHandler.Thumbnail, authMW.OptionalAuth)
 	contentGroup.GET("/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate)
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
@@ -112,11 +173,14 @@ func main() {
 	creditsGroup := api.Group("/credits", authMW.Authenticate)
 	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase)
 	creditsGroup.POST("/purchase/:id/proof", creditsHandler.UploadProof)
+	creditsGroup.GET("/purchase/:id/status", creditsHandler.GetPurchaseStatus)
+	creditsGroup.GET("/purchase/:id/stream", creditsHandler.StreamPurchaseStatus)
+	creditsGroup.POST("/purchase/:id/txid", creditsHandler.SubmitTxId)
+	creditsGroup.POST("/purchase/:id/blik", creditsHandler.UpdateBlikCode)
 	creditsGroup.GET("/purchase", creditsHandler.ListPurchases)
-    
-    // Credit Packages (public or authenticated? let's make it public for simplicity or auth-optional)
-    api.GET("/credit-packages", creditsHandler.ListPackages)
-    
+
+	api.GET("/credit-packages", creditsHandler.ListPackages)
+
 	// BLIK WebSocket
 	api.GET("/credits/purchase/:id/blik", creditsHandler.BlikWebSocket, authMW.Authenticate)
 
@@ -144,19 +208,26 @@ func main() {
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
-	adminHandler := admin.NewHandler(pgPool, r2Client, cfg, redisClient)
+	adminHandler := admin.NewHandler(pgPool, r2Client, cfg, redisClient, contentService)
 
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)
+	adminGroup.GET("/credits/purchases/stream", adminHandler.StreamPendingPurchases)
 	adminGroup.POST("/credits/purchases/:id/approve", adminHandler.ApprovePurchase)
 	adminGroup.POST("/credits/purchases/:id/reject", adminHandler.RejectPurchase)
 	adminGroup.GET("/users", adminHandler.ListUsers)
 	adminGroup.GET("/users/:id", adminHandler.GetUser)
 	adminGroup.PATCH("/users/:id", adminHandler.UpdateUser)
 	adminGroup.DELETE("/users/:id", adminHandler.DeleteUser)
+	adminGroup.POST("/users/:id/credits", adminHandler.UpdateUserCredits)
+	adminGroup.POST("/users/:id/ban", adminHandler.ToggleBan)
+	adminGroup.POST("/users/:id/access", adminHandler.GrantAccess)
+	adminGroup.DELETE("/users/:id/access", adminHandler.RevokeAccess)
 	adminGroup.GET("/packages", adminHandler.ListPackages)
 	adminGroup.POST("/packages", adminHandler.CreatePackage)
 	adminGroup.PATCH("/packages/:id", adminHandler.UpdatePackage)
 	adminGroup.DELETE("/packages/:id", adminHandler.DeletePackage)
+	adminGroup.GET("/models", adminHandler.ListModels)
+	adminGroup.PATCH("/models", adminHandler.UpdateModel)
 	adminGroup.GET("/settings", adminHandler.GetSettings)
 	adminGroup.PUT("/settings", adminHandler.UpdateSettings)
 	adminGroup.POST("/r2/sync", adminHandler.SyncR2)

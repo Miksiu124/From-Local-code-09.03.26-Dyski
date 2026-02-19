@@ -29,8 +29,8 @@ export function AdminSidebar() {
   ];
 
   return (
-    <aside className="w-64 border-r border-border bg-card p-4 hidden lg:block">
-      <nav className="space-y-1">
+    <aside className="w-60 border-r border-white/[0.06] bg-card/50 p-3 hidden lg:block">
+      <nav className="space-y-0.5">
         {links.map((link) => {
           const Icon = link.icon;
           const isActive = pathname === link.href;
@@ -40,10 +40,10 @@ export function AdminSidebar() {
               key={link.href}
               href={link.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all",
                 isActive
                   ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
               )}
             >
               <Icon className="h-4 w-4" />

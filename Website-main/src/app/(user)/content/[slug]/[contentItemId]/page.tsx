@@ -1,80 +1,51 @@
 import { notFound, redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getServerUser } from "@/lib/session-server";
+import { fetchApi } from "@/lib/api-client";
 import { ContentViewer } from "@/components/user/content-viewer";
 
 interface Props {
   params: Promise<{ slug: string; contentItemId: string }>;
 }
 
+interface ContentDetailsResponse {
+  model: { id: string; name: string; folderName: string };
+  contentItem: {
+    id: string;
+    contentType: string;
+    thumbnailPath: string | null;
+    hlsMasterPath: string | null;
+    duration: number | null;
+  };
+  hasAccess: boolean;
+  prevItemId: string | null;
+  nextItemId: string | null;
+}
+
 export default async function ContentViewPage({ params }: Props) {
   const { slug, contentItemId } = await params;
-  const session = await auth();
+  const sessionUser = await getServerUser();
 
-  if (!session) redirect("/login");
+  if (!sessionUser) redirect("/login");
 
-  // Find model by folderName (slug)
-  const model = await db.model.findUnique({
-    where: { folderName: slug, isActive: true },
-    select: { id: true, name: true, folderName: true },
-  });
+  const data = await fetchApi<ContentDetailsResponse>(
+    `/content/${slug}/${contentItemId}/details`
+  );
 
-  if (!model) notFound();
+  if (!data) notFound();
 
-  const contentItem = await db.contentItem.findUnique({
-    where: { id: contentItemId, isActive: true },
-  });
-
-  if (!contentItem || contentItem.modelId !== model.id) {
-    notFound();
-  }
-
-  // Check access
-  const access = await db.userAccess.findFirst({
-    where: {
-      userId: session.user.id,
-      AND: [
-        { OR: [{ modelId: model.id }, { modelId: null }] },
-        { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
-      ],
-    },
-  });
-
-  if (!access) {
+  if (!data.hasAccess) {
     redirect(`/models/${slug}`);
   }
-
-  // Fetch prev/next content item IDs for keyboard navigation
-  const [prevItem, nextItem] = await Promise.all([
-    db.contentItem.findFirst({
-      where: {
-        modelId: model.id,
-        isActive: true,
-        createdAt: { gt: contentItem.createdAt },
-      },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    }),
-    db.contentItem.findFirst({
-      where: {
-        modelId: model.id,
-        isActive: true,
-        createdAt: { lt: contentItem.createdAt },
-      },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
-    }),
-  ]);
 
   return (
     <div className="container mx-auto px-4 py-8">
       <ContentViewer
-        contentItemId={contentItem.id}
-        contentType={contentItem.contentType}
-        modelName={model.name}
-        modelSlug={model.folderName}
-        prevItemId={prevItem?.id || null}
-        nextItemId={nextItem?.id || null}
+        contentItemId={data.contentItem.id}
+        contentType={data.contentItem.contentType}
+        modelName={data.model.name}
+        modelSlug={data.model.folderName}
+        prevItemId={data.prevItemId}
+        nextItemId={data.nextItemId}
       />
     </div>
   );

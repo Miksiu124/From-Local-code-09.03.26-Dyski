@@ -15,10 +15,11 @@ interface Model {
   countryName: string | null;
   contentCount: number;
   isActive: boolean;
+  isFeatured: boolean;
   lastSyncedAt: string | null;
 }
 
-type SortKey = "name" | "folderName" | "countryName" | "contentCount" | "isActive" | "lastSyncedAt";
+type SortKey = "name" | "folderName" | "countryName" | "contentCount" | "isActive" | "isFeatured" | "lastSyncedAt";
 type SortDir = "asc" | "desc";
 
 export default function AdminModelsPage() {
@@ -67,7 +68,7 @@ export default function AdminModelsPage() {
         );
         fetchModels();
       } else {
-        const errorMessage = data.error?.message || data.error || "Unknown error";
+        const errorMessage = data.message || data.error || "Unknown error";
         setSyncResult(`Import failed: ${errorMessage}`);
       }
     } catch {
@@ -94,7 +95,7 @@ export default function AdminModelsPage() {
         setSyncResult(`Sync complete: ${parts.join(", ")}`);
         fetchModels();
       } else {
-        const errorMessage = data.error?.message || data.error || "Unknown error";
+        const errorMessage = data.message || data.error || "Unknown error";
         setSyncResult(`Sync failed: ${errorMessage}`);
       }
     } catch {
@@ -122,6 +123,37 @@ export default function AdminModelsPage() {
       setTogglingId(null);
     }
   };
+
+  const toggleFeatured = async (modelId: string, currentFeatured: boolean) => {
+    if (togglingId) return;
+    setTogglingId(modelId);
+    try {
+      const res = await fetch("/api/admin/models", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: modelId, isFeatured: !currentFeatured }),
+      });
+      if (res.ok) {
+        setModels((prev) =>
+          prev.map((m) => (m.id === modelId ? { ...m, isFeatured: !currentFeatured } : m))
+        );
+      }
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const getSyncStatusColor = (dateStr: string | null) => {
+    if (!dateStr) return "text-destructive";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+    if (diffHours < 24) return "text-success";
+    if (diffHours < 72) return "text-warning";
+    return "text-destructive";
+  };
+
 
   const filteredModels = models.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
@@ -225,6 +257,15 @@ export default function AdminModelsPage() {
                     Status {renderSortIndicator("isActive")}
                   </button>
                 </th>
+                <th className="p-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => handleSort("isFeatured")}
+                    className="inline-flex items-center gap-2 hover:text-foreground"
+                  >
+                    Featured {renderSortIndicator("isFeatured")}
+                  </button>
+                </th>
                 <th className="p-3 text-left">
                   <button
                     type="button"
@@ -252,7 +293,21 @@ export default function AdminModelsPage() {
                       {m.isActive ? "Active" : "Hidden"}
                     </Badge>
                   </td>
-                  <td className="p-3 text-xs text-muted-foreground">
+                  <td className="p-3 text-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => toggleFeatured(m.id, m.isFeatured)}
+                      disabled={togglingId === m.id}
+                      title={m.isFeatured ? "Remove from featured" : "Add to featured"}
+                    >
+                      <span className={`text-lg ${m.isFeatured ? "text-yellow-400" : "text-muted-foreground/30 hover:text-yellow-400/50"}`}>
+                        ★
+                      </span>
+                    </Button>
+                  </td>
+                  <td className={`p-3 text-xs ${getSyncStatusColor(m.lastSyncedAt)}`}>
                     {m.lastSyncedAt
                       ? new Date(m.lastSyncedAt).toLocaleString()
                       : "Never"}

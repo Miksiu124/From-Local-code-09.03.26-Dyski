@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"content-platform-backend/internal/middleware"
@@ -14,28 +16,44 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // CORS is handled by middleware
-	},
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
 const blikTimerSeconds = 110
 
 type WSMessage struct {
-	Type    string `json:"type"`
+	Type    string      `json:"type"`
 	Payload interface{} `json:"payload,omitempty"`
 }
 
-// BlikWebSocket handles the BLIK payment timer loop
+func (h *Handler) newUpgrader() websocket.Upgrader {
+	allowedOrigin := h.cfg.FrontendURL
+	return websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return false
+			}
+			parsed, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+			allowed, err := url.Parse(allowedOrigin)
+			if err != nil {
+				return false
+			}
+			return strings.EqualFold(parsed.Host, allowed.Host)
+		},
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+}
+
+// BlikWebSocket handles the BLIK payment timer loop.
+//
 // Flow:
 //  1. User connects with a valid credit purchase ID
 //  2. Server starts a 110s timer
-//  3. Admin approves via REST endpoint → publishes to Redis
-//  4. If timer expires → send REQUEST_NEW_CODE → user sends new code → restart
-//  5. If admin approves → send APPROVED → close
+//  3. Admin approves via REST endpoint -> publishes to Redis
+//  4. If timer expires -> send REQUEST_NEW_CODE -> user sends new code -> restart
+//  5. If admin approves -> send APPROVED -> close
 func (h *Handler) BlikWebSocket(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	purchaseID := c.Param("id")
@@ -60,7 +78,7 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Purchase is not pending"})
 	}
 
-	// Upgrade to WebSocket
+	upgrader := h.newUpgrader()
 	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -68,13 +86,11 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 	}
 	defer ws.Close()
 
-	// Send initial status
 	sendWSMessage(ws, "CONNECTED", map[string]interface{}{
 		"purchaseId": purchaseID,
 		"timerSecs":  blikTimerSeconds,
 	})
 
-	// Subscribe to Redis Pub/Sub for this purchase
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -84,32 +100,30 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 
 	redisCh := pubsub.Channel()
 
-	// Main loop
-	for {
-		// Start timer
-		timer := time.NewTimer(time.Duration(blikTimerSeconds) * time.Second)
-		sendWSMessage(ws, "TIMER_STARTED", map[string]int{"seconds": blikTimerSeconds})
-
-		// Wait for either:
-		// 1. Admin action via Redis Pub/Sub
-		// 2. Timer expiry
-		// 3. Client message (new BLIK code)
-		// 4. Connection close
-
-		clientCh := make(chan []byte, 1)
-		go func() {
+	// Single persistent reader goroutine to avoid leaking goroutines per loop iteration.
+	clientCh := make(chan []byte, 1)
+	go func() {
+		defer cancel()
+		for {
 			_, msg, err := ws.ReadMessage()
 			if err != nil {
-				cancel()
 				return
 			}
-			clientCh <- msg
-		}()
+			select {
+			case clientCh <- msg:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	for {
+		timer := time.NewTimer(time.Duration(blikTimerSeconds) * time.Second)
+		sendWSMessage(ws, "TIMER_STARTED", map[string]int{"seconds": blikTimerSeconds})
 
 		select {
 		case msg := <-redisCh:
 			timer.Stop()
-			// Admin action received
 			var action struct {
 				Action string `json:"action"`
 			}
@@ -124,9 +138,7 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 			}
 
 		case <-timer.C:
-			// Timer expired — request new code
-			// Increment retry count
-			_, _ = h.db.Exec(context.Background(), `
+			_, _ = h.db.Exec(ctx, `
 				UPDATE credit_purchases 
 				SET retry_count = retry_count + 1,
 				    expiration_time = now() + ($1 || ' minutes')::interval
@@ -137,22 +149,19 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 				"message": "BLIK code expired. Please enter a new code.",
 			})
 
-			// Wait for client to send new code
 			select {
 			case clientMsg := <-clientCh:
 				var newCode struct {
 					BlikCode string `json:"blikCode"`
 				}
 				if err := json.Unmarshal(clientMsg, &newCode); err == nil && len(newCode.BlikCode) >= 6 {
-					// Update the BLIK code in purchase
-					_, _ = h.db.Exec(context.Background(), `
+					_, _ = h.db.Exec(ctx, `
 						UPDATE credit_purchases SET blik_code = $1 WHERE id = $2
 					`, newCode.BlikCode, purchaseID)
 
 					sendWSMessage(ws, "CODE_UPDATED", map[string]string{
 						"blikCode": newCode.BlikCode,
 					})
-					// Continue loop — timer restarts
 				} else {
 					sendWSMessage(ws, "ERROR", map[string]string{
 						"message": "Invalid BLIK code",
@@ -160,7 +169,6 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 				}
 
 			case <-time.After(5 * time.Minute):
-				// No response in 5 minutes — close
 				sendWSMessage(ws, "TIMEOUT", nil)
 				return nil
 
@@ -169,7 +177,6 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 			}
 
 		case <-clientCh:
-			// Unexpected client message during timer — ignore
 			timer.Stop()
 
 		case <-ctx.Done():

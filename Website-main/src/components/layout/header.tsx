@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Coins,
   User,
@@ -14,12 +14,14 @@ import {
   Menu,
   X,
   ChevronDown,
+  ShoppingCart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 interface UserSession {
   id: string;
@@ -32,13 +34,13 @@ interface UserSession {
 export function Header() {
   const t = useTranslations();
   const router = useRouter();
+  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Fetch user session on mount
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -58,7 +60,6 @@ export function Header() {
     fetchUser();
   }, []);
 
-  // Poll the real DB balance every 15 seconds
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(async () => {
@@ -85,84 +86,73 @@ export function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       setUser(null);
       router.push("/");
       router.refresh();
-      // Optional: window.location.reload(); 
     } catch { }
   };
 
   const isAdmin = user?.role === "ADMIN";
 
+  const navLinks = [
+    { href: "/", label: t("nav.models"), show: true },
+    { href: "/purchase", label: t("nav.buyCredits"), show: !!user },
+    { href: "/dashboard", label: t("nav.dashboard"), show: !!user },
+    { href: "/admin", label: t("nav.admin"), show: isAdmin },
+  ].filter((l) => l.show);
+
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <motion.div
-            whileHover={{ scale: 1.05 }}
-            className="text-xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent"
-          >
+        <Link href="/" className="flex items-center gap-2 shrink-0">
+          <span className="text-xl font-bold bg-gradient-to-r from-primary via-purple-400 to-primary bg-clip-text text-transparent">
             {t("common.appName")}
-          </motion.div>
+          </span>
         </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-6">
-          <Link
-            href="/models"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {t("nav.models")}
-          </Link>
-          {user && (
+        <nav className="hidden md:flex items-center gap-1 ml-8">
+          {navLinks.map((link) => (
             <Link
-              href="/purchase"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                pathname === link.href
+                  ? "text-foreground bg-white/[0.06]"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+              )}
             >
-              {t("nav.buyCredits")}
+              {link.label}
             </Link>
-          )}
-          {user && (
-            <Link
-              href="/dashboard"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {t("nav.dashboard")}
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {t("nav.admin")}
-            </Link>
-          )}
+          ))}
         </nav>
 
         {/* Right side */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Credit Balance */}
           {user && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="hidden sm:flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-sm font-medium"
-            >
-              <Coins className="h-4 w-4 text-primary" />
-              <span>{formatCredits(user.creditBalance)}</span>
-            </motion.div>
+            <Link href="/purchase" className="hidden sm:flex">
+              <div className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.06] px-3 py-1.5 text-sm font-medium hover:bg-white/[0.08] transition-colors">
+                <Coins className="h-3.5 w-3.5 text-primary" />
+                <span className="text-foreground/90">{formatCredits(user.creditBalance)}</span>
+              </div>
+            </Link>
           )}
 
           {/* Notifications */}
           {user && (
             <Link href="/dashboard?tab=notifications">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
+              <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl">
+                <Bell className="h-4 w-4" />
               </Button>
             </Link>
           )}
@@ -172,82 +162,73 @@ export function Header() {
 
           {/* Auth Buttons / User Menu */}
           {loading ? (
-            <div className="h-10 w-20 animate-pulse rounded-lg bg-muted" />
+            <div className="h-9 w-20 animate-pulse rounded-xl bg-white/[0.05]" />
           ) : user ? (
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-secondary transition-colors cursor-pointer"
+                className={cn(
+                  "flex items-center gap-2 rounded-xl px-2.5 py-1.5 transition-all cursor-pointer",
+                  userMenuOpen ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"
+                )}
               >
-                <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-                  <User className="h-4 w-4 text-primary" />
+                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary/30 to-purple-600/30 flex items-center justify-center border border-primary/20">
+                  <User className="h-3.5 w-3.5 text-primary" />
                 </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <ChevronDown className={cn(
+                  "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                  userMenuOpen && "rotate-180"
+                )} />
               </button>
 
-              {userMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute right-0 mt-2 w-56 rounded-xl border border-border bg-card shadow-xl py-1"
-                >
-                  <div className="px-4 py-3 border-b border-border">
-                    <p className="text-sm font-medium">{user.name || user.email}</p>
-                    <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                      <Coins className="h-3 w-3 text-primary" />
-                      {formatCredits(user.creditBalance)} {t("common.credits")}
+              <AnimatePresence>
+                {userMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                    transition={{ type: "spring", damping: 25, stiffness: 400 }}
+                    className="absolute right-0 mt-2 w-60 rounded-xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/40 py-1 overflow-hidden"
+                  >
+                    <div className="px-4 py-3 border-b border-white/[0.06]">
+                      <p className="text-sm font-medium truncate">{user.name || user.email}</p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <Coins className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-xs text-muted-foreground">{formatCredits(user.creditBalance)} {t("common.credits")}</span>
+                      </div>
                     </div>
-                  </div>
 
-                  <Link
-                    href="/dashboard"
-                    className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors"
-                    onClick={() => setUserMenuOpen(false)}
-                  >
-                    <LayoutDashboard className="h-4 w-4" />
-                    {t("nav.dashboard")}
-                  </Link>
+                    <div className="py-1">
+                      {[
+                        { href: "/dashboard", icon: LayoutDashboard, label: t("nav.dashboard") },
+                        { href: "/my-purchases", icon: ShoppingCart, label: t("nav.myPurchases") },
+                        { href: "/favorites", icon: Heart, label: t("nav.favorites") },
+                        ...(isAdmin ? [{ href: "/admin", icon: ShieldCheck, label: t("nav.admin") }] : []),
+                      ].map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          <item.icon className="h-4 w-4" />
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
 
-                  <Link
-                    href="/my-purchases"
-                    className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors"
-                    onClick={() => setUserMenuOpen(false)}
-                  >
-                    <Coins className="h-4 w-4" />
-                    {t("nav.myPurchases")}
-                  </Link>
-
-                  <Link
-                    href="/favorites"
-                    className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors"
-                    onClick={() => setUserMenuOpen(false)}
-                  >
-                    <Heart className="h-4 w-4" />
-                    {t("nav.favorites")}
-                  </Link>
-
-                  {isAdmin && (
-                    <Link
-                      href="/admin"
-                      className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-secondary transition-colors"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                      {t("nav.admin")}
-                    </Link>
-                  )}
-
-                  <div className="border-t border-border mt-1 pt-1">
-                    <button
-                      onClick={handleLogout}
-                      className="flex w-full items-center gap-2 px-4 py-2 text-sm text-destructive hover:bg-secondary transition-colors cursor-pointer"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      {t("nav.logout")}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
+                    <div className="border-t border-white/[0.06] py-1">
+                      <button
+                        onClick={handleLogout}
+                        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        {t("nav.logout")}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -264,57 +245,61 @@ export function Header() {
 
           {/* Mobile menu toggle */}
           <button
-            className="md:hidden cursor-pointer"
+            className="md:hidden cursor-pointer p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
-            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
       {/* Mobile Navigation */}
-      {mobileMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          className="md:hidden border-t border-border bg-background"
-        >
-          <nav className="flex flex-col p-4 gap-2">
-            <Link
-              href="/models"
-              className="px-4 py-2 rounded-lg hover:bg-secondary transition-colors"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              {t("nav.models")}
-            </Link>
-            {user && (
-              <>
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+            className="md:hidden border-t border-white/[0.06] bg-background/95 backdrop-blur-xl overflow-hidden"
+          >
+            <nav className="flex flex-col p-3 gap-0.5">
+              {navLinks.map((link) => (
                 <Link
-                  href="/purchase"
-                  className="px-4 py-2 rounded-lg hover:bg-secondary transition-colors"
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
+                    pathname === link.href
+                      ? "bg-white/[0.06] text-foreground"
+                      : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                  )}
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  {t("nav.buyCredits")}
+                  {link.label}
                 </Link>
-                <Link
-                  href="/dashboard"
-                  className="px-4 py-2 rounded-lg hover:bg-secondary transition-colors"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {t("nav.dashboard")}
-                </Link>
-                <div className="flex items-center gap-2 px-4 py-2">
-                  <Coins className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">
-                    {formatCredits(user.creditBalance)} {t("common.credits")}
-                  </span>
-                </div>
-              </>
-            )}
-          </nav>
-        </motion.div>
-      )}
+              ))}
+              {user && (
+                <>
+                  <Link
+                    href="/favorites"
+                    className="px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {t("nav.favorites")}
+                  </Link>
+                  <div className="flex items-center gap-2 px-4 py-3 border-t border-white/[0.06] mt-1 pt-3">
+                    <Coins className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">
+                      {formatCredits(user.creditBalance)} {t("common.credits")}
+                    </span>
+                  </div>
+                </>
+              )}
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

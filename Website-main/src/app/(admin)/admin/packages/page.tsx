@@ -37,7 +37,7 @@ export default function AdminPackagesPage() {
 
   const fetchPackages = async () => {
     try {
-      const res = await fetch("/api/admin/packages");
+      const res = await fetch("/api/admin/packages", { credentials: "include" });
       if (res.ok) {
         setPackages(await res.json());
       }
@@ -66,11 +66,12 @@ export default function AdminPackagesPage() {
       const url = editingPkg
         ? `/api/admin/packages/${editingPkg.id}`
         : "/api/admin/packages";
-      const method = editingPkg ? "PUT" : "POST";
+      const method = editingPkg ? "PATCH" : "POST";
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(form),
       });
 
@@ -88,8 +89,9 @@ export default function AdminPackagesPage() {
   const toggleActive = async (pkg: CreditPackage) => {
     try {
       await fetch(`/api/admin/packages/${pkg.id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ ...pkg, isActive: !pkg.isActive }),
       });
       fetchPackages();

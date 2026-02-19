@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Save } from "lucide-react";
+import { Save, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,10 @@ interface SettingItem {
   value: unknown;
   description: string | null;
 }
+
+const BOOLEAN_KEYS = ["blik_enabled"];
+const FEATURED_KEYS = ["blik_enabled", "discord_webhook_url"];
+const HIDDEN_KEYS = ["blik_enabled"];
 
 export default function AdminSettingsPage() {
   const t = useTranslations("admin");
@@ -27,7 +31,7 @@ export default function AdminSettingsPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch("/api/admin/settings");
+      const res = await fetch("/api/admin/settings", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setSettings(data);
@@ -52,6 +56,7 @@ export default function AdminSettingsPage() {
       const res = await fetch("/api/admin/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ settings }),
       });
       if (res.ok) {
@@ -66,7 +71,37 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const isBooleanSetting = (setting: SettingItem) => {
+    if (BOOLEAN_KEYS.includes(setting.key)) return true;
+    const v = setting.value;
+    return v === true || v === false || v === "true" || v === "false";
+  };
+
+  const getBooleanValue = (setting: SettingItem): boolean => {
+    const v = setting.value;
+    return v === true || v === "true";
+  };
+
   const renderSettingInput = (setting: SettingItem) => {
+    if (isBooleanSetting(setting)) {
+      const enabled = getBooleanValue(setting);
+      return (
+        <button
+          type="button"
+          onClick={() => updateSetting(setting.key, !enabled)}
+          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer ${
+            enabled ? "bg-green-500" : "bg-red-500/70"
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+              enabled ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+      );
+    }
+
     if (setting.key === "crypto_wallets" && typeof setting.value === "object") {
       const wallets = setting.value as Record<string, string>;
       return (
@@ -111,6 +146,9 @@ export default function AdminSettingsPage() {
     return <div className="text-center py-20 text-muted-foreground">Loading...</div>;
   }
 
+  const discordSetting = settings.find((s) => s.key === "discord_webhook_url");
+  const otherSettings = settings.filter((s) => !FEATURED_KEYS.includes(s.key) && !HIDDEN_KEYS.includes(s.key));
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -125,18 +163,50 @@ export default function AdminSettingsPage() {
         <div className="mb-4 p-3 rounded-lg bg-secondary text-sm">{message}</div>
       )}
 
+      {/* Discord Webhook Card */}
+      {discordSetting && (
+        <Card className="mb-6 border-2 border-indigo-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10">
+                <Webhook className="h-6 w-6 text-indigo-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Discord Webhook</h3>
+                <p className="text-sm text-muted-foreground">
+                  Receive payment notifications on your Discord server.
+                </p>
+              </div>
+            </div>
+            <Input
+              value={String(discordSetting.value || "")}
+              onChange={(e) => updateSetting("discord_webhook_url", e.target.value)}
+              placeholder="https://discord.com/api/webhooks/..."
+              className="font-mono text-sm"
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Other Settings */}
       <div className="space-y-4">
-        {settings.map((setting) => (
-          <Card key={setting.key}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-mono">{setting.key}</CardTitle>
-              {setting.description && (
-                <p className="text-xs text-muted-foreground">{setting.description}</p>
-              )}
-            </CardHeader>
-            <CardContent>{renderSettingInput(setting)}</CardContent>
-          </Card>
-        ))}
+        {!settings || settings.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground border rounded-lg">
+            No settings found or failed to load.
+          </div>
+        ) : (
+          otherSettings.map((setting) => (
+            <Card key={setting.key}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono">{setting.key}</CardTitle>
+                {setting.description && (
+                  <p className="text-xs text-muted-foreground">{setting.description}</p>
+                )}
+              </CardHeader>
+              <CardContent>{renderSettingInput(setting)}</CardContent>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   );

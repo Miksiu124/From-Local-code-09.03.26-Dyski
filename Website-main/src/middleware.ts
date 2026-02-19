@@ -23,14 +23,22 @@ function isSafeOrigin(request: NextRequest) {
   const expectedOrigin = request.nextUrl.origin;
 
   if (origin) {
+    // Allow localhost:3000 even if nextUrl.origin thinks it is 0.0.0.0:3000
+    if (origin === "http://localhost:3000" && expectedOrigin.includes("0.0.0.0")) {
+      return true;
+    }
     return origin === expectedOrigin;
   }
 
   if (referer) {
+    if (referer.startsWith("http://localhost:3000") && expectedOrigin.includes("0.0.0.0")) {
+      return true;
+    }
     return referer.startsWith(expectedOrigin);
   }
 
-  return true;
+  // No Origin or Referer — block state-changing requests (CSRF protection)
+  return false;
 }
 
 export async function middleware(request: NextRequest) {
@@ -38,10 +46,13 @@ export async function middleware(request: NextRequest) {
   const isSafeMethod = method === "GET" || method === "HEAD" || method === "OPTIONS";
   const pathname = request.nextUrl.pathname;
 
-  // Skip CSRF check for NextAuth routes entirely - they handle their own security
   const isAuthRoute = pathname.startsWith("/api/auth/");
+  const safeOrigin = isSafeOrigin(request);
 
-  if (!isSafeMethod && !isAuthRoute && !isSafeOrigin(request)) {
+  if (!isSafeMethod && !isAuthRoute && !safeOrigin) {
+    const origin = request.headers.get("origin");
+    const expected = request.nextUrl.origin;
+    console.error(`[Middleware] CSRF BLOCK: Path=${pathname}, Origin=${origin}, Expected=${expected}`);
     return new NextResponse("Invalid origin", { status: 403 });
   }
 
@@ -58,6 +69,7 @@ export async function middleware(request: NextRequest) {
   );
 
   if (!result.allowed) {
+    console.warn(`[Middleware] RATE LIMIT: Path=${pathname}, IP=${ip}, Remaining=0`);
     return new NextResponse("Too Many Requests", {
       status: 429,
       headers: {
@@ -76,5 +88,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*", "/api_legacy/:path*"],
+  matcher: ["/api/:path*"],
 };

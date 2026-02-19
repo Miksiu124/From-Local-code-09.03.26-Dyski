@@ -14,12 +14,22 @@ services:
       - ./uploads:/app/uploads
     env_file: .env
     environment:
-      # Wewnątrz sieci Dockera serwer łączy się po nazwie hosta "postgres"
-      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD:-insecure_change_me}@postgres:5432/content_platform?sslmode=disable
+      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - PORT=8080
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,21 +45,30 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: content-frontend
     restart: unless-stopped
+    env_file: .env
     environment:
-      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
       - API_HOST=api
       - API_URL=http://api:8080/api
-      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD:-supersecure}@postgres:5432/content_platform?sslmode=disable
+      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
       - AUTH_SECRET=${JWT_SECRET}
-      - AUTH_URL=http://localhost:3000
+      - AUTH_URL=http://localhost
       - NEXT_PUBLIC_APP_URL=http://localhost
-      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
-      - R2_ENDPOINT=${R2_ENDPOINT}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
     depends_on:
       - api
     networks:
@@ -63,18 +82,22 @@ services:
     environment:
       POSTGRES_DB: content_platform
       POSTGRES_USER: platform
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insecure_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d
-    # DODANO: Pozwala na połączenie z Twojego systemu (localhost:5432)
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U platform -d content_platform" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
     networks:
       - internal
 
@@ -87,14 +110,18 @@ services:
       redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1000 --appendonly yes
     volumes:
       - redis_data:/data
-    # DODANO: Pozwala na połączenie z Twojego systemu (localhost:6379)
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 320M
+          cpus: "0.5"
     networks:
       - internal
 
@@ -111,6 +138,11 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
       - api
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
     networks:
       - internal
 

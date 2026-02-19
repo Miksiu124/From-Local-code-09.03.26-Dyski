@@ -4,16 +4,20 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/middleware"
 
 	"github.com/jackc/pgx/v5"
@@ -23,13 +27,14 @@ import (
 )
 
 type Handler struct {
-	db    *pgxpool.Pool
-	redis *redis.Client
-	cfg   *config.Config
+	db      *pgxpool.Pool
+	redis   *redis.Client
+	cfg     *config.Config
+	discord *discord.Notifier
 }
 
 func NewHandler(db *pgxpool.Pool, redis *redis.Client, cfg *config.Config) *Handler {
-	return &Handler{db: db, redis: redis, cfg: cfg}
+	return &Handler{db: db, redis: redis, cfg: cfg, discord: discord.NewNotifier(db)}
 }
 
 type CreatePurchaseRequest struct {
@@ -57,9 +62,35 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		return common.BadRequest(c, "Invalid payment method")
 	}
 
-	// BLIK requires code
-	if req.PaymentMethod == "BLIK" && (req.BlikCode == "" || len(strings.TrimSpace(req.BlikCode)) < 6) {
-		return common.BadRequest(c, "BLIK code is required (6 digits)")
+	// Check if BLIK is enabled
+	if req.PaymentMethod == "BLIK" {
+		var blikEnabled interface{}
+		err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'blik_enabled'`).Scan(&blikEnabled)
+		if err == nil {
+			switch v := blikEnabled.(type) {
+			case bool:
+				if !v {
+					return common.JSONError(c, http.StatusForbidden, "BLIK_DISABLED", "BLIK payments are currently disabled")
+				}
+			case string:
+				if v == "false" {
+					return common.JSONError(c, http.StatusForbidden, "BLIK_DISABLED", "BLIK payments are currently disabled")
+				}
+			}
+		}
+	}
+
+	// BLIK requires exactly 6 digits
+	if req.PaymentMethod == "BLIK" {
+		code := strings.TrimSpace(req.BlikCode)
+		if len(code) != 6 {
+			return common.BadRequest(c, "BLIK code must be exactly 6 digits")
+		}
+		for _, ch := range code {
+			if ch < '0' || ch > '9' {
+				return common.BadRequest(c, "BLIK code must contain only digits")
+			}
+		}
 	}
 
 	// Get credit package
@@ -85,7 +116,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}[req.PaymentMethod]
 
 		var hours int
-		err := h.db.QueryRow(ctx, `SELECT (value)::int FROM settings WHERE key = $1`, settingKey).Scan(&hours)
+		err := h.db.QueryRow(ctx, `SELECT (value#>>'{}')::int FROM settings WHERE key = $1`, settingKey).Scan(&hours)
 		if err != nil {
 			hours = 48
 			if req.PaymentMethod == "PAYPAL" || req.PaymentMethod == "REVOLUT" {
@@ -97,7 +128,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 
 	// Anti-spam: check max pending purchases
 	var maxPending int
-	err = h.db.QueryRow(ctx, `SELECT (value)::int FROM settings WHERE key = 'max_pending_credit_purchases'`).Scan(&maxPending)
+	err = h.db.QueryRow(ctx, `SELECT (value#>>'{}')::int FROM settings WHERE key = 'max_pending_credit_purchases'`).Scan(&maxPending)
 	if err != nil || maxPending == 0 {
 		maxPending = 3
 	}
@@ -107,6 +138,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
+		log.Printf("[Credits] Failed to begin transaction: %v", err)
 		return common.InternalError(c)
 	}
 	defer tx.Rollback(ctx)
@@ -116,6 +148,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		SELECT COUNT(*) FROM credit_purchases WHERE user_id = $1 AND status = 'PENDING'
 	`, userID).Scan(&pendingCount)
 	if err != nil {
+		log.Printf("[Credits] Failed to count pending purchases: %v", err)
 		return common.InternalError(c)
 	}
 
@@ -127,13 +160,14 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	var purchaseID string
 	var expirationTime string
 
-	blikCode := interface{}(nil)
+	var blikCode *string
 	if req.PaymentMethod == "BLIK" {
-		blikCode = strings.TrimSpace(req.BlikCode)
+		trimmed := strings.TrimSpace(req.BlikCode)
+		blikCode = &trimmed
 	}
-	cryptoCurrency := interface{}(nil)
+	var cryptoCurrencyStr *string
 	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
-		cryptoCurrency = req.CryptoCurrency
+		cryptoCurrencyStr = &req.CryptoCurrency
 	}
 
 	err = tx.QueryRow(ctx, `
@@ -145,13 +179,15 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 				  now() + ($9 || ' minutes')::interval, 'PENDING')
 		RETURNING id, expiration_time::text
 	`, userID, pkgID, pkgCredits, pkgPrice, req.PaymentMethod,
-		txCode, blikCode, cryptoCurrency,
+		txCode, blikCode, cryptoCurrencyStr,
 		strconv.Itoa(expirationMinutes)).Scan(&purchaseID, &expirationTime)
 	if err != nil {
+		log.Printf("[Credits] Failed to insert purchase: %v", err)
 		return common.InternalError(c)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		log.Printf("[Credits] Failed to commit transaction: %v", err)
 		return common.InternalError(c)
 	}
 
@@ -168,12 +204,58 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
+	// Discord notification for new purchase
+	discordInfo := discord.PurchaseInfo{
+		PurchaseID:      purchaseID,
+		UserEmail:       "", // filled below
+		PackageName:     pkgName,
+		Credits:         pkgCredits,
+		Amount:          pkgPrice,
+		PaymentMethod:   req.PaymentMethod,
+		TransactionCode: txCode,
+		Status:          "PENDING",
+	}
+	if blikCode != nil {
+		discordInfo.BlikCode = *blikCode
+	}
+	if cryptoCurrencyStr != nil {
+		discordInfo.CryptoCurrency = *cryptoCurrencyStr
+	}
+	// Fetch user email for Discord
+	var uEmail string
+	var uName *string
+	if err := h.db.QueryRow(ctx, `SELECT email, name FROM users WHERE id = $1`, userID).Scan(&uEmail, &uName); err == nil {
+		discordInfo.UserEmail = uEmail
+		if uName != nil {
+			discordInfo.UserName = *uName
+		}
+	}
+	h.discord.NotifyNewPurchase(ctx, discordInfo)
+
+	// Notify admin panel in real time via Redis SSE
+	adminPayload, _ := json.Marshal(map[string]interface{}{
+		"event":           "new_purchase",
+		"id":              purchaseID,
+		"credits":         pkgCredits,
+		"amount":          pkgPrice,
+		"paymentMethod":   req.PaymentMethod,
+		"transactionCode": txCode,
+		"blikCode":        blikCode,
+		"cryptoCurrency":  cryptoCurrencyStr,
+		"status":          "PENDING",
+		"expirationTime":  expirationTime,
+		"createdAt":       time.Now().UTC().Format(time.RFC3339),
+		"user":            map[string]interface{}{"email": discordInfo.UserEmail, "name": discordInfo.UserName},
+		"creditPackage":   map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
+	})
+	_ = h.redis.Publish(ctx, "admin:purchases", string(adminPayload))
+
 	return common.Success(c, map[string]interface{}{
 		"id":              purchaseID,
 		"transactionCode": txCode,
 		"blikCode":        blikCode,
 		"walletAddress":   walletAddress,
-		"cryptoCurrency":  cryptoCurrency,
+		"cryptoCurrency":  cryptoCurrencyStr,
 		"amount":          pkgPrice,
 		"credits":         pkgCredits,
 		"expirationTime":  expirationTime,
@@ -200,6 +282,19 @@ func (h *Handler) UploadProof(c echo.Context) error {
 	// Max 10MB
 	if file.Size > 10*1024*1024 {
 		return common.BadRequest(c, "File too large (max 10MB)")
+	}
+
+	// Validate content type — only images allowed
+	src0, err := file.Open()
+	if err != nil {
+		return common.InternalError(c)
+	}
+	buf := make([]byte, 512)
+	n, _ := src0.Read(buf)
+	src0.Close()
+	contentType := http.DetectContentType(buf[:n])
+	if !strings.HasPrefix(contentType, "image/") {
+		return common.BadRequest(c, "Only image files are allowed (jpeg, png, webp, gif)")
 	}
 
 	// Check purchase ownership and status
@@ -288,7 +383,7 @@ func (h *Handler) ListPurchases(c echo.Context) error {
 	args := []interface{}{userID}
 
 	if statusFilter != "" && validStatuses[statusFilter] {
-		query += ` AND cp.status = $2::credit_purchase_status`
+		query += ` AND cp.status = $2`
 		args = append(args, statusFilter)
 	}
 
@@ -385,8 +480,216 @@ func (h *Handler) ListPackages(c echo.Context) error {
 	return common.Success(c, packages)
 }
 
+// GetPurchaseStatus returns the current status of a credit purchase
+func (h *Handler) GetPurchaseStatus(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	purchaseID := c.Param("id")
+
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+
+	// Auto-expire
+	_, _ = h.db.Exec(ctx, `
+		UPDATE credit_purchases SET status = 'EXPIRED'
+		WHERE id = $1 AND user_id = $2 AND status = 'PENDING' AND expiration_time < now()
+	`, purchaseID, userID)
+
+	var status, paymentMethod string
+	var expirationTime string
+	err := h.db.QueryRow(ctx, `
+		SELECT status, payment_method, expiration_time::text
+		FROM credit_purchases WHERE id = $1 AND user_id = $2
+	`, purchaseID, userID).Scan(&status, &paymentMethod, &expirationTime)
+	if err != nil {
+		return common.NotFound(c, "Purchase not found")
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"status":         status,
+		"paymentMethod":  paymentMethod,
+		"expirationTime": expirationTime,
+	})
+}
+
+// StreamPurchaseStatus provides SSE updates for a credit purchase status
+func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	purchaseID := c.Param("id")
+
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+
+	// Verify ownership
+	var status string
+	err := h.db.QueryRow(ctx, `
+		SELECT status FROM credit_purchases WHERE id = $1 AND user_id = $2
+	`, purchaseID, userID).Scan(&status)
+	if err != nil {
+		return common.NotFound(c, "Purchase not found")
+	}
+
+	// If already resolved, return immediately
+	if status != "PENDING" {
+		c.Response().Header().Set("Content-Type", "text/event-stream")
+		c.Response().Header().Set("Cache-Control", "no-cache")
+		c.Response().Header().Set("Connection", "keep-alive")
+		c.Response().WriteHeader(http.StatusOK)
+		fmt.Fprintf(c.Response().Writer, "data: {\"status\":\"%s\"}\n\n", status)
+		c.Response().Flush()
+		return nil
+	}
+
+	// Subscribe to Redis for real-time updates
+	channel := fmt.Sprintf("blik:%s", purchaseID)
+	pubsub := h.redis.Subscribe(ctx, channel)
+	defer pubsub.Close()
+
+	redisCh := pubsub.Channel()
+
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().WriteHeader(http.StatusOK)
+	c.Response().Flush()
+
+	// Send keepalive every 15 seconds, check DB every 10 seconds
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case msg := <-redisCh:
+			fmt.Fprintf(c.Response().Writer, "data: %s\n\n", msg.Payload)
+			c.Response().Flush()
+			return nil
+
+		case <-ticker.C:
+			// Poll DB as fallback
+			var currentStatus string
+			err := h.db.QueryRow(ctx, `SELECT status FROM credit_purchases WHERE id = $1`, purchaseID).Scan(&currentStatus)
+			if err == nil && currentStatus != "PENDING" {
+				fmt.Fprintf(c.Response().Writer, "data: {\"status\":\"%s\"}\n\n", currentStatus)
+				c.Response().Flush()
+				return nil
+			}
+			// Send keepalive comment
+			fmt.Fprint(c.Response().Writer, ": keepalive\n\n")
+			c.Response().Flush()
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+// SubmitTxId allows users to submit a blockchain transaction ID for crypto payments
+func (h *Handler) SubmitTxId(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	purchaseID := c.Param("id")
+
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+
+	var req struct {
+		TxId string `json:"txId"`
+	}
+	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.TxId) == "" {
+		return common.BadRequest(c, "txId is required")
+	}
+
+	result, err := h.db.Exec(ctx, `
+		UPDATE credit_purchases SET tx_id = $1
+		WHERE id = $2 AND user_id = $3 AND status = 'PENDING'
+	`, strings.TrimSpace(req.TxId), purchaseID, userID)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if result.RowsAffected() == 0 {
+		return common.NotFound(c, "Purchase not found or not pending")
+	}
+
+	return common.Success(c, map[string]bool{"success": true})
+}
+
+// UpdateBlikCode allows users to update the BLIK code on a pending purchase (REST alternative to WebSocket)
+func (h *Handler) UpdateBlikCode(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	purchaseID := c.Param("id")
+
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+
+	var req struct {
+		BlikCode string `json:"blikCode"`
+	}
+	if err := c.Bind(&req); err != nil || len(strings.TrimSpace(req.BlikCode)) < 6 {
+		return common.BadRequest(c, "Valid 6-digit BLIK code is required")
+	}
+
+	// Update code and extend expiration
+	var expirationTime string
+	err := h.db.QueryRow(ctx, `
+		UPDATE credit_purchases
+		SET blik_code = $1,
+			expiration_time = now() + ($2 || ' minutes')::interval,
+			retry_count = retry_count + 1
+		WHERE id = $3 AND user_id = $4 AND status = 'PENDING' AND payment_method = 'BLIK'
+		RETURNING expiration_time::text
+	`, strings.TrimSpace(req.BlikCode), strconv.Itoa(h.cfg.BlikExpirationMinutes), purchaseID, userID).Scan(&expirationTime)
+	if err != nil {
+		return common.NotFound(c, "BLIK purchase not found or not pending")
+	}
+
+	// Discord notification for updated BLIK code
+	var pkgName, uEmail string
+	var uName *string
+	var pkgCredits int
+	var amount float64
+	_ = h.db.QueryRow(ctx, `
+		SELECT cp.amount, cp.credits, pkg.name, u.email, u.name
+		FROM credit_purchases cp
+		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
+		JOIN users u ON u.id = cp.user_id
+		WHERE cp.id = $1
+	`, purchaseID).Scan(&amount, &pkgCredits, &pkgName, &uEmail, &uName)
+
+	discordInfo := discord.PurchaseInfo{
+		PurchaseID:  purchaseID,
+		UserEmail:   uEmail,
+		BlikCode:    strings.TrimSpace(req.BlikCode),
+		PackageName: pkgName,
+		Credits:     pkgCredits,
+		Amount:      amount,
+	}
+	if uName != nil {
+		discordInfo.UserName = *uName
+	}
+	h.discord.NotifyBlikCodeUpdated(ctx, discordInfo)
+
+	// Notify admin panel about updated BLIK code
+	blikUpdatePayload, _ := json.Marshal(map[string]interface{}{
+		"event":      "blik_code_updated",
+		"id":         purchaseID,
+		"blikCode":   strings.TrimSpace(req.BlikCode),
+		"expirationTime": expirationTime,
+	})
+	_ = h.redis.Publish(ctx, "admin:purchases", string(blikUpdatePayload))
+
+	return common.Success(c, map[string]interface{}{
+		"success":        true,
+		"expirationTime": expirationTime,
+	})
+}
+
 // BlikWebSocket — handled in blik_ws.go
-// (placeholder — forwarded from main.go route)
 
 func generateTransactionCode() string {
 	b := make([]byte, 8)

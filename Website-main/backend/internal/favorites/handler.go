@@ -55,7 +55,7 @@ func (h *Handler) Toggle(c echo.Context) error {
 
 	// Add favorite
 	_, err = h.db.Exec(ctx, `
-		INSERT INTO favorites (user_id, content_item_id) VALUES ($1, $2)
+		INSERT INTO favorites (id, user_id, content_item_id) VALUES (gen_random_uuid()::text, $1, $2)
 	`, userID, req.ContentItemID)
 	if err != nil {
 		return common.InternalError(c)
@@ -79,7 +79,7 @@ func (h *Handler) List(c echo.Context) error {
 	}
 
 	query := `
-		SELECT f.id, f.content_item_id, ci.content_type, ci.thumbnail_path,
+		SELECT f.id, f.content_item_id, ci.content_type, ci.thumbnail_path, ci.duration,
 			   m.id AS model_id, m.name AS model_name, m.folder_name, f.created_at::text
 		FROM favorites f
 		JOIN content_items ci ON ci.id = f.content_item_id
@@ -90,16 +90,12 @@ func (h *Handler) List(c echo.Context) error {
 	argIdx := 2
 
 	if cursor != "" {
-		var cursorCreatedAt interface{}
-		err := h.db.QueryRow(ctx, `SELECT created_at FROM favorites WHERE id = $1`, cursor).Scan(&cursorCreatedAt)
-		if err == nil {
-			query += ` AND f.created_at < $` + strconv.Itoa(argIdx)
-			args = append(args, cursorCreatedAt)
-			argIdx++
-		}
+		query += ` AND (f.created_at, f.id) < ((SELECT created_at FROM favorites WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		args = append(args, cursor)
+		argIdx++
 	}
 
-	query += ` ORDER BY f.created_at DESC LIMIT $` + strconv.Itoa(argIdx)
+	query += ` ORDER BY f.created_at DESC, f.id DESC LIMIT $` + strconv.Itoa(argIdx)
 	args = append(args, limit+1)
 
 	rows, err := h.db.Query(ctx, query, args...)
@@ -113,6 +109,7 @@ func (h *Handler) List(c echo.Context) error {
 		ContentItemID string  `json:"contentItemId"`
 		ContentType   string  `json:"contentType"`
 		ThumbnailPath *string `json:"thumbnailPath"`
+		Duration      *int    `json:"duration"`
 		ModelName     string  `json:"modelName"`
 		ModelSlug     string  `json:"modelSlug"`
 		CreatedAt     string  `json:"createdAt"`
@@ -122,7 +119,7 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var item FavItem
 		var modelID string
-		if err := rows.Scan(&item.ID, &item.ContentItemID, &item.ContentType, &item.ThumbnailPath,
+		if err := rows.Scan(&item.ID, &item.ContentItemID, &item.ContentType, &item.ThumbnailPath, &item.Duration,
 			&modelID, &item.ModelName, &item.ModelSlug, &item.CreatedAt); err != nil {
 			continue
 		}

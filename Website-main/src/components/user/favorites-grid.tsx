@@ -13,9 +13,20 @@ interface FavoriteItem {
   contentItemId: string;
   contentType: string;
   thumbnailPath: string | null;
+  duration: number | null;
   modelName: string;
   modelSlug: string;
   createdAt: string;
+}
+
+function formatDuration(seconds: number): string {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 type ContentFilter = "ALL" | "VIDEO" | "PHOTO";
@@ -32,7 +43,7 @@ export function FavoritesGrid() {
   const [totalCount, setTotalCount] = useState(0);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<ContentFilter>("ALL");
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const fetchFavorites = useCallback(async (cursorVal?: string | null, append = false) => {
     if (append) {
@@ -44,7 +55,7 @@ export function FavoritesGrid() {
       const params = new URLSearchParams({ limit: "24" });
       if (cursorVal) params.set("cursor", cursorVal);
 
-      const res = await fetch(`/api/favorites?${params.toString()}`);
+      const res = await fetch(`/api/favorites?${params.toString()}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         if (append) {
@@ -65,24 +76,33 @@ export function FavoritesGrid() {
     fetchFavorites();
   }, [fetchFavorites]);
 
-  const loadMore = useCallback(() => {
+  const loadMoreRef = useRef<() => void>(() => {});
+  loadMoreRef.current = () => {
     if (loadingMore || !cursor) return;
     fetchFavorites(cursor, true);
-  }, [loadingMore, cursor, fetchFavorites]);
+  };
 
-  useEffect(() => {
-    if (!sentinelRef.current) return;
+  const sentinelCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && cursor && !loadingMore) {
-          loadMore();
+        if (entries[0].isIntersecting) {
+          loadMoreRef.current();
         }
       },
       { rootMargin: "200px" }
     );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [cursor, loadingMore, loadMore]);
+    observer.observe(node);
+    observerRef.current = observer;
+  }, []);
+
+  useEffect(() => {
+    return () => { observerRef.current?.disconnect(); };
+  }, []);
 
   const handleRemoveFavorite = async (e: React.MouseEvent, contentItemId: string) => {
     e.stopPropagation();
@@ -92,6 +112,7 @@ export function FavoritesGrid() {
       const res = await fetch("/api/favorites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ contentItemId }),
       });
       if (res.ok) {
@@ -107,7 +128,6 @@ export function FavoritesGrid() {
     router.push(`/content/${item.modelSlug}/${item.contentItemId}`);
   };
 
-  // Filter items client-side
   const filteredItems = activeFilter === "ALL"
     ? items
     : items.filter((i) => i.contentType === activeFilter);
@@ -115,25 +135,24 @@ export function FavoritesGrid() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 slide-up">
         <div>
-          <h1 className="text-3xl font-bold">{t("title")}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="text-2xl sm:text-3xl font-bold">{t("title")}</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             {totalCount} {totalCount === 1 ? "item" : "items"}
           </p>
         </div>
       </div>
 
-      {/* Content Type Filters */}
       {items.length > 0 && (
-        <div className="flex items-center gap-2 mb-6">
+        <div className="flex items-center gap-2 mb-6 slide-up" style={{ animationDelay: "0.1s" }}>
           <Button
             variant={activeFilter === "ALL" ? "default" : "outline"}
             size="sm"
@@ -164,25 +183,27 @@ export function FavoritesGrid() {
       )}
 
       {filteredItems.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground">
-          <Heart className="mx-auto h-12 w-12 mb-4 opacity-30" />
-          <p className="text-lg font-medium">{t("noFavorites")}</p>
-          <p className="text-sm mt-2">{t("noFavoritesDesc")}</p>
+        <div className="text-center py-20 text-muted-foreground scale-in">
+          <div className="mx-auto h-16 w-16 rounded-2xl bg-white/[0.03] flex items-center justify-center mb-4">
+            <Heart className="h-7 w-7 opacity-30" />
+          </div>
+          <p className="text-base font-medium">{t("noFavorites")}</p>
+          <p className="text-sm mt-1.5 text-muted-foreground/60">{t("noFavoritesDesc")}</p>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {filteredItems.map((item) => (
+            {filteredItems.map((item, index) => (
               <div
                 key={item.id}
-                className="cursor-pointer group animate-in fade-in duration-300"
+                className={cn("cursor-pointer group animate-in fade-in", `stagger-${Math.min(index % 10 + 1, 10)}`)}
                 onClick={() => handleItemClick(item)}
               >
-                <div className="relative aspect-[3/4] rounded-lg overflow-hidden bg-muted border border-border group-hover:border-primary/50 transition-all duration-300">
+                <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
                   <img
                     src={`/api/content/${item.contentItemId}/thumbnail`}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
                     loading="lazy"
                     onError={(e) => {
                       const img = e.target as HTMLImageElement;
@@ -204,30 +225,39 @@ export function FavoritesGrid() {
 
                   {/* Remove favorite button */}
                   <button
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors z-10"
+                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all z-10 cursor-pointer"
                     onClick={(e) => handleRemoveFavorite(e, item.contentItemId)}
                     disabled={removingId === item.contentItemId}
                   >
                     <Heart
                       className={cn(
-                        "h-4 w-4 fill-red-500 text-red-500 transition-transform",
+                        "h-3.5 w-3.5 fill-red-500 text-red-500 transition-transform",
                         removingId === item.contentItemId && "animate-pulse"
                       )}
                     />
                   </button>
 
-                  {/* Model name */}
-                  <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent">
-                    <p className="text-xs text-white/90 font-medium truncate">{item.modelName}</p>
+                  {/* Duration badge */}
+                  {item.contentType === "VIDEO" && item.duration && item.duration > 0 && (
+                    <div className="absolute bottom-2 right-2 z-10 pointer-events-none">
+                      <span className="bg-black/70 backdrop-blur-sm text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md">
+                        {formatDuration(item.duration)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Model name + gradient */}
+                  <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 via-black/30 to-transparent">
+                    <p className="text-xs text-white/80 font-medium truncate">{item.modelName}</p>
                   </div>
 
                   {/* Type badge */}
-                  <div className="absolute bottom-2 right-2">
-                    <Badge variant="secondary" className="text-xs">
+                  <div className="absolute top-2 left-2">
+                    <Badge variant="secondary" className="text-[10px] bg-black/50 backdrop-blur-sm text-white border-0 px-1.5 py-0.5">
                       {item.contentType === "VIDEO" ? (
-                        <><Play className="h-3 w-3 mr-1" /> Video</>
+                        <><Play className="h-2.5 w-2.5 mr-0.5" /> Video</>
                       ) : (
-                        <><Image className="h-3 w-3 mr-1" /> Photo</>
+                        <><Image className="h-2.5 w-2.5 mr-0.5" /> Photo</>
                       )}
                     </Badge>
                   </div>
@@ -236,13 +266,12 @@ export function FavoritesGrid() {
             ))}
           </div>
 
-          {/* Infinite scroll sentinel */}
-          <div ref={sentinelRef} className="flex justify-center py-8">
+          <div ref={sentinelCallbackRef} className="flex justify-center py-8">
             {loadingMore && (
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             )}
             {!loadingMore && !cursor && items.length > 0 && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {items.length} of {totalCount} items
               </p>
             )}

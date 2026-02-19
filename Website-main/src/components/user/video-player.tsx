@@ -81,12 +81,28 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (destroyed) return;
-            const levels: QualityLevel[] = hls.levels.map(
-              (level: { height: number }, index: number) => ({
-                index,
-                height: level.height,
-                label: `${level.height}p`,
-              })
+            const rawLevels = hls.levels as { height: number; width: number; bitrate: number; url: string[] }[];
+            const levels: QualityLevel[] = rawLevels.map(
+              (level, index: number) => {
+                let label: string;
+                if (level.height > 0) {
+                  label = `${level.height}p`;
+                } else {
+                  const firstUrl = Array.isArray(level.url) ? level.url[0] || "" : String(level.url || "");
+                  const urlParts = firstUrl.split("/");
+                  const filename = urlParts[urlParts.length - 1] || "";
+                  const match = filename.match(/(\d{3,4})p/);
+                  if (match) {
+                    label = `${match[1]}p`;
+                  } else if (level.bitrate > 0) {
+                    const mbps = level.bitrate / 1_000_000;
+                    label = mbps >= 1 ? `${mbps.toFixed(1)} Mbps` : `${Math.round(level.bitrate / 1000)} kbps`;
+                  } else {
+                    label = `Quality ${index + 1}`;
+                  }
+                }
+                return { index, height: level.height || level.bitrate || index, label };
+              }
             );
             setQualityLevels(levels);
             setLoading(false);
@@ -350,7 +366,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   return (
     <div
       ref={containerRef}
-      className="relative bg-black rounded-xl overflow-hidden aspect-video group select-none"
+      className="relative bg-black rounded-xl sm:rounded-2xl overflow-hidden aspect-video group select-none"
       onMouseMove={resetHideTimer}
       onMouseLeave={() => { if (playing) setShowControls(false); }}
       onClick={(e) => {
@@ -405,7 +421,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       {/* ──── Controls overlay ──── */}
       <div
         data-controls
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-5 pb-4 pt-20 transition-opacity duration-300 ${
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 sm:px-5 pb-3 sm:pb-4 pt-16 sm:pt-20 transition-opacity duration-300 ${
           showControls && !hlsError ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >

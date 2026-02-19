@@ -4,7 +4,7 @@
 
 -- ── Extensions ───────────────────────────────────────────────────────────────
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- for gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -191,7 +191,7 @@ CREATE TABLE purchases (
   user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   model_id        TEXT REFERENCES models(id) ON DELETE SET NULL,
   purchase_type   purchase_type NOT NULL,
-  access_duration access_duration,      -- NULL for bundle (lifetime)
+  access_duration access_duration,
   credits_spent   INTEGER NOT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -226,7 +226,7 @@ CREATE TABLE user_access (
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   model_id    TEXT REFERENCES models(id) ON DELETE CASCADE,
   purchase_id TEXT NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-  expires_at  TIMESTAMPTZ,            -- NULL = lifetime
+  expires_at  TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   UNIQUE(user_id, model_id, purchase_id)

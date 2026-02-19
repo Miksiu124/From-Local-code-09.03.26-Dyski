@@ -105,7 +105,7 @@ export default function AdminAnalyticsPage() {
         recentSortBy: recentSortKey,
         recentSortDir: recentSortDir,
       });
-      const res = await fetch(`/api/admin/analytics?${params.toString()}`);
+      const res = await fetch(`/api/admin/analytics?${params.toString()}`, { credentials: "include" });
       if (res.ok) setData(await res.json());
     } catch (e) {
       logger.error("Failed to fetch analytics", e);

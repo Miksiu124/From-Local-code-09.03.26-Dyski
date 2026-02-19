@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var resolutionFromFilename = regexp.MustCompile(`(\d{3,4})p`)
 
 // GenerateStreamingToken creates an HMAC-SHA256 signed token for segment access
 func GenerateStreamingToken(secret, userID, contentItemID, segmentPath string, ttlSeconds int) string {
@@ -54,28 +57,46 @@ func RewritePlaylist(playlistContent, baseURL, userID, contentItemID, tokenSecre
 	lines := strings.Split(playlistContent, "\n")
 	var result []string
 
-	for _, line := range lines {
+	// Known resolution dimensions for common heights
+	resMap := map[string]string{
+		"360":  "640x360",
+		"480":  "854x480",
+		"720":  "1280x720",
+		"1080": "1920x1080",
+		"1440": "2560x1440",
+		"2160": "3840x2160",
+	}
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		trimmed := strings.TrimSpace(line)
 
-		// Skip empty lines and comments (but keep them in output)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			// Inject RESOLUTION into #EXT-X-STREAM-INF if missing and next line is a variant .m3u8
+			if strings.HasPrefix(trimmed, "#EXT-X-STREAM-INF:") && !strings.Contains(trimmed, "RESOLUTION=") {
+				if i+1 < len(lines) {
+					nextLine := strings.TrimSpace(lines[i+1])
+					if m := resolutionFromFilename.FindStringSubmatch(nextLine); len(m) > 1 {
+						if res, ok := resMap[m[1]]; ok {
+							trimmed += ",RESOLUTION=" + res
+							line = trimmed
+						}
+					}
+				}
+			}
 			result = append(result, line)
 			continue
 		}
 
-		// This is a segment URL (e.g., "segment_000.ts" or a variant playlist)
 		segmentPath := trimmed
 		token := GenerateStreamingToken(tokenSecret, userID, contentItemID, segmentPath, tokenTTL)
 
-		// Rewrite to point through our proxy with token
 		if strings.HasSuffix(segmentPath, ".ts") || strings.HasSuffix(segmentPath, ".m4s") || strings.HasSuffix(segmentPath, ".mp4") {
-			// Segment file → use segment proxy endpoint
-			rewritten := fmt.Sprintf("%s/api/content/%s/segment/%s?token=%s&uid=%s",
+			rewritten := fmt.Sprintf("%s/content/%s/segment/%s?token=%s&uid=%s",
 				baseURL, contentItemID, segmentPath, token, userID)
 			result = append(result, rewritten)
 		} else if strings.HasSuffix(segmentPath, ".m3u8") {
-			// Variant playlist → use playlist proxy endpoint
-			rewritten := fmt.Sprintf("%s/api/content/%s/playlist/%s?token=%s&uid=%s",
+			rewritten := fmt.Sprintf("%s/content/%s/playlist/%s?token=%s&uid=%s",
 				baseURL, contentItemID, segmentPath, token, userID)
 			result = append(result, rewritten)
 		} else {

@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Lock, UserPlus, Coins, Clock } from "lucide-react";
+import { Lock, UserPlus, Coins, Clock, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { formatCredits } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface AccessRequiredPopupProps {
   open: boolean;
@@ -16,6 +17,9 @@ interface AccessRequiredPopupProps {
   modelName?: string;
   cost7d?: number;
   cost30d?: number;
+  isBundle?: boolean;
+  bundleCost14d?: number;
+  bundleCost30d?: number;
   isAuthenticated: boolean;
   initialCreditBalance?: number;
 }
@@ -27,6 +31,9 @@ export function AccessRequiredPopup({
   modelName,
   cost7d = 0,
   cost30d = 0,
+  isBundle = false,
+  bundleCost14d = 0,
+  bundleCost30d = 0,
   isAuthenticated,
   initialCreditBalance = 0,
 }: AccessRequiredPopupProps) {
@@ -34,46 +41,69 @@ export function AccessRequiredPopup({
   const router = useRouter();
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState("");
-  const [creditBalance, setCreditBalance] = useState(initialCreditBalance);
+  const [insufficientCredits, setInsufficientCredits] = useState(false);
+  const [realBalance, setRealBalance] = useState(initialCreditBalance);
+  const [selectedDuration, setSelectedDuration] = useState<string | null>(null);
 
-  // Fetch real credit balance from DB when popup opens
-  useEffect(() => {
-    if (!open || !isAuthenticated) return;
-    const fetchBalance = async () => {
-      try {
-        const res = await fetch("/api/user/balance");
-        if (res.ok) {
-          const data = await res.json();
-          setCreditBalance(data.creditBalance);
-        }
-      } catch {
-        // Fallback to initial value
-      }
-    };
-    fetchBalance();
-  }, [open, isAuthenticated]);
+  const resetState = () => {
+    setError("");
+    setInsufficientCredits(false);
+    setPurchasing(false);
+    setSelectedDuration(null);
+  };
 
-  const hasEnoughFor7d = creditBalance >= cost7d && cost7d > 0;
-  const hasEnoughFor30d = creditBalance >= cost30d && cost30d > 0;
-  const hasEnoughCredits = hasEnoughFor7d || hasEnoughFor30d;
+  const handleOpenChange = (v: boolean) => {
+    if (!v) resetState();
+    onOpenChange(v);
+  };
 
-  const handlePurchase = async (duration: "SEVEN_DAYS" | "THIRTY_DAYS") => {
-    if (!modelId) return;
+  const handleConfirmPurchase = async () => {
+    if (!selectedDuration) return;
+
+    if (!isAuthenticated) {
+      onOpenChange(false);
+      router.push("/login");
+      return;
+    }
+
     setPurchasing(true);
     setError("");
+    setInsufficientCredits(false);
 
     try {
+      const balanceRes = await fetch("/api/user/balance");
+      if (balanceRes.ok) {
+        const data = await balanceRes.json();
+        setRealBalance(data.creditBalance);
+
+        let needed = 0;
+        if (isBundle) {
+          needed = selectedDuration === "FOURTEEN_DAYS" ? bundleCost14d : bundleCost30d;
+        } else {
+          needed = selectedDuration === "SEVEN_DAYS" ? cost7d : cost30d;
+        }
+
+        if (data.creditBalance < needed) {
+          setInsufficientCredits(true);
+          setPurchasing(false);
+          return;
+        }
+      }
+
+      const body = isBundle
+        ? { modelId: null, accessDuration: selectedDuration }
+        : { modelId, accessDuration: selectedDuration };
+
       const res = await fetch("/api/purchases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId, accessDuration: duration }),
+        body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const resData = await res.json();
 
       if (!res.ok) {
-        const errorMessage = data.error?.message || data.error || "Purchase failed";
-        setError(errorMessage);
+        setError(resData.error?.message || resData.error || "Purchase failed");
         return;
       }
 
@@ -86,13 +116,12 @@ export function AccessRequiredPopup({
     }
   };
 
-  // State 1: Not authenticated -> sign in / register
   if (!isAuthenticated) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogHeader>
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-            <Lock className="h-7 w-7 text-primary" />
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-purple-600/15 border border-primary/15">
+            <Lock className="h-6 w-6 text-primary" />
           </div>
           <DialogTitle className="text-center text-xl">{t("accessRequired")}</DialogTitle>
           <DialogDescription className="text-center">
@@ -118,94 +147,132 @@ export function AccessRequiredPopup({
     );
   }
 
-  // State 2: Authenticated but not enough credits -> buy credits
-  if (!hasEnoughCredits) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogHeader>
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-            <Coins className="h-7 w-7 text-primary" />
-          </div>
-          <DialogTitle className="text-center text-xl">{t("accessRequired")}</DialogTitle>
-          <DialogDescription className="text-center">
-            {t("insufficientCredits")}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="text-center text-sm text-muted-foreground mb-2">
-          {t("yourBalance", { balance: formatCredits(creditBalance) })}
-        </div>
-        <DialogFooter>
-          <Link href="/purchase" className="w-full" onClick={() => onOpenChange(false)}>
-            <Button className="w-full">
-              <Coins className="h-4 w-4 mr-2" />
-              {t("buyCredits")}
-            </Button>
-          </Link>
-        </DialogFooter>
-      </Dialog>
-    );
-  }
+  const title = isBundle ? t("unlockAllModels") : (modelName ? t("unlockModel") : t("unlockAccess"));
+  const subtitle = isBundle
+    ? t("bundleDescription")
+    : t("chooseAccessPlan");
 
-  // State 3: Authenticated with enough credits -> unlock with 7d/30d picker
+  const option1 = isBundle
+    ? { duration: "FOURTEEN_DAYS", label: `14 ${t("days")}`, cost: bundleCost14d }
+    : { duration: "SEVEN_DAYS", label: `7 ${t("days")}`, cost: cost7d };
+
+  const option2 = isBundle
+    ? { duration: "THIRTY_DAYS", label: `30 ${t("days")}`, cost: bundleCost30d }
+    : { duration: "THIRTY_DAYS", label: `30 ${t("days")}`, cost: cost30d };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogHeader>
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-          <Lock className="h-7 w-7 text-primary" />
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-purple-600/15 border border-primary/15">
+          <Lock className="h-6 w-6 text-primary" />
         </div>
-        <DialogTitle className="text-center text-xl">
-          {t("unlockAccess")}
-        </DialogTitle>
+        <DialogTitle className="text-center text-xl">{title}</DialogTitle>
         <DialogDescription className="text-center">
-          {modelName ? `Unlock "${modelName}"` : t("unlockModel")}
+          {subtitle}
         </DialogDescription>
       </DialogHeader>
 
-      <div className="text-center text-sm text-muted-foreground mb-4">
-        {t("yourBalance", { balance: formatCredits(creditBalance) })}
-      </div>
-
-      <div className="flex flex-col gap-3 px-1">
-        {hasEnoughFor7d && (
-          <Button
-            variant="outline"
-            className="w-full justify-between h-14 px-4"
+      <div className="flex flex-col gap-3 px-1 mt-2">
+        {option1.cost > 0 && (
+          <button
+            type="button"
+            className={cn(
+              "w-full flex items-center justify-between h-14 px-4 rounded-xl border-2 transition-all cursor-pointer press-effect",
+              selectedDuration === option1.duration
+                ? "border-primary bg-primary/10"
+                : "border-white/[0.08] hover:border-primary/30 bg-transparent"
+            )}
             disabled={purchasing}
-            onClick={() => handlePurchase("SEVEN_DAYS")}
+            onClick={() => setSelectedDuration(option1.duration)}
           >
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              <span>7 Days Access</span>
+              {selectedDuration === option1.duration ? (
+                <Check className="h-4 w-4 text-primary" />
+              ) : (
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="font-medium">{option1.label}</span>
             </div>
-            <span className="font-semibold text-primary">{cost7d} Credits</span>
-          </Button>
+            <span className="font-semibold text-primary">{option1.cost} {t("credits")}</span>
+          </button>
         )}
-        {hasEnoughFor30d && (
-          <Button
-            variant="default"
-            className="w-full justify-between h-14 px-4"
+        {option2.cost > 0 && (
+          <button
+            type="button"
+            className={cn(
+              "w-full flex items-center justify-between h-14 px-4 rounded-xl border-2 transition-all cursor-pointer press-effect",
+              selectedDuration === option2.duration
+                ? "border-primary bg-primary/10"
+                : "border-white/[0.08] hover:border-primary/30 bg-transparent"
+            )}
             disabled={purchasing}
-            onClick={() => handlePurchase("THIRTY_DAYS")}
+            onClick={() => setSelectedDuration(option2.duration)}
           >
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              <span>30 Days Access</span>
+              {selectedDuration === option2.duration ? (
+                <Check className="h-4 w-4 text-primary" />
+              ) : (
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="font-medium">{option2.label}</span>
             </div>
-            <span className="font-semibold">{cost30d} Credits</span>
-          </Button>
+            <span className="font-semibold text-primary">{option2.cost} {t("credits")}</span>
+          </button>
         )}
       </div>
 
-      {error && <p className="text-sm text-destructive text-center mt-2">{error}</p>}
+      <div className="min-h-[48px] mt-3">
+        {purchasing && (
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t("processing")}
+          </div>
+        )}
+
+        {insufficientCredits && (
+          <div className="rounded-xl border border-yellow-500/15 bg-yellow-500/5 p-4 text-center">
+            <p className="text-sm text-yellow-200 mb-2">
+              {t("insufficientCredits")}
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t("yourBalance", { balance: formatCredits(realBalance) })}
+            </p>
+            <Link href="/purchase" onClick={() => onOpenChange(false)}>
+              <Button size="sm">
+                <Coins className="h-4 w-4 mr-2" />
+                {t("buyCredits")}
+              </Button>
+            </Link>
+          </div>
+        )}
+
+        {error && <p className="text-sm text-destructive text-center">{error}</p>}
+      </div>
 
       <DialogFooter className="mt-2">
-        <Button
-          variant="ghost"
-          className="w-full text-muted-foreground"
-          onClick={() => onOpenChange(false)}
-        >
-          Cancel
-        </Button>
+        <div className="flex w-full flex-col gap-2">
+          <Button
+            className="w-full h-12"
+            disabled={!selectedDuration || purchasing}
+            onClick={handleConfirmPurchase}
+          >
+            {purchasing ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Coins className="h-4 w-4 mr-2" />
+            )}
+            {selectedDuration
+              ? `${t("confirm")} — ${selectedDuration === option1.duration ? option1.cost : option2.cost} ${t("credits")}`
+              : t("chooseAccessPlan")}
+          </Button>
+          <Button
+            variant="ghost"
+            className="w-full text-muted-foreground"
+            onClick={() => handleOpenChange(false)}
+          >
+            {t("cancel")}
+          </Button>
+        </div>
       </DialogFooter>
     </Dialog>
   );

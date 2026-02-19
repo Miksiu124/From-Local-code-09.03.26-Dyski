@@ -1,6 +1,7 @@
 package purchases
 
 import (
+	"context"
 	"strconv"
 
 	"content-platform-backend/internal/common"
@@ -9,6 +10,15 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+)
+
+// Fallback pricing (used only if settings table has no value)
+const (
+	defaultModelCost7d  = 200
+	defaultModelCost30d = 350
+
+	defaultBundleCost14d = 500
+	defaultBundleCost30d = 900
 )
 
 type Handler struct {
@@ -20,12 +30,60 @@ func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
 	return &Handler{db: db, cfg: cfg}
 }
 
+type pricingConfig struct {
+	modelCost7d  int
+	modelCost30d int
+	bundleCost14d int
+	bundleCost30d int
+}
+
+func (h *Handler) loadPricing(ctx context.Context) pricingConfig {
+	p := pricingConfig{
+		modelCost7d:   defaultModelCost7d,
+		modelCost30d:  defaultModelCost30d,
+		bundleCost14d: defaultBundleCost14d,
+		bundleCost30d: defaultBundleCost30d,
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT key, value FROM settings
+		WHERE key IN ('model_credit_cost_7d','model_credit_cost_30d','bundle_credit_cost_14d','bundle_credit_cost_30d')
+	`)
+	if err != nil {
+		return p
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var key string
+		var value interface{}
+		if err := rows.Scan(&key, &value); err != nil {
+			continue
+		}
+		v := jsonToInt(value)
+		if v <= 0 {
+			continue
+		}
+		switch key {
+		case "model_credit_cost_7d":
+			p.modelCost7d = v
+		case "model_credit_cost_30d":
+			p.modelCost30d = v
+		case "bundle_credit_cost_14d":
+			p.bundleCost14d = v
+		case "bundle_credit_cost_30d":
+			p.bundleCost30d = v
+		}
+	}
+
+	return p
+}
+
 type PurchaseRequest struct {
 	ModelID        *string `json:"modelId"`
 	AccessDuration string  `json:"accessDuration,omitempty"`
 }
 
-// Create handles spending credits on model/bundle access
 func (h *Handler) Create(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
@@ -40,57 +98,45 @@ func (h *Handler) Create(c echo.Context) error {
 
 	isBundle := req.ModelID == nil || *req.ModelID == ""
 
-	if !isBundle && req.AccessDuration == "" {
+	if req.AccessDuration == "" {
 		return common.BadRequest(c, "Access duration is required")
 	}
-	if !isBundle && req.AccessDuration != "SEVEN_DAYS" && req.AccessDuration != "THIRTY_DAYS" {
-		return common.BadRequest(c, "Invalid access duration")
-	}
 
-	// Get credit cost from settings
+	pricing := h.loadPricing(ctx)
+
 	var creditCost int
-	if isBundle {
-		var val interface{}
-		err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'bundle_credit_cost'`).Scan(&val)
-		if err != nil {
-			return common.BadRequest(c, "Pricing not configured")
-		}
-		creditCost = jsonToInt(val)
-	} else {
-		costKey := "model_credit_cost_7d"
-		if req.AccessDuration == "THIRTY_DAYS" {
-			costKey = "model_credit_cost_30d"
-		}
-		var val interface{}
-		err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, costKey).Scan(&val)
-		if err != nil {
-			return common.BadRequest(c, "Pricing not configured")
-		}
-		creditCost = jsonToInt(val)
-	}
-
-	if creditCost <= 0 {
-		return common.BadRequest(c, "Pricing not configured")
-	}
-
-	// Calculate expiration
 	var expiresAtExpr string
+
 	if isBundle {
-		expiresAtExpr = "NULL"
-	} else if req.AccessDuration == "SEVEN_DAYS" {
-		expiresAtExpr = "now() + interval '7 days'"
+		switch req.AccessDuration {
+		case "FOURTEEN_DAYS":
+			creditCost = pricing.bundleCost14d
+			expiresAtExpr = "now() + interval '14 days'"
+		case "THIRTY_DAYS":
+			creditCost = pricing.bundleCost30d
+			expiresAtExpr = "now() + interval '30 days'"
+		default:
+			return common.BadRequest(c, "Invalid access duration for bundle. Use FOURTEEN_DAYS or THIRTY_DAYS.")
+		}
 	} else {
-		expiresAtExpr = "now() + interval '30 days'"
+		switch req.AccessDuration {
+		case "SEVEN_DAYS":
+			creditCost = pricing.modelCost7d
+			expiresAtExpr = "now() + interval '7 days'"
+		case "THIRTY_DAYS":
+			creditCost = pricing.modelCost30d
+			expiresAtExpr = "now() + interval '30 days'"
+		default:
+			return common.BadRequest(c, "Invalid access duration. Use SEVEN_DAYS or THIRTY_DAYS.")
+		}
 	}
 
-	// Transaction with row-level lock to prevent double-spend
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
 		return common.InternalError(c)
 	}
 	defer tx.Rollback(ctx)
 
-	// Lock the user row
 	var currentBalance int
 	err = tx.QueryRow(ctx, `
 		SELECT credit_balance FROM users WHERE id = $1 FOR UPDATE
@@ -103,9 +149,21 @@ func (h *Handler) Create(c echo.Context) error {
 		return common.BadRequest(c, "Insufficient credits")
 	}
 
-	// Check existing access
-	if !isBundle && req.ModelID != nil {
-		var existingAccess bool
+	// Check existing active access
+	if isBundle {
+		var exists bool
+		err = tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM user_access
+				WHERE user_id = $1 AND model_id IS NULL
+				AND (expires_at IS NULL OR expires_at > now())
+			)
+		`, userID).Scan(&exists)
+		if err == nil && exists {
+			return common.BadRequest(c, "You already have active bundle access")
+		}
+	} else {
+		var exists bool
 		err = tx.QueryRow(ctx, `
 			SELECT EXISTS(
 				SELECT 1 FROM user_access
@@ -113,20 +171,8 @@ func (h *Handler) Create(c echo.Context) error {
 				AND (model_id = $2 OR model_id IS NULL)
 				AND (expires_at IS NULL OR expires_at > now())
 			)
-		`, userID, *req.ModelID).Scan(&existingAccess)
-		if err == nil && existingAccess {
-			return common.BadRequest(c, "You already have active access to this content")
-		}
-	} else if isBundle {
-		var existingBundle bool
-		err = tx.QueryRow(ctx, `
-			SELECT EXISTS(
-				SELECT 1 FROM user_access
-				WHERE user_id = $1 AND model_id IS NULL
-				AND (expires_at IS NULL OR expires_at > now())
-			)
-		`, userID).Scan(&existingBundle)
-		if err == nil && existingBundle {
+		`, userID, *req.ModelID).Scan(&exists)
+		if err == nil && exists {
 			return common.BadRequest(c, "You already have active access to this content")
 		}
 	}
@@ -139,7 +185,6 @@ func (h *Handler) Create(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
-	// Create purchase
 	purchaseType := "INDIVIDUAL_MODEL"
 	if isBundle {
 		purchaseType = "BUNDLE"
@@ -150,29 +195,20 @@ func (h *Handler) Create(c echo.Context) error {
 		modelIDForInsert = *req.ModelID
 	}
 
-	var accessDurationForInsert interface{}
-	if !isBundle {
-		accessDurationForInsert = req.AccessDuration
-	}
-
 	var purchaseID string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO purchases (user_id, model_id, purchase_type, access_duration, credits_spent)
 		VALUES ($1, $2, $3::purchase_type, $4::access_duration, $5)
 		RETURNING id
-	`, userID, modelIDForInsert, purchaseType, accessDurationForInsert, creditCost).Scan(&purchaseID)
+	`, userID, modelIDForInsert, purchaseType, req.AccessDuration, creditCost).Scan(&purchaseID)
 	if err != nil {
 		return common.InternalError(c)
 	}
 
-	// Create credit transaction
-	durationLabel := "7 days"
-	if req.AccessDuration == "THIRTY_DAYS" {
-		durationLabel = "30 days"
-	}
-	description := "Model purchase (" + durationLabel + ")"
+	durationLabel := durationToLabel(req.AccessDuration)
+	description := "Model access (" + durationLabel + ")"
 	if isBundle {
-		description = "Bundle purchase (all models, lifetime)"
+		description = "Bundle access — all models (" + durationLabel + ")"
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -183,7 +219,6 @@ func (h *Handler) Create(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
-	// Grant access
 	_, err = tx.Exec(ctx, `
 		INSERT INTO user_access (user_id, model_id, purchase_id, expires_at)
 		VALUES ($1, $2, $3, `+expiresAtExpr+`)
@@ -192,21 +227,17 @@ func (h *Handler) Create(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
-	// Create notification
-	title := "Model unlocked!"
-	message := "You now have " + durationLabel + " access to this model."
+	title := "Content unlocked!"
+	message := "You now have " + durationLabel + " access."
 	if isBundle {
-		title = "Bundle purchased!"
-		message = "You now have lifetime access to all models and future content."
+		title = "Bundle unlocked!"
+		message = "You now have " + durationLabel + " access to all models."
 	}
 
-	_, err = tx.Exec(ctx, `
+	_, _ = tx.Exec(ctx, `
 		INSERT INTO notifications (user_id, type, title, message, metadata)
 		VALUES ($1, 'PURCHASE_COMPLETE', $2, $3, $4)
 	`, userID, title, message, map[string]interface{}{"purchaseId": purchaseID})
-	if err != nil {
-		// Non-critical, don't fail the purchase
-	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return common.InternalError(c)
@@ -216,6 +247,19 @@ func (h *Handler) Create(c echo.Context) error {
 		"success":    true,
 		"purchaseId": purchaseID,
 	})
+}
+
+func durationToLabel(d string) string {
+	switch d {
+	case "SEVEN_DAYS":
+		return "7 days"
+	case "FOURTEEN_DAYS":
+		return "14 days"
+	case "THIRTY_DAYS":
+		return "30 days"
+	default:
+		return d
+	}
 }
 
 func jsonToInt(val interface{}) int {
@@ -229,12 +273,14 @@ func jsonToInt(val interface{}) int {
 	case string:
 		i, _ := strconv.Atoi(v)
 		return i
+	case []byte:
+		i, _ := strconv.Atoi(string(v))
+		return i
 	default:
 		return 0
 	}
 }
 
-// List returns the user's purchase history
 func (h *Handler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
@@ -243,12 +289,18 @@ func (h *Handler) List(c echo.Context) error {
 	}
 
 	rows, err := h.db.Query(ctx, `
-		SELECT p.id, p.purchase_type, p.credits_spent, p.created_at::text, m.name
+		SELECT p.id, p.purchase_type, p.credits_spent, p.created_at::text,
+		       m.name,
+		       ua.expires_at::text,
+		       CASE WHEN ua.expires_at IS NULL THEN true
+		            WHEN ua.expires_at > now() THEN true
+		            ELSE false END AS is_active
 		FROM purchases p
 		LEFT JOIN models m ON m.id = p.model_id
+		LEFT JOIN user_access ua ON ua.purchase_id = p.id
 		WHERE p.user_id = $1
 		ORDER BY p.created_at DESC
-		LIMIT 20
+		LIMIT 50
 	`, userID)
 	if err != nil {
 		return common.InternalError(c)
@@ -259,17 +311,25 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var id, pType, createdAt string
 		var credits int
-		var modelName *string
-		if err := rows.Scan(&id, &pType, &credits, &createdAt, &modelName); err != nil {
+		var modelName, expiresAt *string
+		var isActive bool
+		if err := rows.Scan(&id, &pType, &credits, &createdAt, &modelName, &expiresAt, &isActive); err != nil {
 			continue
 		}
-		purchases = append(purchases, map[string]interface{}{
+		p := map[string]interface{}{
 			"id":           id,
 			"purchaseType": pType,
 			"creditsSpent": credits,
 			"createdAt":    createdAt,
-			"model":        map[string]interface{}{"name": modelName},
-		})
+			"isActive":     isActive,
+		}
+		if modelName != nil {
+			p["modelName"] = *modelName
+		}
+		if expiresAt != nil {
+			p["expiresAt"] = *expiresAt
+		}
+		purchases = append(purchases, p)
 	}
 	if purchases == nil {
 		purchases = []map[string]interface{}{}

@@ -28,6 +28,7 @@ interface UserItem {
   name: string | null;
   role: string;
   creditBalance: number;
+  isBanned: boolean;
   createdAt: string;
   lastLoginAt: string | null;
   _count: {
@@ -37,12 +38,19 @@ interface UserItem {
   };
 }
 
+interface ModelOption {
+  id: string;
+  name: string;
+  folderName: string;
+}
+
 interface UserDetail {
   id: string;
   email: string;
   name: string | null;
   role: string;
   creditBalance: number;
+  isBanned: boolean;
   createdAt: string;
   lastLoginAt: string | null;
   purchases: {
@@ -87,8 +95,12 @@ export default function AdminUsersPage() {
   const [grantOpen, setGrantOpen] = useState(false);
   const [grantModelId, setGrantModelId] = useState<string>("");
   const [grantDays, setGrantDays] = useState<string>("30");
+  const [creditsOpen, setCreditsOpen] = useState(false);
+  const [creditsAmount, setCreditsAmount] = useState<number>(0);
+  const [creditsReason, setCreditsReason] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("user");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [models, setModels] = useState<ModelOption[]>([]);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -103,11 +115,20 @@ export default function AdminUsersPage() {
       const res = await fetch(`/api/admin/users?${params}`);
       const data = await res.json();
 
-      setUsers(data.users);
-      setTotal(data.total);
-      setTotalPages(data.totalPages);
-    } catch {
-      // Error handled silently
+      // Backend returns array directly or object? 
+      // Based on handler code: return common.Success(c, users) -> returns users array.
+      if (Array.isArray(data)) {
+        setUsers(data);
+        setTotal(data.length);
+        setTotalPages(1);
+      } else {
+        setUsers(data.users || []);
+        setTotal(data.total || 0);
+        setTotalPages(data.totalPages || 1);
+      }
+    } catch (error) {
+      console.error("Failed to fetch users:", error);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -116,6 +137,16 @@ export default function AdminUsersPage() {
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  useEffect(() => {
+    fetch("/api/admin/models")
+      .then((r) => r.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data.data || data.models || [];
+        setModels(list);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleViewUser = async (userId: string) => {
     try {
@@ -143,7 +174,9 @@ export default function AdminUsersPage() {
 
       if (res.ok) {
         setGrantOpen(false);
-        handleViewUser(selectedUser.id); // Refresh
+        setGrantModelId("");
+        setGrantDays("30");
+        handleViewUser(selectedUser.id);
       }
     } catch {
       // Error handled silently
@@ -165,6 +198,37 @@ export default function AdminUsersPage() {
     } catch {
       // Error handled silently
     }
+  };
+
+  const handleUpdateCredits = async () => {
+    if (!selectedUser || creditsAmount === 0) return;
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser.id}/credits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: creditsAmount, reason: creditsReason }),
+      });
+      if (res.ok) {
+        setCreditsOpen(false);
+        setCreditsAmount(0);
+        setCreditsReason("");
+        handleViewUser(selectedUser.id);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleToggleBan = async () => {
+    if (!selectedUser) return;
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser.id}/ban`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isBanned: !selectedUser.isBanned }),
+      });
+      if (res.ok) {
+        handleViewUser(selectedUser.id);
+      }
+    } catch (e) { console.error(e); }
   };
 
   const handleSearch = (value: string) => {
@@ -351,12 +415,29 @@ export default function AdminUsersPage() {
                 <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
                   <Users className="h-6 w-6 text-primary" />
                 </div>
-                <div>
-                  <p className="font-semibold">{selectedUser.name || "No name"}</p>
-                  <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Coins className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-sm">{formatCredits(selectedUser.creditBalance)} credits</span>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-semibold">{selectedUser.name || "No name"}</p>
+                      <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
+                    </div>
+                    <Badge variant={selectedUser.isBanned ? "destructive" : "success"}>
+                      {selectedUser.isBanned ? "Banned" : "Active"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="flex items-center gap-1">
+                      <Coins className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-sm">{formatCredits(selectedUser.creditBalance)} credits</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCreditsOpen(true)}>
+                        Adjust Credits
+                      </Button>
+                      <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleToggleBan}>
+                        {selectedUser.isBanned ? "Unban User" : "Ban User"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -381,9 +462,8 @@ export default function AdminUsersPage() {
                       return (
                         <div
                           key={access.id}
-                          className={`flex items-center justify-between p-3 rounded-lg border ${
-                            isExpired ? "border-border opacity-50" : "border-primary/20 bg-primary/5"
-                          }`}
+                          className={`flex items-center justify-between p-3 rounded-lg border ${isExpired ? "border-border opacity-50" : "border-primary/20 bg-primary/5"
+                            }`}
                         >
                           <div>
                             <p className="text-sm font-medium">
@@ -392,7 +472,7 @@ export default function AdminUsersPage() {
                             <p className="text-xs text-muted-foreground">
                               {access.expiresAt
                                 ? `Expires: ${new Date(access.expiresAt).toLocaleDateString()}`
-                                : "Lifetime"}
+                                : "No expiration"}
                               {isExpired && " (Expired)"}
                             </p>
                           </div>
@@ -416,7 +496,7 @@ export default function AdminUsersPage() {
               {/* Recent Purchases */}
               <div>
                 <h3 className="font-semibold text-sm mb-2">Recent Purchases</h3>
-                {selectedUser.purchases.length === 0 ? (
+                {!selectedUser.purchases || selectedUser.purchases.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No purchases</p>
                 ) : (
                   <div className="space-y-2">
@@ -439,14 +519,14 @@ export default function AdminUsersPage() {
               {/* Recent Credit Purchases */}
               <div>
                 <h3 className="font-semibold text-sm mb-2">Credit Purchases</h3>
-                {selectedUser.creditPurchases.length === 0 ? (
+                {!selectedUser.creditPurchases || selectedUser.creditPurchases.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No credit purchases</p>
                 ) : (
                   <div className="space-y-2">
                     {selectedUser.creditPurchases.slice(0, 5).map((cp) => (
                       <div key={cp.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50 text-sm">
                         <div>
-                          <span>{cp.creditPackage.name}</span>
+                          <span>{cp.creditPackage?.name || "Package"}</span>
                           <span className="text-muted-foreground ml-2">({cp.paymentMethod})</span>
                         </div>
                         <Badge variant={cp.status === "APPROVED" ? "success" : cp.status === "PENDING" ? "default" : "destructive"}>
@@ -462,6 +542,25 @@ export default function AdminUsersPage() {
         )}
       </Dialog>
 
+      {/* Credits Dialog */}
+      <Dialog open={creditsOpen} onOpenChange={setCreditsOpen}>
+        <DialogHeader><DialogTitle>Adjust Credits</DialogTitle></DialogHeader>
+        <div className="space-y-4 my-4">
+          <div>
+            <label className="text-sm font-medium">Amount (positive to add, negative to remove)</label>
+            <Input type="number" value={creditsAmount} onChange={(e) => setCreditsAmount(Number(e.target.value))} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Reason</label>
+            <Input value={creditsReason} onChange={(e) => setCreditsReason(e.target.value)} placeholder="e.g. Bonus via Admin" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCreditsOpen(false)}>Cancel</Button>
+          <Button onClick={handleUpdateCredits}>Save</Button>
+        </DialogFooter>
+      </Dialog>
+
       {/* Grant Access Dialog */}
       <Dialog open={grantOpen} onOpenChange={setGrantOpen}>
         <DialogHeader>
@@ -469,18 +568,26 @@ export default function AdminUsersPage() {
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1 block">Model ID (empty = bundle/all models)</label>
-            <Input
-              placeholder="Leave empty for bundle access"
+            <label className="text-sm font-medium mb-1 block">Model (empty = all models)</label>
+            <select
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
               value={grantModelId}
               onChange={(e) => setGrantModelId(e.target.value)}
-            />
+            >
+              <option value="">All models (bundle)</option>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Duration (days, empty = lifetime)</label>
+            <label className="text-sm font-medium mb-1 block">Duration (days)</label>
             <Input
               placeholder="30"
               type="number"
+              min="1"
               value={grantDays}
               onChange={(e) => setGrantDays(e.target.value)}
             />

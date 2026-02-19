@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -112,7 +113,14 @@ func (am *AuthMiddleware) extractAndValidateToken(c echo.Context) (*Claims, erro
 		return []byte(am.cfg.JWTSecret), nil
 	})
 
-	if err != nil || !token.Valid {
+	if err != nil {
+		if !am.cfg.IsProduction() {
+			log.Printf("[AuthMW] JWT parse error: %v", err)
+		}
+		return nil, fmt.Errorf("invalid token: %v", err)
+	}
+
+	if !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
 

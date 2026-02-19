@@ -1,6 +1,9 @@
 import { getRequestConfig } from "next-intl/server";
 import { cookies, headers } from "next/headers";
 
+import en from "../messages/en.json";
+import pl from "../messages/pl.json";
+
 export default getRequestConfig(async () => {
   const cookieStore = await cookies();
   const headerStore = await headers();
@@ -19,9 +22,14 @@ export default getRequestConfig(async () => {
     locale = "en";
   }
 
+  const messages = {
+    en,
+    pl,
+  };
+
   return {
     locale,
     timeZone: "UTC",
-    messages: (await import(`@/messages/${locale}.json`)).default,
+    messages: messages[locale as keyof typeof messages] || messages["en"],
   };
 });

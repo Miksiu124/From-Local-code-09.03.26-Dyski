@@ -1,0 +1,3 @@
+-- PostgreSQL does not support removing enum values directly.
+-- To roll back, you would need to recreate the enum type without FOURTEEN_DAYS.
+-- This is a no-op down migration since FOURTEEN_DAYS won't be used after rollback.

@@ -7,7 +7,18 @@ export async function fetchApi<T>(path: string, options: RequestInit = {}): Prom
     const headersList = await headers();
     const cookie = headersList.get("cookie") || "";
 
-    const url = `${BASE_URL}${path}`;
+    const isDocker = process.env.HOSTNAME === "0.0.0.0" || process.env.API_HOST === "api";
+    const defaultApiUrl = isDocker ? "http://api:8080/api" : "http://localhost:8080/api";
+    const envApiUrl = process.env.API_URL;
+
+    let baseUrl = envApiUrl || defaultApiUrl;
+
+    // Fix host if in Docker but config says localhost
+    if (isDocker && baseUrl.includes("localhost:8080")) {
+        baseUrl = baseUrl.replace("localhost:8080", "api:8080");
+    }
+
+    const url = `${baseUrl}${path}`;
 
     try {
         const res = await fetch(url, {

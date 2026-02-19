@@ -12,11 +12,15 @@ datasource db {
 enum Role {
   USER
   ADMIN
+
+  @@map("user_role")
 }
 
 enum PurchaseType {
   INDIVIDUAL_MODEL
   BUNDLE
+
+  @@map("purchase_type")
 }
 
 enum CreditPurchaseStatus {
@@ -24,6 +28,8 @@ enum CreditPurchaseStatus {
   APPROVED
   REJECTED
   EXPIRED
+
+  @@map("credit_purchase_status")
 }
 
 enum PaymentMethod {
@@ -31,6 +37,8 @@ enum PaymentMethod {
   CRYPTO
   PAYPAL
   REVOLUT
+
+  @@map("payment_method")
 }
 
 enum CryptoCurrency {
@@ -38,12 +46,17 @@ enum CryptoCurrency {
   ETH
   USDT
   USDC
+
+  @@map("crypto_currency")
 }
 
 enum CreditTransactionType {
   PURCHASE
   SPEND
   REFUND
+  ADJUSTMENT
+
+  @@map("credit_transaction_type")
 }
 
 enum NotificationType {
@@ -52,16 +65,23 @@ enum NotificationType {
   PAYMENT_EXPIRED
   NEW_MODEL_AVAILABLE
   PURCHASE_COMPLETE
+
+  @@map("notification_type")
 }
 
 enum ContentType {
   VIDEO
   PHOTO
+
+  @@map("content_type")
 }
 
 enum AccessDuration {
   SEVEN_DAYS
+  FOURTEEN_DAYS
   THIRTY_DAYS
+
+  @@map("access_duration")
 }
 
 // ─── Users ──────────────────────────────────────────────────────────────────
@@ -71,13 +91,14 @@ model User {
   email           String   @unique
   password        String?  // null for OAuth-only users
   name            String?
-  discordId       String?  @unique
+  discordId       String?  @unique @map("discord_id")
   role            Role     @default(USER)
-  avatarUrl       String?
-  creditBalance   Int      @default(0)
-  lastLoginAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  avatarUrl       String?  @map("avatar_url")
+  creditBalance   Int      @default(0) @map("credit_balance")
+  isBanned        Boolean  @default(false) @map("is_banned")
+  lastLoginAt     DateTime? @map("last_login_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   // Relations
   creditPurchases     CreditPurchase[]    @relation("UserCreditPurchases")
@@ -92,16 +113,17 @@ model User {
 
   @@index([email])
   @@index([discordId])
+  @@map("users")
 }
 
 // ─── NextAuth required tables ───────────────────────────────────────────────
 
 model Account {
   id                String  @id @default(cuid())
-  userId            String
+  userId            String  @map("user_id")
   type              String
   provider          String
-  providerAccountId String
+  providerAccountId String  @map("provider_account_id")
   refresh_token     String? @db.Text
   access_token      String? @db.Text
   expires_at        Int?
@@ -113,20 +135,22 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@map("accounts")
 }
 
 model Session {
   id           String   @id @default(cuid())
-  userId       String
-  sessionToken String   @unique
+  userId       String   @map("user_id")
+  sessionToken String   @unique @map("session_token")
   expires      DateTime
-  deviceInfo   Json?
-  ipAddress    String?
-  userAgent    String?
+  deviceInfo   Json?    @map("device_info")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@map("sessions")
 }
 
 model VerificationToken {
@@ -135,6 +159,7 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@map("verification_tokens")
 }
 
 // ─── Content Models ─────────────────────────────────────────────────────────
@@ -143,26 +168,28 @@ model Country {
   id        String   @id @default(cuid())
   name      String
   code      String   @unique // ISO 3166-1 alpha-2
-  flagEmoji String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  flagEmoji String?  @map("flag_emoji")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   models Model[]
 
   @@index([code])
+  @@map("countries")
 }
 
 model Model {
   id             String    @id @default(cuid())
   name           String    // Display name (what users see)
-  folderName     String    @unique // R2 folder name
+  folderName     String    @unique @map("folder_name") // R2 folder name
   description    String?
-  avatarPath     String?   // R2 relative path to avatar (under files/avatars/)
-  countryId      String?
-  isActive       Boolean   @default(true)
-  lastSyncedAt   DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  avatarPath     String?   @map("avatar_path") // R2 relative path to avatar (under files/avatars/)
+  countryId      String?   @map("country_id")
+  isActive       Boolean   @default(true) @map("is_active")
+  isFeatured     Boolean   @default(false) @map("is_featured")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   // Relations
   country       Country?      @relation(fields: [countryId], references: [id])
@@ -173,21 +200,22 @@ model Model {
   @@index([folderName])
   @@index([countryId])
   @@index([isActive])
+  @@map("models")
 }
 
 model ContentItem {
   id              String      @id @default(cuid())
-  modelId         String
-  uniqueId        String      @unique // e.g. "0h9pjtspoj4o2e4ny06bf"
-  contentType     ContentType
-  thumbnailPath   String?     // R2 relative path
-  sourceVideoPath String?     // R2 relative path
-  hlsMasterPath   String?     // R2 relative path
-  hlsFolderPath   String?     // R2 relative path
+  modelId         String      @map("model_id")
+  uniqueId        String      @unique @map("unique_id") // e.g. "0h9pjtspoj4o2e4ny06bf"
+  contentType     ContentType @map("content_type")
+  thumbnailPath   String?     @map("thumbnail_path") // R2 relative path
+  sourceVideoPath String?     @map("source_video_path") // R2 relative path
+  hlsMasterPath   String?     @map("hls_master_path") // R2 relative path
+  hlsFolderPath   String?     @map("hls_folder_path") // R2 relative path
   duration        Int?        // Video duration in seconds (null for photos)
-  isActive        Boolean     @default(true)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
   model     Model      @relation(fields: [modelId], references: [id], onDelete: Cascade)
   favorites Favorite[]
@@ -196,6 +224,7 @@ model ContentItem {
   @@index([uniqueId])
   @@index([contentType])
   @@index([isActive])
+  @@map("content_items")
 }
 
 // ─── Credit System ──────────────────────────────────────────────────────────
@@ -206,39 +235,40 @@ model CreditPackage {
   credits   Int      // number of credits
   price     Float    // price in USD (or base currency)
   tier      Int      @default(0) // for sorting (lower = first)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   creditPurchases CreditPurchase[]
 
   @@index([tier])
   @@index([isActive])
+  @@map("credit_packages")
 }
 
 model CreditPurchase {
   id              String               @id @default(cuid())
-  userId          String
-  creditPackageId String
+  userId          String               @map("user_id")
+  creditPackageId String               @map("credit_package_id")
   credits         Int
   amount          Float
-  paymentMethod   PaymentMethod
-  transactionCode String               @unique // unique code for this purchase
+  paymentMethod   PaymentMethod        @map("payment_method")
+  transactionCode String               @unique @map("transaction_code") // unique code for this purchase
   // BLIK
-  blikCode        String?              // e.g. "462-041"
+  blikCode        String?              @map("blik_code") // e.g. "462-041"
   // Crypto
-  cryptoCurrency  CryptoCurrency?
-  txId            String?              // user-provided transaction ID
+  cryptoCurrency  CryptoCurrency?      @map("crypto_currency")
+  txId            String?              @map("tx_id") // user-provided transaction ID
   // General
-  expirationTime  DateTime
+  expirationTime  DateTime             @map("expiration_time")
   status          CreditPurchaseStatus @default(PENDING)
-  paymentProofUrl String?
-  adminNotes      String?              @db.Text
-  adminVerifiedAt DateTime?
-  adminId         String?
-  retryCount      Int                  @default(0)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  paymentProofUrl String?              @map("payment_proof_url")
+  adminNotes      String?              @db.Text @map("admin_notes")
+  adminVerifiedAt DateTime?            @map("admin_verified_at")
+  adminId         String?              @map("admin_id")
+  retryCount      Int                  @default(0) @map("retry_count")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
 
   // Relations
   user            User          @relation("UserCreditPurchases", fields: [userId], references: [id], onDelete: Cascade)
@@ -252,19 +282,20 @@ model CreditPurchase {
   @@index([transactionCode])
   @@index([status])
   @@index([expirationTime])
+  @@map("credit_purchases")
 }
 
 // ─── Purchases (spending credits on models/bundle) ──────────────────────────
 
 model Purchase {
   id             String          @id @default(cuid())
-  userId         String
-  modelId        String?         // null = bundle purchase
-  purchaseType   PurchaseType
-  accessDuration AccessDuration? // null for bundle (lifetime)
-  creditsSpent   Int
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  userId         String          @map("user_id")
+  modelId        String?         @map("model_id") // null = bundle purchase
+  purchaseType   PurchaseType    @map("purchase_type")
+  accessDuration AccessDuration? @map("access_duration") // null for bundle (lifetime)
+  creditsSpent   Int             @map("credits_spent")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
   // Relations
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -276,17 +307,18 @@ model Purchase {
   @@index([userId, createdAt])
   @@index([modelId])
   @@index([createdAt])
+  @@map("purchases")
 }
 
 model CreditTransaction {
   id               String                @id @default(cuid())
-  userId           String
+  userId           String                @map("user_id")
   type             CreditTransactionType
   amount           Int                   // positive = add, negative = deduct
-  creditPurchaseId String?               @unique
-  purchaseId       String?               @unique
+  creditPurchaseId String?               @unique @map("credit_purchase_id")
+  purchaseId       String?               @unique @map("purchase_id")
   description      String
-  createdAt        DateTime              @default(now())
+  createdAt        DateTime              @default(now()) @map("created_at")
 
   // Relations
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -296,17 +328,18 @@ model CreditTransaction {
   @@index([userId])
   @@index([type])
   @@index([createdAt])
+  @@map("credit_transactions")
 }
 
 // ─── Access Control ─────────────────────────────────────────────────────────
 
 model UserAccess {
   id         String    @id @default(cuid())
-  userId     String
-  modelId    String?   // null = bundle (all models)
-  purchaseId String
-  expiresAt  DateTime? // null = lifetime
-  createdAt  DateTime  @default(now())
+  userId     String    @map("user_id")
+  modelId    String?   @map("model_id") // null = bundle (all models)
+  purchaseId String    @map("purchase_id")
+  expiresAt  DateTime? @map("expires_at") // null = lifetime
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   // Relations
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -319,34 +352,36 @@ model UserAccess {
   @@index([modelId])
   @@index([purchaseId])
   @@index([expiresAt])
+  @@map("user_access")
 }
 
 // ─── Notifications ──────────────────────────────────────────────────────────
 
 model Notification {
   id        String           @id @default(cuid())
-  userId    String
+  userId    String           @map("user_id")
   type      NotificationType
   title     String
   message   String
-  isRead    Boolean          @default(false)
+  isRead    Boolean          @default(false) @map("is_read")
   metadata  Json?
-  createdAt DateTime         @default(now())
+  createdAt DateTime         @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+  @@map("notifications")
 }
 
 // ─── Favorites ───────────────────────────────────────────────────────────────
 
 model Favorite {
   id            String      @id @default(cuid())
-  userId        String
-  contentItemId String
-  createdAt     DateTime    @default(now())
+  userId        String      @map("user_id")
+  contentItemId String      @map("content_item_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
@@ -354,6 +389,7 @@ model Favorite {
   @@unique([userId, contentItemId])
   @@index([userId])
   @@index([contentItemId])
+  @@map("favorites")
 }
 
 // ─── Settings (key-value store) ─────────────────────────────────────────────
@@ -363,7 +399,8 @@ model Setting {
   key         String   @unique
   value       Json
   description String?
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@index([key])
+  @@map("settings")
 }

@@ -1,18 +1,16 @@
 /**
- * Admin access is controlled by the database role or the ADMIN_EMAILS env var.
- * Emails listed in ADMIN_EMAILS (comma-separated) always have admin privileges.
+ * Admin access is determined by the Go backend.
+ * The /api/auth/me endpoint returns role: "ADMIN" for admin users.
+ * This helper is retained only for edge cases where a quick client-side
+ * check is needed before the server response arrives.
  */
-
-const ADMIN_EMAILS: string[] = (process.env.ADMIN_EMAILS || "")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
 
 export function isAdmin(
   email: string | null | undefined,
   role?: string | null
 ): boolean {
-  if (role && role.toUpperCase() === "ADMIN") return true;
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase());
+  if (role && role.toUpperCase() === "ADMIN") {
+    return true;
+  }
+  return false;
 }

@@ -78,7 +78,7 @@ export async function canAccessModel(userId: string, modelId: string): Promise<b
         },
         {
           OR: [
-            { expiresAt: null }, // Lifetime access (bundle)
+            { expiresAt: null }, // Legacy records without expiration
             { expiresAt: { gt: new Date() } }, // Not expired
           ],
         },
@@ -170,12 +170,16 @@ export async function getModelCreditCosts(): Promise<{ cost7d: number; cost30d: 
 }
 
 /**
- * Get the credit cost for bundle from settings.
+ * Get the credit costs for bundle from settings (14d and 30d).
  */
-export async function getBundleCreditCost(): Promise<number> {
-  const setting = await db.setting.findUnique({
-    where: { key: "bundle_credit_cost" },
-  });
+export async function getBundleCreditCosts(): Promise<{ cost14d: number; cost30d: number }> {
+  const [s14d, s30d] = await Promise.all([
+    db.setting.findUnique({ where: { key: "bundle_credit_cost_14d" } }),
+    db.setting.findUnique({ where: { key: "bundle_credit_cost_30d" } }),
+  ]);
 
-  return setting ? (setting.value as number) : 0;
+  return {
+    cost14d: s14d ? (s14d.value as number) : 0,
+    cost30d: s30d ? (s30d.value as number) : 0,
+  };
 }

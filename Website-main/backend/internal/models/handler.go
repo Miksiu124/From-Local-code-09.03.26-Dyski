@@ -37,7 +37,7 @@ func (h *Handler) List(c echo.Context) error {
 
 	// Build query dynamically
 	query := `
-		SELECT m.id, m.name, m.folder_name, m.description, m.country_id, m.is_active,
+		SELECT m.id, m.name, m.folder_name, m.description, m.country_id, m.is_active, m.is_featured,
 			   c.name AS country_name, c.flag_emoji,
 			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true) AS content_count,
 			   (SELECT ci.id FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true ORDER BY ci.created_at ASC LIMIT 1) AS first_content_item_id
@@ -47,6 +47,10 @@ func (h *Handler) List(c echo.Context) error {
 	`
 	args := []interface{}{}
 	argIdx := 1
+
+	if featured := c.QueryParam("featured"); featured == "true" {
+		query += ` AND m.is_featured = true`
+	}
 
 	if country != "" {
 		query += ` AND m.country_id = $` + strconv.Itoa(argIdx)
@@ -86,6 +90,7 @@ func (h *Handler) List(c echo.Context) error {
 		Description        *string `json:"description"`
 		CountryID          *string `json:"countryId"`
 		IsActive           bool    `json:"isActive"`
+		IsFeatured         bool    `json:"isFeatured"`
 		CountryName        *string `json:"countryName"`
 		CountryFlag        *string `json:"countryFlag"`
 		ContentCount       int     `json:"contentCount"`
@@ -95,7 +100,7 @@ func (h *Handler) List(c echo.Context) error {
 	var items []ModelItem
 	for rows.Next() {
 		var m ModelItem
-		if err := rows.Scan(&m.ID, &m.Name, &m.FolderName, &m.Description, &m.CountryID, &m.IsActive,
+		if err := rows.Scan(&m.ID, &m.Name, &m.FolderName, &m.Description, &m.CountryID, &m.IsActive, &m.IsFeatured,
 			&m.CountryName, &m.CountryFlag, &m.ContentCount, &m.FirstContentItemID); err != nil {
 			continue
 		}
@@ -135,18 +140,19 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		AvatarPath  *string `json:"avatarPath"`
 		CountryID   *string `json:"countryId"`
 		IsActive    bool    `json:"isActive"`
+		IsFeatured  bool    `json:"isFeatured"`
 		CountryName *string `json:"countryName"`
 		CountryFlag *string `json:"countryFlag"`
 	}
 
 	err := h.db.QueryRow(ctx, `
 		SELECT m.id, m.name, m.folder_name, m.description, m.avatar_path,
-			   m.country_id, m.is_active, c.name, c.flag_emoji
+			   m.country_id, m.is_active, m.is_featured, c.name, c.flag_emoji
 		FROM models m
 		LEFT JOIN countries c ON c.id = m.country_id
 		WHERE m.folder_name = $1 AND m.is_active = true
 	`, slug).Scan(&model.ID, &model.Name, &model.FolderName, &model.Description, &model.AvatarPath,
-		&model.CountryID, &model.IsActive, &model.CountryName, &model.CountryFlag)
+		&model.CountryID, &model.IsActive, &model.IsFeatured, &model.CountryName, &model.CountryFlag)
 
 	if err != nil {
 		return common.NotFound(c, "Model not found")
@@ -196,6 +202,132 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	})
 }
 
+// ListContent returns paginated content items for a model
+func (h *Handler) ListContent(c echo.Context) error {
+	ctx := c.Request().Context()
+	slug := c.Param("slug")
+	cursor := c.QueryParam("cursor")
+	limitStr := c.QueryParam("limit")
+	contentType := c.QueryParam("type") // VIDEO, PHOTO, ALL
+	sort := c.QueryParam("sort")       // newest, oldest
+
+	limit := 24
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l >= 1 && l <= 100 {
+			limit = l
+		}
+	}
+
+	// 1. Get Model ID from slug
+	var modelID string
+	err := h.db.QueryRow(ctx, `SELECT id FROM models WHERE folder_name = $1`, slug).Scan(&modelID)
+	if err != nil {
+		return common.NotFound(c, "Model not found")
+	}
+
+	// 2. Build Query
+	query := `
+		SELECT id, unique_id, content_type, thumbnail_path, hls_master_path, duration, is_active, created_at
+		FROM content_items
+		WHERE model_id = $1 AND is_active = true
+	`
+	args := []interface{}{modelID}
+	argIdx := 2
+
+	if contentType != "" && contentType != "ALL" {
+		query += ` AND content_type = $` + strconv.Itoa(argIdx)
+		args = append(args, contentType)
+		argIdx++
+	}
+
+	if cursor != "" {
+		switch sort {
+		case "oldest":
+			query += ` AND (created_at, id) > ((SELECT created_at FROM content_items WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		case "longest":
+			query += ` AND (COALESCE(duration, 0), id) < ((SELECT COALESCE(duration, 0) FROM content_items WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		case "shortest":
+			query += ` AND (COALESCE(duration, 0), id) > ((SELECT COALESCE(duration, 0) FROM content_items WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		default:
+			query += ` AND (created_at, id) < ((SELECT created_at FROM content_items WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		}
+		args = append(args, cursor)
+		argIdx++
+	}
+
+	switch sort {
+	case "oldest":
+		query += ` ORDER BY created_at ASC, id ASC`
+	case "longest":
+		query += ` ORDER BY COALESCE(duration, 0) DESC, id DESC`
+	case "shortest":
+		query += ` ORDER BY COALESCE(duration, 0) ASC, id ASC`
+	default:
+		query += ` ORDER BY created_at DESC, id DESC`
+	}
+
+	query += ` LIMIT $` + strconv.Itoa(argIdx)
+	args = append(args, limit+1)
+
+	rows, err := h.db.Query(ctx, query, args...)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	defer rows.Close()
+
+	type ContentItem struct {
+		ID            string  `json:"id"`
+		UniqueID      string  `json:"uniqueId"`
+		ContentType   string  `json:"contentType"`
+		ThumbnailPath *string `json:"thumbnailPath"`
+		HlsMasterPath *string `json:"hlsMasterPath"`
+		Duration      *int    `json:"duration"`
+		IsActive      bool    `json:"isActive"`
+		CreatedAt     string  `json:"createdAt"`
+	}
+
+	var items []ContentItem
+	for rows.Next() {
+		var ci ContentItem
+		var createdAt interface{}
+		if err := rows.Scan(&ci.ID, &ci.UniqueID, &ci.ContentType, &ci.ThumbnailPath, &ci.HlsMasterPath, &ci.Duration, &ci.IsActive, &createdAt); err != nil {
+			continue
+		}
+		ci.CreatedAt = fmt.Sprintf("%v", createdAt)
+		items = append(items, ci)
+	}
+
+	if items == nil {
+		items = []ContentItem{}
+	}
+
+	hasNextPage := len(items) > limit
+	if hasNextPage {
+		items = items[:limit]
+	}
+
+	var nextCursor *string
+	if hasNextPage && len(items) > 0 {
+		nextCursor = &items[len(items)-1].ID
+	}
+	
+	// Get total count (approximation or exact for small datasets)
+	var totalCount int
+	countQuery := `SELECT COUNT(*) FROM content_items WHERE model_id = $1 AND is_active = true`
+	countArgs := []interface{}{modelID}
+	if contentType != "" && contentType != "ALL" {
+		countQuery += ` AND content_type = $2`
+		countArgs = append(countArgs, contentType)
+	}
+	_ = h.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount)
+
+	return common.Success(c, map[string]interface{}{
+		"items":      items,
+		"nextCursor": nextCursor,
+		"totalCount": totalCount,
+	})
+}
+
 // CheckAccess checks if user has access to a specific model
 func (h *Handler) CheckAccess(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -204,6 +336,11 @@ func (h *Handler) CheckAccess(c echo.Context) error {
 
 	if userID == "" {
 		return common.Success(c, map[string]bool{"hasAccess": false})
+	}
+
+	// Admin bypass
+	if middleware.GetUserRole(c) == "ADMIN" {
+		return common.Success(c, map[string]bool{"hasAccess": true})
 	}
 
 	hasAccess, err := CheckModelAccess(ctx, h.db, userID, modelID)
@@ -244,7 +381,12 @@ func (h *Handler) GetUserAccess(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
 	if userID == "" {
-		return common.Success(c, []string{})
+		return common.Success(c, map[string]interface{}{"hasBundle": false, "modelIds": []string{}})
+	}
+
+	// Admin bypass: Admins have access to everything (bundle)
+	if middleware.GetUserRole(c) == "ADMIN" {
+		return common.Success(c, map[string]interface{}{"hasBundle": true, "modelIds": []string{}})
 	}
 
 	// Check if user has active bundle
@@ -291,28 +433,42 @@ func (h *Handler) GetUserAccess(c echo.Context) error {
 	return common.Success(c, map[string]interface{}{"hasBundle": false, "modelIds": modelIds})
 }
 
-// GetPublicSettings returns public configuration like credit costs
+// GetPublicSettings returns public configuration like credit costs from the settings table
 func (h *Handler) GetPublicSettings(c echo.Context) error {
 	ctx := c.Request().Context()
-	rows, err := h.db.Query(ctx, `
-		SELECT key, value FROM settings 
-		WHERE key IN ('model_credit_cost_7d', 'model_credit_cost_30d', 'bundle_credit_cost')
-	`)
+
+	publicKeys := []string{
+		"model_credit_cost_7d",
+		"model_credit_cost_30d",
+		"bundle_credit_cost_14d",
+		"bundle_credit_cost_30d",
+		"blik_enabled",
+	}
+
+	result := map[string]interface{}{
+		"model_credit_cost_7d":  200,
+		"model_credit_cost_30d": 350,
+		"bundle_credit_cost_14d": 500,
+		"bundle_credit_cost_30d": 900,
+		"blik_enabled":           true,
+	}
+
+	rows, err := h.db.Query(ctx, `SELECT key, value FROM settings WHERE key = ANY($1)`, publicKeys)
 	if err != nil {
-		return common.InternalError(c)
+		return common.Success(c, result)
 	}
 	defer rows.Close()
 
-	settings := map[string]interface{}{}
 	for rows.Next() {
 		var key string
 		var value interface{}
 		if err := rows.Scan(&key, &value); err != nil {
 			continue
 		}
-		settings[key] = value
+		result[key] = value
 	}
-	return common.Success(c, settings)
+
+	return common.Success(c, result)
 }
 
 // GetStats returns usage statistics like total active models

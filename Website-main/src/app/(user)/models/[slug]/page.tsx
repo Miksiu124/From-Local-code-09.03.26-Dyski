@@ -4,6 +4,7 @@ import { fetchApi } from "@/lib/api-client";
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ filter?: string; sort?: string }>;
 }
 
 type ModelResponse = {
@@ -18,7 +19,11 @@ type ModelResponse = {
     countryName: string | null;
     countryFlag: string | null;
   };
-  contentItems: {
+  contentItems: unknown[];
+};
+
+type ContentPageResponse = {
+  items: {
     id: string;
     uniqueId: string;
     contentType: "VIDEO" | "PHOTO";
@@ -28,6 +33,8 @@ type ModelResponse = {
     isActive: boolean;
     createdAt: string;
   }[];
+  nextCursor: string | null;
+  totalCount: number;
 };
 
 type AccessResponse = {
@@ -38,25 +45,31 @@ type MeResponse = {
   creditBalance: number;
 };
 
-export default async function ModelDetailPage({ params }: Props) {
+export default async function ModelDetailPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const sp = await searchParams;
 
-  // 1. Fetch Model (lookup by slug)
+  const validSorts = ["newest", "oldest", "longest", "shortest"] as const;
+  const initialSort = validSorts.includes(sp.sort as any) ? sp.sort! : "newest";
+  const initialType = sp.filter === "VIDEO" || sp.filter === "PHOTO" ? sp.filter : "";
+
   const data = await fetchApi<ModelResponse>(`/models/${slug}`).catch(() => null);
 
   if (!data || !data.model) {
     notFound();
   }
 
-  const { model, contentItems: allContentItems } = data;
+  const { model } = data;
 
-  // 2. Fetch Dependent Data in Parallel
-  const [access, settings, me] = await Promise.all([
-    // Check access
+  const contentQs = new URLSearchParams({ limit: "24", sort: initialSort });
+  if (initialType) contentQs.set("type", initialType);
+
+  const [contentPage, access, settings, me] = await Promise.all([
+    fetchApi<ContentPageResponse>(
+      `/models/${slug}/content?${contentQs.toString()}`
+    ).catch(() => ({ items: [], nextCursor: null, totalCount: 0 })),
     fetchApi<AccessResponse>(`/models/${model.id}/access`).catch(() => ({ hasAccess: false })),
-    // Settings for costs
     fetchApi<any>("/settings/public").catch(() => ({})),
-    // Auth status & balance
     fetchApi<MeResponse>("/auth/me").catch(() => null),
   ]);
 
@@ -65,10 +78,6 @@ export default async function ModelDetailPage({ params }: Props) {
 
   const hasAccess = access.hasAccess;
   const realCreditBalance = me?.creditBalance ?? 0;
-
-  // Pagination logic (Client-side slicing for now until backend supports content pagination)
-  // The backend currently returns ALL items, so we slice the first 24 here to match original behavior.
-  const initialContentItems = allContentItems.slice(0, 24);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -81,18 +90,14 @@ export default async function ModelDetailPage({ params }: Props) {
           countryName: model.countryName,
           countryFlag: model.countryFlag,
         }}
-        initialContentItems={initialContentItems.map((item) => ({
+        initialContentItems={contentPage.items.map((item) => ({
           id: item.id,
           contentType: item.contentType,
           thumbnailPath: item.thumbnailPath,
           duration: item.duration,
         }))}
-        initialCursor={
-          initialContentItems.length >= 24
-            ? initialContentItems[initialContentItems.length - 1].id
-            : null
-        }
-        totalContentCount={allContentItems.length}
+        initialCursor={contentPage.nextCursor}
+        totalContentCount={contentPage.totalCount}
         hasAccess={hasAccess}
         isAuthenticated={!!me}
         cost7d={cost7d}

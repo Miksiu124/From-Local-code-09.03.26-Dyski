@@ -37,7 +37,7 @@ interface PaymentResult {
   paymentMethod: string;
 }
 
-export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) {
+export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages: CreditPackage[]; blikEnabled?: boolean }) {
   const t = useTranslations("credits");
   const router = useRouter();
   const [step, setStep] = useState<Step>("select-package");
@@ -64,7 +64,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
 
     // Try SSE first
     try {
-      eventSource = new EventSource(`/api/credits/purchase/${paymentResult.id}/stream`);
+      eventSource = new EventSource(`/api/credits/purchase/${paymentResult.id}/stream`, { withCredentials: true });
 
       eventSource.onmessage = (event) => {
         try {
@@ -94,7 +94,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
 
       const poll = async () => {
         try {
-          const res = await fetch(`/api/credits/purchase/${paymentResult!.id}/status`);
+          const res = await fetch(`/api/credits/purchase/${paymentResult!.id}/status`, { credentials: "include" });
           if (res.ok) {
             const data = await res.json();
             if (data.status !== "PENDING") {
@@ -117,12 +117,14 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
     };
   }, [step, paymentResult, paymentStatus]);
 
-  const methods: { id: PaymentMethod; label: string; icon: React.ReactNode }[] = [
+  const allMethods: { id: PaymentMethod; label: string; icon: React.ReactNode }[] = [
     { id: "BLIK", label: t("paymentMethods.blik"), icon: <CreditCard className="h-5 w-5" /> },
     { id: "CRYPTO", label: t("paymentMethods.crypto"), icon: <Bitcoin className="h-5 w-5" /> },
     { id: "PAYPAL", label: t("paymentMethods.paypal"), icon: <CreditCard className="h-5 w-5" /> },
     { id: "REVOLUT", label: t("paymentMethods.revolut"), icon: <CreditCard className="h-5 w-5" /> },
   ];
+
+  const methods = blikEnabled ? allMethods : allMethods.filter((m) => m.id !== "BLIK");
 
   const cryptos: { id: CryptoCurrency; label: string }[] = [
     { id: "BTC", label: t("cryptoCurrencies.btc") },
@@ -150,6 +152,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
       const res = await fetch("/api/credits/purchase", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           creditPackageId: selectedPackage.id,
           paymentMethod: selectedMethod,
@@ -161,7 +164,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
       const data = await res.json();
 
       if (!res.ok) {
-        const errorMessage = data.error?.message || data.error || "Payment failed";
+        const errorMessage = data.message || data.error || "Payment failed";
         setError(errorMessage);
         return;
       }
@@ -183,6 +186,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
       const res = await fetch(`/api/credits/purchase/${paymentResult.id}/txid`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ txId: txId.trim() }),
       });
 
@@ -207,12 +211,13 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
 
       const res = await fetch(`/api/credits/purchase/${paymentResult.id}/proof`, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error?.message || data.error || "Failed to upload proof");
+        setError(data.message || data.error || "Failed to upload proof");
         return;
       }
 
@@ -237,13 +242,14 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
       const res = await fetch(`/api/credits/purchase/${paymentResult.id}/blik`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ blikCode: blikCode.trim() }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        const errorMessage = data.error?.message || data.error || "Failed to cancel purchase";
+        const errorMessage = data.message || data.error || "Failed to update BLIK code";
         setError(errorMessage);
         return;
       }
@@ -267,37 +273,38 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
         {step === "select-package" && (
           <motion.div
             key="packages"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
           >
-            <h2 className="text-xl font-semibold mb-4">{t("selectPackage")}</h2>
-            <div className="grid gap-4">
-              {packages.map((pkg) => (
+            <h2 className="text-lg font-semibold mb-4">{t("selectPackage")}</h2>
+            <div className="grid gap-3">
+              {packages.map((pkg, index) => (
                 <Card
                   key={pkg.id}
-                  className={`cursor-pointer transition-all hover:border-primary/50 ${
-                    selectedPackage?.id === pkg.id ? "border-primary ring-2 ring-primary/20" : ""
+                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 animate-in fade-in stagger-${Math.min(index + 1, 5)} ${
+                    selectedPackage?.id === pkg.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
                   }`}
                   onClick={() => setSelectedPackage(pkg)}
                 >
                   <CardContent className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                        <Coins className="h-6 w-6 text-primary" />
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                        <Coins className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                       </div>
                       <div>
-                        <p className="font-semibold text-lg">{pkg.name}</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="font-semibold text-base sm:text-lg">{pkg.name}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground">
                           {pkg.credits} credits &middot; {formatPrice(pkg.price / pkg.credits)} {t("perCredit")}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold">{formatPrice(pkg.price)}</p>
-                      <p className="text-sm text-primary">{pkg.credits} credits</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-xl sm:text-2xl font-bold">{formatPrice(pkg.price)}</p>
+                      <p className="text-xs sm:text-sm text-primary">{pkg.credits} credits</p>
                       {pkg.tier >= 3 && (
-                        <Badge variant="default" className="mt-1">
+                        <Badge variant="default" className="mt-1 text-[10px]">
                           {pkg.tier === 4 ? t("bestValue") : t("popular")}
                         </Badge>
                       )}
@@ -307,7 +314,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
               ))}
             </div>
             <Button
-              className="w-full mt-6"
+              className="w-full mt-6 h-11"
               disabled={!selectedPackage}
               onClick={() => setStep("select-method")}
             >
@@ -320,23 +327,24 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
         {step === "select-method" && (
           <motion.div
             key="method"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
           >
-            <h2 className="text-xl font-semibold mb-4">{t("selectMethod")}</h2>
-            <div className="grid grid-cols-2 gap-4">
+            <h2 className="text-lg font-semibold mb-4">{t("selectMethod")}</h2>
+            <div className="grid grid-cols-2 gap-3">
               {methods.map((method) => (
                 <Card
                   key={method.id}
-                  className={`cursor-pointer transition-all hover:border-primary/50 ${
-                    selectedMethod === method.id ? "border-primary ring-2 ring-primary/20" : ""
+                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 ${
+                    selectedMethod === method.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
                   }`}
                   onClick={() => setSelectedMethod(method.id)}
                 >
-                  <CardContent className="flex flex-col items-center justify-center p-6 gap-2">
+                  <CardContent className="flex flex-col items-center justify-center p-5 sm:p-6 gap-2">
                     {method.icon}
-                    <p className="font-medium text-sm">{method.label}</p>
+                    <p className="font-medium text-xs sm:text-sm">{method.label}</p>
                   </CardContent>
                 </Card>
               ))}
@@ -456,7 +464,7 @@ export function CreditPurchaseFlow({ packages }: { packages: CreditPackage[] }) 
                   <div className="flex gap-3 pt-4">
                     <Button
                       className="flex-1"
-                      onClick={() => router.push("/models")}
+                      onClick={() => router.push("/")}
                     >
                       Browse Models
                     </Button>

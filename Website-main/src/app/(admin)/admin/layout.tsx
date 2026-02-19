@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { getServerUser } from "@/lib/session-server";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { isAdmin } from "@/lib/admin";
 
@@ -8,17 +8,23 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  const user = await getServerUser();
 
-  // Admin is determined by the DB role or ADMIN_EMAILS
-  if (!session?.user?.email || !isAdmin(session.user.email, session.user.role)) {
-    redirect("/login");
+  if (!user) {
+    redirect("/login?error=admin_no_session");
+  }
+
+  const isAllowed = isAdmin(user.email, user.role);
+
+  if (!isAllowed) {
+    console.error("[AdminLayout] ACCESS DENIED for user role:", user.role);
+    redirect("/login?error=admin_access_denied");
   }
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)]">
       <AdminSidebar />
-      <div className="flex-1 p-6 overflow-auto">{children}</div>
+      <div className="flex-1 p-4 sm:p-6 overflow-auto">{children}</div>
     </div>
   );
 }

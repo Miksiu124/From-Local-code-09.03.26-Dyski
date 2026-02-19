@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -88,6 +89,7 @@ func (h *Handler) Register(c echo.Context) error {
 	// Check if email exists
 	exists, err := h.service.CheckEmailExists(c.Request().Context(), req.Email)
 	if err != nil {
+		log.Printf("[Register] Error checking email existence: %v", err)
 		return common.InternalError(c)
 	}
 	if exists {
@@ -95,9 +97,11 @@ func (h *Handler) Register(c echo.Context) error {
 	}
 
 	if err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password); err != nil {
-		return common.InternalError(c)
+		log.Printf("[Register] Service error: %v", err)
+		return common.JSONError(c, http.StatusInternalServerError, "registration_failed", "Registration failed. Please try again later.")
 	}
 
+	log.Printf("[Register] SUCCESS: User %s created", req.Email)
 	return common.Created(c, map[string]string{"message": "Account created successfully"})
 }
 
@@ -130,19 +134,14 @@ func (h *Handler) Login(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
 
-	// Set HttpOnly cookie
 	cookie := new(http.Cookie)
 	cookie.Name = "session_token"
 	cookie.Value = token
 	cookie.Path = "/"
 	cookie.HttpOnly = true
 	cookie.MaxAge = h.cfg.JWTExpirySecs
-	if h.cfg.IsProduction() {
-		cookie.Secure = true
-		cookie.SameSite = http.SameSiteStrictMode
-	} else {
-		cookie.SameSite = http.SameSiteLaxMode
-	}
+	cookie.SameSite = http.SameSiteLaxMode
+	cookie.Secure = h.cfg.IsProduction()
 	c.SetCookie(cookie)
 
 	role := user.Role
@@ -169,13 +168,14 @@ func (h *Handler) Logout(c echo.Context) error {
 		_ = h.service.Logout(c.Request().Context(), userID)
 	}
 
-	// Clear cookie
 	cookie := new(http.Cookie)
 	cookie.Name = "session_token"
 	cookie.Value = ""
 	cookie.Path = "/"
 	cookie.HttpOnly = true
 	cookie.MaxAge = -1
+	cookie.SameSite = http.SameSiteLaxMode
+	cookie.Secure = h.cfg.IsProduction()
 	c.SetCookie(cookie)
 
 	return common.Success(c, map[string]bool{"success": true})

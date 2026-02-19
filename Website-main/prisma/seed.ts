@@ -53,9 +53,14 @@ async function main() {
       description: "Credit cost for 30-day access to a single model",
     },
     {
-      key: "bundle_credit_cost",
+      key: "bundle_credit_cost_14d",
       value: 500,
-      description: "Credit cost for purchasing the bundle (all models + future content)",
+      description: "Credit cost for 14-day 'Buy All' bundle access",
+    },
+    {
+      key: "bundle_credit_cost_30d",
+      value: 900,
+      description: "Credit cost for 30-day 'Buy All' bundle access",
     },
     {
       key: "default_country_id",

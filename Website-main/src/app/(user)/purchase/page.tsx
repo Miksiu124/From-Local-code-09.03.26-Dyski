@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { CreditPurchaseFlow } from "@/components/payments/credit-purchase-flow";
 import { formatCredits } from "@/lib/utils";
 import { fetchApi } from "@/lib/api-client";
+import { Coins } from "lucide-react";
 
 type MeResponse = {
   creditBalance: number;
@@ -22,14 +23,24 @@ export default async function PurchasePage() {
 
   const t = await getTranslations("credits");
 
-  const packages = await fetchApi<CreditPackage[]>("/credit-packages").catch(() => []);
+  const [packages, publicSettings] = await Promise.all([
+    fetchApi<CreditPackage[]>("/credit-packages").catch(() => []),
+    fetchApi<Record<string, unknown>>("/settings/public").catch((): Record<string, unknown> => ({})),
+  ]);
+
+  const blikEnabled = publicSettings?.blik_enabled !== false && publicSettings?.blik_enabled !== "false";
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-2">{t("title")}</h1>
-      <p className="text-muted-foreground mb-8">
-        {t("balance")}: <span className="text-foreground font-semibold">{formatCredits(me.creditBalance)}</span> {t("creditsLabel")}
-      </p>
+      <div className="slide-up">
+        <h1 className="text-2xl sm:text-3xl font-bold mb-2">{t("title")}</h1>
+        <div className="flex items-center gap-2 text-muted-foreground mb-8">
+          <Coins className="h-4 w-4 text-primary" />
+          <p className="text-sm">
+            {t("balance")}: <span className="text-foreground font-semibold">{formatCredits(me.creditBalance)}</span> {t("creditsLabel")}
+          </p>
+        </div>
+      </div>
 
       <CreditPurchaseFlow
         packages={packages.map((p) => ({
@@ -39,6 +50,7 @@ export default async function PurchasePage() {
           price: Number(p.price),
           tier: p.tier,
         }))}
+        blikEnabled={blikEnabled}
       />
     </div>
   );
