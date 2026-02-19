@@ -96,9 +96,16 @@ export function ModelDetail({
     if (saved) {
       const y = parseInt(saved, 10);
       sessionStorage.removeItem(key);
-      requestAnimationFrame(() => {
-        window.scrollTo(0, y);
-      });
+      const tryScroll = () => window.scrollTo(0, y);
+      requestAnimationFrame(tryScroll);
+      const t1 = setTimeout(tryScroll, 50);
+      const t2 = setTimeout(tryScroll, 150);
+      const t3 = setTimeout(tryScroll, 400);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
     }
   }, [model.folderName]);
 
@@ -431,7 +438,7 @@ export function ModelDetail({
       )}
 
       {/* Filters + Sort row */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap slide-up" style={{ animationDelay: "0.15s" }}>
+      <div className="flex items-center gap-2 mb-6 flex-wrap slide-up relative z-10" style={{ animationDelay: "0.15s" }}>
         <Button
           variant={activeFilter === "ALL" ? "default" : "outline"}
           size="sm"

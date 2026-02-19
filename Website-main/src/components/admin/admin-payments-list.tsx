@@ -64,28 +64,31 @@ function methodIcon(method: string) {
   }
 }
 
-function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+function formatDuration(ms: number): string {
+  const totalSec = Math.floor(Math.abs(ms) / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${mins}m ${secs}s`;
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
 }
 
-function timeLeft(expirationTime: string): string {
-  const now = Date.now();
+function timeAgo(dateStr: string, now: number): string {
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  if (diffMs < 1000) return "0s ago";
+  return `${formatDuration(diffMs)} ago`;
+}
+
+function timeLeft(expirationTime: string, now: number): string {
   const exp = new Date(expirationTime).getTime();
   const diffMs = exp - now;
   if (diffMs <= 0) return "expired";
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 60) return `${mins}m left`;
-  const hours = Math.floor(mins / 60);
-  return `${hours}h left`;
+  return `${formatDuration(diffMs)} left`;
 }
 
 export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
@@ -97,11 +100,18 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
   const [loading, setLoading] = useState(false);
   const [blikEnabled, setBlikEnabled] = useState(initialBlikEnabled);
   const [blikSaving, setBlikSaving] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     setItems(purchases);
   }, [purchases]);
+
+  // Tick every second so time displays stay accurate
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // SSE: real-time stream from Go backend via Redis pub/sub
   useEffect(() => {
@@ -296,12 +306,12 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
                         </div>
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        <p className="text-xs text-muted-foreground">
-                          {timeAgo(p.createdAt)}
+                        <p className="text-xs text-muted-foreground tabular-nums">
+                          {timeAgo(p.createdAt, now)}
                         </p>
-                        <p className="text-xs text-warning font-medium">
+                        <p className="text-xs text-warning font-medium tabular-nums">
                           <Clock className="h-3 w-3 inline mr-0.5" />
-                          {timeLeft(p.expirationTime)}
+                          {timeLeft(p.expirationTime, now)}
                         </p>
                       </div>
                     </div>
