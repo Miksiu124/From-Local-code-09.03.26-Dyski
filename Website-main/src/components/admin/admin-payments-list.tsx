@@ -171,6 +171,63 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
     };
   }, []);
 
+  // Polling fallback: fetch pending purchases every 8s to ensure real-time display
+  // even if SSE is blocked/buffered by a proxy
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/admin/credits/purchases?status=PENDING", {
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const fetched: PurchaseItem[] = (data.purchases ?? []).map((p: any) => ({
+          id: p.id,
+          userEmail: p.user?.email ?? "—",
+          userName: p.user?.name ?? null,
+          packageName: p.creditPackage?.name ?? "—",
+          credits: p.credits ?? 0,
+          amount: p.amount ?? 0,
+          paymentMethod: p.paymentMethod ?? "",
+          transactionCode: p.transactionCode ?? "",
+          blikCode: p.blikCode ?? null,
+          cryptoCurrency: p.cryptoCurrency ?? null,
+          txId: p.txId ?? null,
+          status: p.status ?? "PENDING",
+          paymentProofUrl: p.paymentProofUrl ?? null,
+          adminNotes: p.adminNotes ?? null,
+          expirationTime: p.expirationTime ?? "",
+          createdAt: p.createdAt ?? "",
+        }));
+        setItems((prev) => {
+          const existingIds = new Set(prev.map((i) => i.id));
+          const newOnes = fetched.filter((f) => !existingIds.has(f.id));
+          if (newOnes.length === 0) {
+            // Update blikCode / expirationTime for existing items
+            const fetchedMap = new Map(fetched.map((f) => [f.id, f]));
+            let changed = false;
+            const updated = prev.map((item) => {
+              const fresh = fetchedMap.get(item.id);
+              if (fresh && (fresh.blikCode !== item.blikCode || fresh.expirationTime !== item.expirationTime)) {
+                changed = true;
+                return { ...item, blikCode: fresh.blikCode, expirationTime: fresh.expirationTime };
+              }
+              return item;
+            });
+            return changed ? updated : prev;
+          }
+          return [...newOnes, ...prev];
+        });
+      } catch {
+        // Silently ignore polling errors
+      }
+    };
+
+    const id = setInterval(poll, 8000);
+    poll();
+    return () => clearInterval(id);
+  }, []);
+
   const handleAction = async (id: string, action: "approve" | "reject") => {
     setLoading(true);
     try {

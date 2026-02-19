@@ -25,14 +25,6 @@ interface Analytics {
   creditPurchases: {
     byStatus: { status: string; count: number; amount: number }[];
     byMethod: { method: string; count: number; amount: number }[];
-    recent: {
-      id: string;
-      amount: number;
-      credits: number;
-      status: string;
-      method: string;
-      createdAt: string;
-    }[];
   };
   purchases: { total: number; bundles: number; individual: number };
   topSellers: {
@@ -45,8 +37,6 @@ interface Analytics {
 
 type SortDir = "asc" | "desc";
 type TopSortKey = "modelName" | "purchaseCount" | "creditsEarned";
-type RecentSortKey = "createdAt" | "method" | "amount" | "credits" | "status";
-
 function StatCard({
   icon: Icon,
   label,
@@ -93,8 +83,6 @@ export default function AdminAnalyticsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [topSortKey, setTopSortKey] = useState<TopSortKey>("purchaseCount");
   const [topSortDir, setTopSortDir] = useState<SortDir>("desc");
-  const [recentSortKey, setRecentSortKey] = useState<RecentSortKey>("createdAt");
-  const [recentSortDir, setRecentSortDir] = useState<SortDir>("desc");
 
   const fetchAnalytics = async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -102,8 +90,6 @@ export default function AdminAnalyticsPage() {
       const params = new URLSearchParams({
         topSortBy: topSortKey,
         topSortDir: topSortDir,
-        recentSortBy: recentSortKey,
-        recentSortDir: recentSortDir,
       });
       const res = await fetch(`/api/admin/analytics?${params.toString()}`, { credentials: "include" });
       if (res.ok) setData(await res.json());
@@ -117,7 +103,7 @@ export default function AdminAnalyticsPage() {
 
   useEffect(() => {
     fetchAnalytics();
-  }, [topSortKey, topSortDir, recentSortKey, recentSortDir]);
+  }, [topSortKey, topSortDir]);
 
   if (loading) {
     return (
@@ -143,23 +129,9 @@ export default function AdminAnalyticsPage() {
     setTopSortDir("asc");
   };
 
-  const handleRecentSort = (key: RecentSortKey) => {
-    if (recentSortKey === key) {
-      setRecentSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-      return;
-    }
-    setRecentSortKey(key);
-    setRecentSortDir("asc");
-  };
-
   const renderTopSortIndicator = (key: TopSortKey) => {
     if (topSortKey !== key) return null;
     return topSortDir === "asc" ? "▲" : "▼";
-  };
-
-  const renderRecentSortIndicator = (key: RecentSortKey) => {
-    if (recentSortKey !== key) return null;
-    return recentSortDir === "asc" ? "▲" : "▼";
   };
 
   return (
@@ -304,85 +276,6 @@ export default function AdminAnalyticsPage() {
         )}
       </div>
 
-      {/* Recent credit purchases */}
-      <div className="bg-card rounded-xl border border-border p-5">
-        <h2 className="text-lg font-semibold mb-4">Recent Credit Purchases (30d)</h2>
-        {data.creditPurchases.recent.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No recent credit purchases.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleRecentSort("createdAt")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Date {renderRecentSortIndicator("createdAt")}
-                    </button>
-                  </th>
-                  <th className="text-left py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleRecentSort("method")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Method {renderRecentSortIndicator("method")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleRecentSort("amount")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Amount {renderRecentSortIndicator("amount")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleRecentSort("credits")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Credits {renderRecentSortIndicator("credits")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2">
-                    <button
-                      type="button"
-                      onClick={() => handleRecentSort("status")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Status {renderRecentSortIndicator("status")}
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.creditPurchases.recent.map((cp) => (
-                  <tr key={cp.id} className="border-b border-border/50">
-                    <td className="py-2.5 pr-4 text-muted-foreground text-xs">
-                      {new Date(cp.createdAt).toLocaleDateString()}{" "}
-                      {new Date(cp.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </td>
-                    <td className="py-2.5 pr-4">{METHOD_LABELS[cp.method] || cp.method}</td>
-                    <td className="py-2.5 pr-4 text-right">{fmtCurrency(cp.amount)}</td>
-                    <td className="py-2.5 pr-4 text-right">{cp.credits}</td>
-                    <td className="py-2.5 text-right">
-                      <Badge className={`${STATUS_COLORS[cp.status] || "bg-secondary"} text-xs`}>
-                        {cp.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
