@@ -19,7 +19,6 @@ export function AdminSidebar() {
   const t = useTranslations("admin");
 
   const links = [
-    { href: "/admin", label: t("dashboard"), icon: LayoutDashboard },
     { href: "/admin/payments", label: t("creditPurchases"), icon: CreditCard },
     { href: "/admin/packages", label: t("creditPackages"), icon: Coins },
     { href: "/admin/models", label: t("models"), icon: FolderOpen },

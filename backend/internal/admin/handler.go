@@ -1042,6 +1042,28 @@ func (h *Handler) UpdateModel(c echo.Context) error {
 	return common.Success(c, map[string]bool{"success": true})
 }
 
+// ToggleContentHidden hides or shows a content item
+func (h *Handler) ToggleContentHidden(c echo.Context) error {
+	ctx := c.Request().Context()
+	var req struct {
+		ID       string `json:"id"`
+		IsHidden bool   `json:"isHidden"`
+	}
+	if err := c.Bind(&req); err != nil || req.ID == "" {
+		return common.BadRequest(c, "id is required")
+	}
+
+	result, err := h.db.Exec(ctx, `UPDATE content_items SET is_hidden = $1 WHERE id = $2`, req.IsHidden, req.ID)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if result.RowsAffected() == 0 {
+		return common.NotFound(c, "Content item not found")
+	}
+
+	return common.Success(c, map[string]bool{"success": true})
+}
+
 // fetchPurchaseInfoForDiscord loads all fields needed for a Discord webhook embed.
 func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID string) discord.PurchaseInfo {
 	var info discord.PurchaseInfo

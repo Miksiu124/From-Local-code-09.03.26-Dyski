@@ -155,7 +155,7 @@ export function ModelsGrid({
     fetchModels({ reset: true });
   }, [initialLoaded, initialModels.length, fetchModels]);
 
-  const loadMoreRef = useRef<() => void>(() => {});
+  const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
     if (loading || !cursor) return;
     fetchModels({
@@ -209,9 +209,7 @@ export function ModelsGrid({
     setPopupOpen(true);
   };
 
-  const countriesWithModels = countries.filter((c) =>
-    initialModels.some((m) => m.countryId === c.id)
-  );
+  const countriesWithModels = countries;
 
 
   return (

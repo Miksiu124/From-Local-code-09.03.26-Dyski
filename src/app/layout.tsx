@@ -10,8 +10,37 @@ import "./globals.css";
 const outfit = Outfit({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ContentVault",
-  description: "Premium content sharing platform",
+  title: {
+    default: "ContentVault – Premium Content Platform",
+    template: "%s | ContentVault",
+  },
+  description:
+    "Browse exclusive premium content from top creators. Instant access, multiple payment methods, and a curated library updated daily.",
+  keywords: ["premium content", "creators", "exclusive", "videos", "photos", "ContentVault"],
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://contentvault.io"),
+  openGraph: {
+    type: "website",
+    siteName: "ContentVault",
+    title: "ContentVault – Premium Content Platform",
+    description:
+      "Browse exclusive premium content from top creators. Instant access, multiple payment methods.",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ContentVault – Premium Content Platform",
+    description:
+      "Browse exclusive premium content from top creators.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
 };
 
 export default async function RootLayout({

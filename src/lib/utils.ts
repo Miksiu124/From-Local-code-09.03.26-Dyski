@@ -9,7 +9,25 @@ export function formatCredits(credits: number): string {
   return credits.toLocaleString();
 }
 
-export function formatPrice(price: number): string {
+export function getClientLocale(): string {
+  if (typeof document !== "undefined") {
+    const match = document.cookie.match(/(?:^|;\s*)locale=([^;]*)/);
+    if (match) return match[1];
+  }
+  if (typeof document !== "undefined") {
+    return document.documentElement.lang || "en";
+  }
+  return "en";
+}
+
+export function formatPrice(price: number, locale?: string): string {
+  const loc = locale || getClientLocale();
+  if (loc === "pl") {
+    return new Intl.NumberFormat("pl-PL", {
+      style: "currency",
+      currency: "PLN",
+    }).format(price);
+  }
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

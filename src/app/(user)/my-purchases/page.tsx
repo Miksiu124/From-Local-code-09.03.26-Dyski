@@ -11,11 +11,12 @@ import { formatCredits } from "@/lib/utils";
 
 interface Purchase {
     id: string;
-    type: "MODEL_ACCESS" | "BUNDLE_ACCESS";
+    purchaseType: "INDIVIDUAL_MODEL" | "BUNDLE";
     modelName?: string;
-    credits: number;
+    folderName?: string;
+    creditsSpent: number;
     createdAt: string;
-    expiresAt: string | null;
+    expiresAt?: string;
     isActive: boolean;
 }
 
@@ -111,7 +112,7 @@ export default function MyPurchasesPage() {
                                         <div className="space-y-1.5 text-xs text-muted-foreground flex-1 mb-4">
                                             <div className="flex items-center gap-2">
                                                 <CreditCard className="h-3.5 w-3.5" />
-                                                <span>{formatCredits(purchase.credits)} credits</span>
+                                                <span>{formatCredits(purchase.creditsSpent)} credits</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <Calendar className="h-3.5 w-3.5" />
@@ -125,13 +126,13 @@ export default function MyPurchasesPage() {
                                             )}
                                         </div>
 
-                                        {purchase.isActive && purchase.type === "MODEL_ACCESS" && (
-                                            <Link href={`/models/${purchase.modelName?.toLowerCase().replace(/\s+/g, '-')}`} className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}>
+                                        {purchase.isActive && purchase.purchaseType === "INDIVIDUAL_MODEL" && purchase.folderName && (
+                                            <Link href={`/models/${purchase.folderName}`} className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}>
                                                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                                                 View Content
                                             </Link>
                                         )}
-                                        {purchase.isActive && purchase.type === "BUNDLE_ACCESS" && (
+                                        {purchase.isActive && purchase.purchaseType === "BUNDLE" && (
                                             <Link href="/" className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}>
                                                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                                                 Browse Models

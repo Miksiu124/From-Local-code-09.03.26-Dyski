@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Heart, ChevronLeft, ChevronRight } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { VideoPlayer } from "@/components/user/video-player";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ export function ContentViewer({
   prevItemId,
   nextItemId,
 }: ContentViewerProps) {
+  const t = useTranslations("models");
   const router = useRouter();
   const [isFavorited, setIsFavorited] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -132,7 +134,7 @@ export function ContentViewer({
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Back to {modelName}</span>
+          <span className="hidden sm:inline">{t("backToModel", { modelName })}</span>
           <span className="sm:hidden">Back</span>
         </Link>
 
@@ -173,7 +175,7 @@ export function ContentViewer({
                 isFavorited ? "fill-red-500 text-red-500 scale-110" : "text-muted-foreground"
               )}
             />
-            <span className="hidden sm:inline">{isFavorited ? "Favorited" : "Favorite"}</span>
+            <span className="hidden sm:inline">{isFavorited ? t("favorited") : t("favorite")}</span>
           </Button>
         </div>
       </div>
@@ -196,8 +198,8 @@ export function ContentViewer({
 
       <p className="text-center text-[10px] sm:text-xs text-muted-foreground/50 mt-3">
         {contentType === "VIDEO"
-          ? "Shift + Arrow keys to navigate"
-          : "Arrow keys to navigate"}
+          ? t("shiftArrowsToNavigate")
+          : t("arrowsToNavigate")}
       </p>
     </motion.div>
   );

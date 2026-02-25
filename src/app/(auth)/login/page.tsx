@@ -37,6 +37,7 @@ export default function LoginPage() {
         setError(data.error || t("invalidCredentials"));
       } else {
         console.log("Login success, user data:", data.user);
+        window.dispatchEvent(new Event("auth-change"));
         const user = data.user;
         if (user && user.role === "ADMIN") {
           router.push("/admin");

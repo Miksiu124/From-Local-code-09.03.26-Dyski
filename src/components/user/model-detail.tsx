@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   Lock, Play, Image, Coins, ArrowLeft, Loader2,
-  Heart, Film, Camera, ArrowUpDown, Clock, ShoppingCart,
+  Heart, Film, Camera, ArrowUpDown, Clock, ShoppingCart, X,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { VideoPlayer } from "@/components/user/video-player";
 
 interface ContentItem {
   id: string;
@@ -90,24 +92,83 @@ export function ModelDetail({
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [togglingFav, setTogglingFav] = useState<string | null>(null);
 
+  // Overlay content viewer state
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [overlayFavorited, setOverlayFavorited] = useState(false);
+  const [overlayTogglingFav, setOverlayTogglingFav] = useState(false);
+
+  // Lock body scroll when overlay is open
   useEffect(() => {
-    const key = `scroll_model_${model.folderName}`;
-    const saved = sessionStorage.getItem(key);
-    if (saved) {
-      const y = parseInt(saved, 10);
-      sessionStorage.removeItem(key);
-      const tryScroll = () => window.scrollTo(0, y);
-      requestAnimationFrame(tryScroll);
-      const t1 = setTimeout(tryScroll, 50);
-      const t2 = setTimeout(tryScroll, 150);
-      const t3 = setTimeout(tryScroll, 400);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
+    if (selectedItemId) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
-  }, [model.folderName]);
+    return () => { document.body.style.overflow = ""; };
+  }, [selectedItemId]);
+
+  // Check favorite status when overlay opens
+  useEffect(() => {
+    if (!selectedItemId || !isAuthenticated) return;
+    setOverlayFavorited(favoritedIds.has(selectedItemId));
+  }, [selectedItemId, isAuthenticated, favoritedIds]);
+
+  // Compute overlay data from contentItems
+  const selectedItem = selectedItemId
+    ? contentItems.find((i) => i.id === selectedItemId) ?? null
+    : null;
+  const selectedIndex = selectedItem
+    ? contentItems.indexOf(selectedItem)
+    : -1;
+  const overlayPrevId = selectedIndex > 0 ? contentItems[selectedIndex - 1].id : null;
+  const overlayNextId = selectedIndex >= 0 && selectedIndex < contentItems.length - 1
+    ? contentItems[selectedIndex + 1].id
+    : null;
+
+  const closeOverlay = useCallback(() => setSelectedItemId(null), []);
+
+  const overlayToggleFavorite = useCallback(async () => {
+    if (!selectedItemId || overlayTogglingFav) return;
+    setOverlayTogglingFav(true);
+    try {
+      const res = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ contentItemId: selectedItemId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOverlayFavorited(data.favorited);
+        setFavoritedIds((prev) => {
+          const next = new Set(prev);
+          if (data.favorited) next.add(selectedItemId); else next.delete(selectedItemId);
+          return next;
+        });
+      }
+    } catch { /* ignore */ }
+    finally { setOverlayTogglingFav(false); }
+  }, [selectedItemId, overlayTogglingFav]);
+
+  // Keyboard handler for overlay
+  useEffect(() => {
+    if (!selectedItemId) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "Escape") { closeOverlay(); return; }
+      const isVideo = selectedItem?.contentType === "VIDEO";
+      if (isVideo ? (e.key === "ArrowLeft" && e.shiftKey) : e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (overlayPrevId) setSelectedItemId(overlayPrevId);
+      } else if (isVideo ? (e.key === "ArrowRight" && e.shiftKey) : e.key === "ArrowRight") {
+        e.preventDefault();
+        if (overlayNextId) setSelectedItemId(overlayNextId);
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [selectedItemId, selectedItem, overlayPrevId, overlayNextId, closeOverlay]);
 
   const updateUrlParams = useCallback((filter: ContentFilter, sort: SortOrder) => {
     const params = new URLSearchParams();
@@ -194,10 +255,7 @@ export function ModelDetail({
       return;
     }
     if (!hasAccess) return;
-    sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
-    sessionStorage.setItem(`filter_model_${model.folderName}`, activeFilter);
-    sessionStorage.setItem(`sort_model_${model.folderName}`, activeSort);
-    router.push(`/content/${model.folderName}/${contentId}`);
+    setSelectedItemId(contentId);
   };
 
   const toggleFavorite = async (e: React.MouseEvent, contentItemId: string) => {
@@ -301,7 +359,7 @@ export function ModelDetail({
     }
   };
 
-  const loadMoreRef = useRef<() => void>(() => {});
+  const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
     if (loadingMore || !cursor || activeFilter === "FAVORITES") return;
     loadContent(activeFilter, activeSort, true, cursor);
@@ -446,7 +504,7 @@ export function ModelDetail({
           disabled={isFiltering}
           className="gap-1.5"
         >
-          All
+          {t("all")}
         </Button>
         <Button
           variant={activeFilter === "VIDEO" ? "default" : "outline"}
@@ -456,7 +514,7 @@ export function ModelDetail({
           className="gap-1.5"
         >
           <Film className="h-3.5 w-3.5" />
-          Videos
+          {t("videos")}
         </Button>
         <Button
           variant={activeFilter === "PHOTO" ? "default" : "outline"}
@@ -466,7 +524,7 @@ export function ModelDetail({
           className="gap-1.5"
         >
           <Camera className="h-3.5 w-3.5" />
-          Photos
+          {t("photos")}
         </Button>
         {isAuthenticated && hasAccess && (
           <Button
@@ -477,7 +535,7 @@ export function ModelDetail({
             className="gap-1.5"
           >
             <Heart className={cn("h-3.5 w-3.5", activeFilter === "FAVORITES" && "fill-current")} />
-            Favorites
+            {t("favorite")}
           </Button>
         )}
 
@@ -491,17 +549,17 @@ export function ModelDetail({
             className="gap-1.5 text-muted-foreground"
           >
             <ArrowUpDown className="h-3.5 w-3.5" />
-            {{ newest: "Newest", oldest: "Oldest", longest: "Longest", shortest: "Shortest" }[activeSort]}
+            {{ newest: t("newest"), oldest: t("oldest"), longest: t("longest"), shortest: t("shortest") }[activeSort]}
           </Button>
           {sortMenuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setSortMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-white/[0.08] bg-card/95 backdrop-blur-xl p-1 shadow-2xl">
                 {([
-                  { value: "newest", label: "Newest", icon: <Clock className="h-3.5 w-3.5" /> },
-                  { value: "oldest", label: "Oldest", icon: <Clock className="h-3.5 w-3.5" /> },
-                  { value: "longest", label: "Longest", icon: <Film className="h-3.5 w-3.5" /> },
-                  { value: "shortest", label: "Shortest", icon: <Film className="h-3.5 w-3.5" /> },
+                  { value: "newest", label: t("newest"), icon: <Clock className="h-3.5 w-3.5" /> },
+                  { value: "oldest", label: t("oldest"), icon: <Clock className="h-3.5 w-3.5" /> },
+                  { value: "longest", label: t("longest"), icon: <Film className="h-3.5 w-3.5" /> },
+                  { value: "shortest", label: t("shortest"), icon: <Film className="h-3.5 w-3.5" /> },
                 ] as const).map((opt) => (
                   <button
                     key={opt.value}
@@ -533,7 +591,7 @@ export function ModelDetail({
               <div className="mx-auto h-16 w-16 rounded-2xl bg-white/[0.03] flex items-center justify-center mb-4">
                 <Heart className="h-7 w-7 opacity-30" />
               </div>
-              <p className="font-medium">No favorites in this folder yet</p>
+              <p className="font-medium">{t("noFavoritesInFolder")}</p>
             </>
           ) : (
             <>
@@ -542,8 +600,8 @@ export function ModelDetail({
               </div>
               <p className="font-medium">
                 {activeFilter === "ALL"
-                  ? "No content items"
-                  : `No ${activeFilter === "VIDEO" ? "videos" : "photos"} found`}
+                  ? t("noContentItems")
+                  : activeFilter === "VIDEO" ? t("noVideosFound") : t("noPhotosFound")}
               </p>
             </>
           )}
@@ -654,6 +712,100 @@ export function ModelDetail({
             )}
           </div>
         </>
+      )}
+
+      {/* ── Fullscreen content overlay ── */}
+      {selectedItemId && selectedItem && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
+          {/* Overlay top bar */}
+          <div className="flex items-center justify-between px-4 py-3 shrink-0">
+            <button
+              onClick={closeOverlay}
+              className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t("backToModel", { modelName: model.name })}</span>
+              <span className="sm:hidden">Back</span>
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => overlayPrevId && setSelectedItemId(overlayPrevId)}
+                disabled={!overlayPrevId}
+                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => overlayNextId && setSelectedItemId(overlayNextId)}
+                disabled={!overlayNextId}
+                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+
+              <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={overlayToggleFavorite}
+                disabled={overlayTogglingFav}
+                className="gap-1.5 text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <Heart
+                  className={cn(
+                    "h-4 w-4 transition-all",
+                    overlayFavorited ? "fill-red-500 text-red-500 scale-110" : ""
+                  )}
+                />
+                <span className="hidden sm:inline">
+                  {overlayFavorited ? t("favorited") : t("favorite")}
+                </span>
+              </Button>
+
+              <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={closeOverlay}
+                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Content area */}
+          <div className="flex-1 flex items-center justify-center overflow-auto px-4 pb-4">
+            <div className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl">
+              {selectedItem.contentType === "VIDEO" ? (
+                <div className="w-full">
+                  <VideoPlayer key={selectedItemId} contentItemId={selectedItemId} />
+                </div>
+              ) : (
+                <img
+                  src={`/api/content/${selectedItemId}/thumbnail`}
+                  alt=""
+                  className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
+                  onContextMenu={(e) => e.preventDefault()}
+                  draggable={false}
+                />
+              )}
+            </div>
+          </div>
+
+          <p className="text-center text-[10px] sm:text-xs text-white/30 pb-3">
+            {selectedItem.contentType === "VIDEO"
+              ? t("shiftArrowsToNavigate")
+              : t("arrowsToNavigate")}
+          </p>
+        </div>
       )}
 
     </>
