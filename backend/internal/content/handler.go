@@ -53,7 +53,7 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 	var hlsFolderPath *string
 	var modelID string
 	err := h.db.QueryRow(ctx, `
-		SELECT thumbnail_path, hls_folder_path, model_id FROM content_items WHERE id = $1 AND is_active = true
+		SELECT thumbnail_path, hls_folder_path, model_id FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false
 	`, contentItemID).Scan(&thumbnailPath, &hlsFolderPath, &modelID)
 	
 	if err != nil {
@@ -347,7 +347,7 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 	var ciModelID string
 	err = h.db.QueryRow(ctx, `
 		SELECT id, content_type, thumbnail_path, hls_master_path, duration, model_id, created_at::text
-		FROM content_items WHERE id = $1 AND is_active = true
+		FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false
 	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsMaster, &ciDuration, &ciModelID, &ciCreatedAt)
 	if err != nil || ciModelID != modelID {
 		return common.NotFound(c, "Content item not found")

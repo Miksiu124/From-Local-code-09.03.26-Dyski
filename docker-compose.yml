@@ -51,10 +51,9 @@ services:
       - HOSTNAME=0.0.0.0
       - API_HOST=api
       - API_URL=http://api:8080/api
-      - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
-      - AUTH_SECRET=${JWT_SECRET}
-      - AUTH_URL=http://localhost
-      - NEXT_PUBLIC_APP_URL=http://localhost
+      # NOTE: Set NEXT_PUBLIC_APP_URL to your domain in .env
+      # e.g. NEXT_PUBLIC_APP_URL=https://yourdomain.com
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
       - ADMIN_EMAILS=${ADMIN_EMAILS}
     ports:
       - "3000:3000"
@@ -135,9 +134,12 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # SSL certificates managed by Certbot on the host, mounted read-only
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/certs/security:/etc/nginx/certs/security:ro
     depends_on:
       - api
+      - frontend
     deploy:
       resources:
         limits:

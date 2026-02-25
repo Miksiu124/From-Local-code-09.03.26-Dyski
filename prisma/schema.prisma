@@ -214,6 +214,7 @@ model ContentItem {
   hlsFolderPath   String?     @map("hls_folder_path") // R2 relative path
   duration        Int?        // Video duration in seconds (null for photos)
   isActive        Boolean     @default(true) @map("is_active")
+  isHidden        Boolean     @default(false) @map("is_hidden")
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 

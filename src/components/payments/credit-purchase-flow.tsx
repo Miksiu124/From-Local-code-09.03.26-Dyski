@@ -30,6 +30,8 @@ interface PaymentResult {
   transactionCode: string;
   blikCode: string | null;
   walletAddress: string | null;
+  paypalAddress: string | null;
+  revolutAddress: string | null;
   cryptoCurrency: string | null;
   amount: number;
   credits: number;
@@ -283,9 +285,8 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
               {packages.map((pkg, index) => (
                 <Card
                   key={pkg.id}
-                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 animate-in fade-in stagger-${Math.min(index + 1, 5)} ${
-                    selectedPackage?.id === pkg.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
-                  }`}
+                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 animate-in fade-in stagger-${Math.min(index + 1, 5)} ${selectedPackage?.id === pkg.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
+                    }`}
                   onClick={() => setSelectedPackage(pkg)}
                 >
                   <CardContent className="flex items-center justify-between p-4">
@@ -337,9 +338,8 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
               {methods.map((method) => (
                 <Card
                   key={method.id}
-                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 ${
-                    selectedMethod === method.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
-                  }`}
+                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 ${selectedMethod === method.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
+                    }`}
                   onClick={() => setSelectedMethod(method.id)}
                 >
                   <CardContent className="flex flex-col items-center justify-center p-5 sm:p-6 gap-2">
@@ -363,11 +363,10 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                     <button
                       key={crypto.id}
                       onClick={() => setSelectedCrypto(crypto.id)}
-                      className={`px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                        selectedCrypto === crypto.id
+                      className={`px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${selectedCrypto === crypto.id
                           ? "bg-primary text-primary-foreground"
                           : "bg-secondary hover:bg-secondary/80"
-                      }`}
+                        }`}
                     >
                       {crypto.label}
                     </button>
@@ -525,166 +524,198 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
 
             {/* Pending / Waiting */}
             {(!paymentStatus || paymentStatus === "PENDING" || paymentStatus === "EXPIRED") && (
-            <Card>
-              <CardHeader className="text-center">
-                <CardTitle className="flex items-center justify-center gap-2">
-                  <Clock className="h-5 w-5 text-primary" />
-                  {t("pending")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Countdown */}
-                <PaymentCountdown
-                  expirationTime={paymentResult.expirationTime}
-                  isBlik={paymentResult.paymentMethod === "BLIK"}
-                  onBlikExpired={() => {
-                    // Show new BLIK code input
-                  }}
-                />
+              <Card>
+                <CardHeader className="text-center">
+                  <CardTitle className="flex items-center justify-center gap-2">
+                    <Clock className="h-5 w-5 text-primary" />
+                    {t("pending")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Countdown */}
+                  <PaymentCountdown
+                    expirationTime={paymentResult.expirationTime}
+                    isBlik={paymentResult.paymentMethod === "BLIK"}
+                    onBlikExpired={() => {
+                      // Show new BLIK code input
+                    }}
+                  />
 
-                {/* Transaction code */}
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">{t("transactionCode")}</p>
-                  <p className="text-2xl font-mono font-bold mt-1">{paymentResult.transactionCode}</p>
-                </div>
-
-                {/* BLIK code display */}
-                {paymentResult.blikCode && paymentResult.paymentMethod === "BLIK" && (
-                  <div className="text-center p-4 rounded-xl bg-primary/10 border border-primary/20">
-                    <p className="text-sm text-muted-foreground">{t("yourBlikCode")}</p>
-                    <p className="text-4xl font-mono font-bold mt-2 text-primary tracking-wider">
-                      {paymentResult.blikCode}
-                    </p>
+                  {/* Transaction code */}
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">{t("transactionCode")}</p>
+                    <p className="text-2xl font-mono font-bold mt-1">{paymentResult.transactionCode}</p>
                   </div>
-                )}
 
-                {/* BLIK expired: enter new code */}
-                {paymentResult.paymentMethod === "BLIK" && (
-                  <div className="space-y-3 border-t border-border pt-4">
-                    <p className="text-sm font-medium">{t("blikExpiredNewCode")}</p>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="123456"
-                        value={blikCode}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, "").slice(0, 6);
-                          setBlikCode(val);
-                        }}
-                        className="flex-1 text-center font-mono text-lg"
-                        maxLength={6}
-                      />
-                      <Button
-                        onClick={handleBlikExpiredNewCode}
-                        disabled={blikCode.length < 6 || loading}
-                        size="sm"
-                      >
-                        {t("submitNewBlik")}
-                      </Button>
+                  {/* BLIK code display */}
+                  {paymentResult.blikCode && paymentResult.paymentMethod === "BLIK" && (
+                    <div className="text-center p-4 rounded-xl bg-primary/10 border border-primary/20">
+                      <p className="text-sm text-muted-foreground">{t("yourBlikCode")}</p>
+                      <p className="text-4xl font-mono font-bold mt-2 text-primary tracking-wider">
+                        {paymentResult.blikCode}
+                      </p>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Crypto wallet */}
-                {paymentResult.walletAddress && (
-                  <div className="space-y-3">
-                    <div className="p-4 rounded-xl bg-secondary border border-border">
-                      <p className="text-sm text-muted-foreground">{t("walletAddress")}</p>
-                      <p className="text-sm font-mono mt-1 break-all">{paymentResult.walletAddress}</p>
-                    </div>
-                    <p className="text-sm text-center text-muted-foreground">
-                      {t("sendExactAmount", { amount: `${formatPrice(paymentResult.amount)} (${paymentResult.cryptoCurrency})` })}
-                    </p>
-
-                    {/* TxID input */}
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">{t("enterTxId")}</p>
+                  {/* BLIK expired: enter new code */}
+                  {paymentResult.paymentMethod === "BLIK" && (
+                    <div className="space-y-3 border-t border-border pt-4">
+                      <p className="text-sm font-medium">{t("blikExpiredNewCode")}</p>
                       <div className="flex gap-2">
                         <Input
-                          placeholder={t("txIdPlaceholder")}
-                          value={txId}
-                          onChange={(e) => setTxId(e.target.value)}
-                          className="flex-1"
+                          placeholder="123456"
+                          value={blikCode}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                            setBlikCode(val);
+                          }}
+                          className="flex-1 text-center font-mono text-lg"
+                          maxLength={6}
                         />
                         <Button
-                          onClick={handleSubmitTxId}
-                          disabled={!txId.trim() || loading}
+                          onClick={handleBlikExpiredNewCode}
+                          disabled={blikCode.length < 6 || loading}
                           size="sm"
                         >
-                          {t("submitTxId")}
+                          {t("submitNewBlik")}
                         </Button>
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Amount */}
-                <div className="flex justify-between text-sm border-t border-border pt-4">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="font-semibold">{formatPrice(paymentResult.amount)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Credits</span>
-                  <span className="font-semibold">{paymentResult.credits}</span>
-                </div>
-
-                {error && <p className="text-sm text-destructive">{error}</p>}
-
-                {/* Upload proof */}
-                <div className="text-center space-y-2">
-                  <input
-                    ref={proofInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleProofUpload(file);
-                    }}
-                  />
-                  {proofUploaded ? (
-                    <div className="inline-flex items-center gap-2 text-green-600 text-sm font-medium">
-                      <FileCheck className="h-4 w-4" />
-                      Proof uploaded successfully
-                    </div>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      disabled={proofUploading}
-                      onClick={() => proofInputRef.current?.click()}
-                    >
-                      {proofUploading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      {proofUploading ? "Uploading..." : t("uploadProof")}
-                    </Button>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    JPEG, PNG, WebP, GIF, PDF &middot; Max 10 MB
-                  </p>
-                </div>
 
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => {
-                    setStep("select-package");
-                    setPaymentResult(null);
-                    setPaymentStatus(null);
-                    setSelectedPackage(null);
-                    setSelectedMethod(null);
-                    setBlikCode("");
-                    setTxId("");
-                    setError("");
-                  }}
-                >
-                  New Purchase
-                </Button>
-              </CardContent>
-            </Card>
+                  {/* Crypto wallet */}
+                  {paymentResult.walletAddress && (
+                    <div className="space-y-3">
+                      <div className="p-4 rounded-xl bg-secondary border border-border">
+                        <p className="text-sm text-muted-foreground">{t("walletAddress")}</p>
+                        <p className="text-sm font-mono mt-1 break-all">{paymentResult.walletAddress}</p>
+                      </div>
+                      <p className="text-sm text-center text-muted-foreground">
+                        {t("sendExactAmount", { amount: `${formatPrice(paymentResult.amount)} (${paymentResult.cryptoCurrency})` })}
+                      </p>
+
+                      {/* TxID input */}
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">{t("enterTxId")}</p>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder={t("txIdPlaceholder")}
+                            value={txId}
+                            onChange={(e) => setTxId(e.target.value)}
+                            className="flex-1"
+                          />
+                          <Button
+                            onClick={handleSubmitTxId}
+                            disabled={!txId.trim() || loading}
+                            size="sm"
+                          >
+                            {t("submitTxId")}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PayPal instructions */}
+                  {paymentResult.paymentMethod === "PAYPAL" && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">{t("paypalInstructions")}</p>
+                      <div className="p-4 rounded-xl bg-secondary border border-border">
+                        <p className="text-sm text-muted-foreground">{t("paypalAddress")}</p>
+                        <p className="text-sm font-mono font-semibold mt-1 break-all">
+                          {paymentResult.paypalAddress || "—"}
+                        </p>
+                      </div>
+                      <p className="text-xs text-center text-muted-foreground">
+                        {t("sendExactAmount", { amount: formatPrice(paymentResult.amount) })}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Revolut instructions */}
+                  {paymentResult.paymentMethod === "REVOLUT" && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">{t("revolutInstructions")}</p>
+                      <div className="p-4 rounded-xl bg-secondary border border-border">
+                        <p className="text-sm text-muted-foreground">{t("revolutAddress")}</p>
+                        <p className="text-sm font-mono font-semibold mt-1 break-all">
+                          {paymentResult.revolutAddress || "—"}
+                        </p>
+                      </div>
+                      <p className="text-xs text-center text-muted-foreground">
+                        {t("sendExactAmount", { amount: formatPrice(paymentResult.amount) })}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Amount */}
+                  <div className="flex justify-between text-sm border-t border-border pt-4">
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="font-semibold">{formatPrice(paymentResult.amount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Credits</span>
+                    <span className="font-semibold">{paymentResult.credits}</span>
+                  </div>
+
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+
+                  {/* Upload proof */}
+                  <div className="text-center space-y-2">
+                    <input
+                      ref={proofInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleProofUpload(file);
+                      }}
+                    />
+                    {proofUploaded ? (
+                      <div className="inline-flex items-center gap-2 text-green-600 text-sm font-medium">
+                        <FileCheck className="h-4 w-4" />
+                        Proof uploaded successfully
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        disabled={proofUploading}
+                        onClick={() => proofInputRef.current?.click()}
+                      >
+                        {proofUploading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        {proofUploading ? "Uploading..." : t("uploadProof")}
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      JPEG, PNG, WebP, GIF, PDF &middot; Max 10 MB
+                    </p>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setStep("select-package");
+                      setPaymentResult(null);
+                      setPaymentStatus(null);
+                      setSelectedPackage(null);
+                      setSelectedMethod(null);
+                      setBlikCode("");
+                      setTxId("");
+                      setError("");
+                    }}
+                  >
+                    New Purchase
+                  </Button>
+                </CardContent>
+              </Card>
             )}
           </motion.div>
         )}

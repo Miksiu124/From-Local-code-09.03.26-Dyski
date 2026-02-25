@@ -217,11 +217,18 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     };
   }, []);
 
-  // Fullscreen change listener
+  // Fullscreen change listener (including webkit for iOS Safari)
   useEffect(() => {
-    const onFsc = () => setIsFullscreen(!!document.fullscreenElement);
+    const onFsc = () => {
+      const doc = document as any;
+      setIsFullscreen(!!(doc.fullscreenElement || doc.webkitFullscreenElement));
+    };
     document.addEventListener("fullscreenchange", onFsc);
-    return () => document.removeEventListener("fullscreenchange", onFsc);
+    document.addEventListener("webkitfullscreenchange", onFsc);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsc);
+      document.removeEventListener("webkitfullscreenchange", onFsc);
+    };
   }, []);
 
   // Auto-hide controls
@@ -279,9 +286,29 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   }, [duration]);
 
   const toggleFullscreen = useCallback(() => {
-    const c = containerRef.current;
+    const doc = document as any;
+    const c = containerRef.current as any;
+    const v = videoRef.current as any;
     if (!c) return;
-    document.fullscreenElement ? document.exitFullscreen() : c.requestFullscreen();
+
+    const isFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+
+    if (isFs) {
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen();
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen();
+      }
+    } else {
+      if (c.requestFullscreen) {
+        c.requestFullscreen();
+      } else if (c.webkitRequestFullscreen) {
+        c.webkitRequestFullscreen();
+      } else if (v?.webkitEnterFullscreen) {
+        // iOS Safari fallback – fullscreen on the video element itself
+        v.webkitEnterFullscreen();
+      }
+    }
   }, []);
 
   const handleQualityChange = useCallback((levelIndex: number) => {
@@ -421,9 +448,8 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       {/* ──── Controls overlay ──── */}
       <div
         data-controls
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 sm:px-5 pb-3 sm:pb-4 pt-16 sm:pt-20 transition-opacity duration-300 ${
-          showControls && !hlsError ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 sm:px-5 pb-3 sm:pb-4 pt-16 sm:pt-20 transition-opacity duration-300 ${showControls && !hlsError ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
       >
         {/* Progress bar */}
         <div
@@ -522,9 +548,8 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
                 >
                   <button
                     onClick={() => handleQualityChange(-1)}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                      currentQuality === -1 ? "text-red-500 font-medium" : "text-white"
-                    }`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === -1 ? "text-red-500 font-medium" : "text-white"
+                      }`}
                   >
                     Auto
                   </button>
@@ -534,9 +559,8 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
                       <button
                         key={level.index}
                         onClick={() => handleQualityChange(level.index)}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
-                          currentQuality === level.index ? "text-red-500 font-medium" : "text-white"
-                        }`}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === level.index ? "text-red-500 font-medium" : "text-white"
+                          }`}
                       >
                         {level.label}
                       </button>

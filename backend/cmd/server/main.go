@@ -228,6 +228,7 @@ func main() {
 	adminGroup.DELETE("/packages/:id", adminHandler.DeletePackage)
 	adminGroup.GET("/models", adminHandler.ListModels)
 	adminGroup.PATCH("/models", adminHandler.UpdateModel)
+	adminGroup.PATCH("/content/hidden", adminHandler.ToggleContentHidden)
 	adminGroup.GET("/settings", adminHandler.GetSettings)
 	adminGroup.PUT("/settings", adminHandler.UpdateSettings)
 	adminGroup.POST("/r2/sync", adminHandler.SyncR2)

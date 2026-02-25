@@ -58,6 +58,11 @@ export function Header() {
       }
     };
     fetchUser();
+
+    // Listen for auth changes from login/register pages
+    const handleAuthChange = () => fetchUser();
+    window.addEventListener("auth-change", handleAuthChange);
+    return () => window.removeEventListener("auth-change", handleAuthChange);
   }, []);
 
   useEffect(() => {

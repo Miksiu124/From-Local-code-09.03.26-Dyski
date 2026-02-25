@@ -57,6 +57,7 @@ export default function RegisterPage() {
       });
 
       if (resLogin.ok) {
+        window.dispatchEvent(new Event("auth-change"));
         router.push("/");
         router.refresh();
       } else {

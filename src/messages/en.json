@@ -73,7 +73,26 @@
     "buyCreditsFirst": "Buy credits to get access",
     "unlockAccess": "Unlock Access",
     "chooseAccessPlan": "Choose an access plan for {modelName}",
-    "bundleBannerDesc": "Get access to all {count} creators + future content"
+    "bundleBannerDesc": "Get access to all {count} creators + future content",
+    "all": "All",
+    "videos": "Videos",
+    "photos": "Photos",
+    "newest": "Newest",
+    "oldest": "Oldest",
+    "longest": "Longest",
+    "shortest": "Shortest",
+    "noContentItems": "No content items",
+    "noVideosFound": "No videos found",
+    "noPhotosFound": "No photos found",
+    "noFavoritesInFolder": "No favorites in this folder yet",
+    "backToModel": "Back to {modelName}",
+    "favorite": "Favorite",
+    "favorited": "Favorited",
+    "shiftArrowsToNavigate": "Shift + Arrow keys to navigate",
+    "arrowsToNavigate": "Arrow keys to navigate",
+    "getAccess": "Get Access",
+    "featured": "Featured",
+    "purchasedTab": "Purchased"
   },
   "credits": {
     "title": "Buy Credits",
@@ -115,9 +134,13 @@
     "approved": "Approved",
     "rejected": "Rejected",
     "perCredit": "per credit",
-    "bestValue": "Best Value",
+    "bestValue": "Best value",
     "popular": "Popular",
-    "creditsLabel": "credits"
+    "creditsLabel": "credits",
+    "paypalInstructions": "Send the payment to the PayPal address below and include your payment code in the transfer note.",
+    "paypalAddress": "PayPal address",
+    "revolutInstructions": "Send the payment to the Revolut account below and include your payment code in the transfer note.",
+    "revolutAddress": "Revolut address"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -179,7 +202,11 @@
     "revokeAccess": "Revoke Access",
     "userDetails": "User Details",
     "accessHistory": "Access History",
-    "allUsers": "All Users"
+    "allUsers": "All users",
+    "hideContent": "Hide",
+    "showContent": "Show",
+    "contentHidden": "Content hidden",
+    "contentVisible": "Content visible"
   },
   "favorites": {
     "title": "Favorites",
