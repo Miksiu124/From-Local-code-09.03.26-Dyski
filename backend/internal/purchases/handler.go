@@ -290,7 +290,7 @@ func (h *Handler) List(c echo.Context) error {
 
 	rows, err := h.db.Query(ctx, `
 		SELECT p.id, p.purchase_type, p.credits_spent, p.created_at::text,
-		       m.name,
+		       m.name, m.folder_name,
 		       ua.expires_at::text,
 		       CASE WHEN ua.expires_at IS NULL THEN true
 		            WHEN ua.expires_at > now() THEN true
@@ -311,9 +311,9 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var id, pType, createdAt string
 		var credits int
-		var modelName, expiresAt *string
+		var modelName, folderName, expiresAt *string
 		var isActive bool
-		if err := rows.Scan(&id, &pType, &credits, &createdAt, &modelName, &expiresAt, &isActive); err != nil {
+		if err := rows.Scan(&id, &pType, &credits, &createdAt, &modelName, &folderName, &expiresAt, &isActive); err != nil {
 			continue
 		}
 		p := map[string]interface{}{
@@ -325,6 +325,9 @@ func (h *Handler) List(c echo.Context) error {
 		}
 		if modelName != nil {
 			p["modelName"] = *modelName
+		}
+		if folderName != nil {
+			p["folderName"] = *folderName
 		}
 		if expiresAt != nil {
 			p["expiresAt"] = *expiresAt

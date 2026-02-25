@@ -117,8 +117,15 @@ export default function AdminAnalyticsPage() {
     return <div className="py-20 text-center text-muted-foreground">Failed to load analytics.</div>;
   }
 
-  const fmtCurrency = (n: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  const fmtCurrency = (n: number) => {
+    const locale = typeof document !== "undefined"
+      ? document.cookie.match(/(?:^|;\s*)locale=([^;]*)/)?.[1] || document.documentElement.lang || "en"
+      : "en";
+    if (locale === "pl") {
+      return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(n);
+    }
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  };
 
   const handleTopSort = (key: TopSortKey) => {
     if (topSortKey === key) {
@@ -135,7 +142,7 @@ export default function AdminAnalyticsPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -227,7 +234,7 @@ export default function AdminAnalyticsPage() {
         {data.topSellers.length === 0 ? (
           <p className="text-muted-foreground text-sm">No model purchases yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">

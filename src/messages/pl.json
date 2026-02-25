@@ -73,7 +73,26 @@
     "buyCreditsFirst": "Kup kredyty, aby uzyskać dostęp",
     "unlockAccess": "Odblokuj dostęp",
     "chooseAccessPlan": "Wybierz plan dostępu dla {modelName}",
-    "bundleBannerDesc": "Uzyskaj dostęp do wszystkich {count} twórców + przyszłych treści"
+    "bundleBannerDesc": "Uzyskaj dostęp do wszystkich {count} twórców + przyszłych treści",
+    "all": "Wszystkie",
+    "videos": "Filmy",
+    "photos": "Zdjęcia",
+    "newest": "Najnowsze",
+    "oldest": "Najstarsze",
+    "longest": "Najdłuższe",
+    "shortest": "Najkrótsze",
+    "noContentItems": "Brak elementów",
+    "noVideosFound": "Nie znaleziono filmów",
+    "noPhotosFound": "Nie znaleziono zdjęć",
+    "noFavoritesInFolder": "Brak ulubionych w tym folderze",
+    "backToModel": "Wróć do {modelName}",
+    "favorite": "Ulubione",
+    "favorited": "W ulubionych",
+    "shiftArrowsToNavigate": "Shift + strzałki do nawigacji",
+    "arrowsToNavigate": "Strzałki do nawigacji",
+    "getAccess": "Uzyskaj dostęp",
+    "featured": "Wyróżnione",
+    "purchasedTab": "Kupione"
   },
   "credits": {
     "title": "Kup kredyty",
@@ -117,7 +136,11 @@
     "perCredit": "za kredyt",
     "bestValue": "Najlepsza wartość",
     "popular": "Popularne",
-    "creditsLabel": "kredytów"
+    "creditsLabel": "kredytów",
+    "paypalInstructions": "Wyślij płatność na poniższy adres PayPal i umieść kod płatności w tytule przelewu.",
+    "paypalAddress": "Adres PayPal",
+    "revolutInstructions": "Wyślij płatność na poniższe konto Revolut i umieść kod płatności w tytule przelewu.",
+    "revolutAddress": "Adres Revolut"
   },
   "dashboard": {
     "title": "Panel",
@@ -179,7 +202,11 @@
     "revokeAccess": "Cofnij dostęp",
     "userDetails": "Szczegóły użytkownika",
     "accessHistory": "Historia dostępu",
-    "allUsers": "Wszyscy użytkownicy"
+    "allUsers": "Wszyscy użytkownicy",
+    "hideContent": "Ukryj",
+    "showContent": "Pokaż",
+    "contentHidden": "Treść ukryta",
+    "contentVisible": "Treść widoczna"
   },
   "favorites": {
     "title": "Ulubione",

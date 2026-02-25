@@ -35,7 +35,7 @@ func (h *Handler) Toggle(c echo.Context) error {
 	// Verify content item exists
 	var contentExists bool
 	err := h.db.QueryRow(ctx, `
-		SELECT EXISTS(SELECT 1 FROM content_items WHERE id = $1 AND is_active = true)
+		SELECT EXISTS(SELECT 1 FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false)
 	`, req.ContentItemID).Scan(&contentExists)
 	if err != nil || !contentExists {
 		return common.NotFound(c, "Content item not found")

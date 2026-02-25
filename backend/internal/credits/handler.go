@@ -204,6 +204,25 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
+	// Get PayPal/Revolut address if needed
+	var paypalAddress, revolutAddress *string
+	if req.PaymentMethod == "PAYPAL" {
+		var val interface{}
+		if err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'paypal_address'`).Scan(&val); err == nil {
+			if s := jsonbToString(val); s != "" {
+				paypalAddress = &s
+			}
+		}
+	}
+	if req.PaymentMethod == "REVOLUT" {
+		var val interface{}
+		if err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'revolut_address'`).Scan(&val); err == nil {
+			if s := jsonbToString(val); s != "" {
+				revolutAddress = &s
+			}
+		}
+	}
+
 	// Discord notification for new purchase
 	discordInfo := discord.PurchaseInfo{
 		PurchaseID:      purchaseID,
@@ -255,6 +274,8 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"transactionCode": txCode,
 		"blikCode":        blikCode,
 		"walletAddress":   walletAddress,
+		"paypalAddress":   paypalAddress,
+		"revolutAddress":  revolutAddress,
 		"cryptoCurrency":  cryptoCurrencyStr,
 		"amount":          pkgPrice,
 		"credits":         pkgCredits,
@@ -708,4 +729,22 @@ func getSetting(ctx context.Context, db *pgxpool.Pool, key string) (interface{},
 		return nil, err
 	}
 	return value, nil
+}
+
+// jsonbToString extracts a plain string from a JSONB value.
+// pgx may return string, []byte, or JSON-quoted []byte depending on version.
+func jsonbToString(val interface{}) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case []byte:
+		s := strings.TrimSpace(string(v))
+		// Strip surrounding JSON quotes if present
+		if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+			s = s[1 : len(s)-1]
+		}
+		return s
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }

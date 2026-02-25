@@ -39,8 +39,8 @@ func (h *Handler) List(c echo.Context) error {
 	query := `
 		SELECT m.id, m.name, m.folder_name, m.description, m.country_id, m.is_active, m.is_featured,
 			   c.name AS country_name, c.flag_emoji,
-			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true) AS content_count,
-			   (SELECT ci.id FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true ORDER BY ci.created_at ASC LIMIT 1) AS first_content_item_id
+			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false) AS content_count,
+			   (SELECT ci.id FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false ORDER BY ci.created_at ASC LIMIT 1) AS first_content_item_id
 		FROM models m
 		LEFT JOIN countries c ON c.id = m.country_id
 		WHERE m.is_active = true
@@ -162,7 +162,7 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	rows, err := h.db.Query(ctx, `
 		SELECT id, unique_id, content_type, thumbnail_path, hls_master_path, duration, is_active, created_at
 		FROM content_items
-		WHERE model_id = $1 AND is_active = true
+		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 		ORDER BY created_at ASC
 	`, model.ID)
 	if err != nil {
@@ -229,7 +229,7 @@ func (h *Handler) ListContent(c echo.Context) error {
 	query := `
 		SELECT id, unique_id, content_type, thumbnail_path, hls_master_path, duration, is_active, created_at
 		FROM content_items
-		WHERE model_id = $1 AND is_active = true
+		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 	`
 	args := []interface{}{modelID}
 	argIdx := 2
@@ -313,7 +313,7 @@ func (h *Handler) ListContent(c echo.Context) error {
 	
 	// Get total count (approximation or exact for small datasets)
 	var totalCount int
-	countQuery := `SELECT COUNT(*) FROM content_items WHERE model_id = $1 AND is_active = true`
+	countQuery := `SELECT COUNT(*) FROM content_items WHERE model_id = $1 AND is_active = true AND is_hidden = false`
 	countArgs := []interface{}{modelID}
 	if contentType != "" && contentType != "ALL" {
 		countQuery += ` AND content_type = $2`
@@ -354,7 +354,12 @@ func (h *Handler) CheckAccess(c echo.Context) error {
 // ListCountries returns all countries
 func (h *Handler) ListCountries(c echo.Context) error {
 	ctx := c.Request().Context()
-	rows, err := h.db.Query(ctx, `SELECT id, name, code, flag_emoji FROM countries ORDER BY name ASC`)
+	rows, err := h.db.Query(ctx, `
+		SELECT c.id, c.name, c.code, c.flag_emoji 
+		FROM countries c 
+		WHERE EXISTS (SELECT 1 FROM models m WHERE m.country_id = c.id AND m.is_active = true)
+		ORDER BY c.name ASC
+	`)
 	if err != nil {
 		return common.InternalError(c)
 	}
