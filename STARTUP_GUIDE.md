@@ -295,10 +295,10 @@ ssh deploy@YOUR_VPS_IP
 cd /opt/contentvault
 
 # Build all containers
-docker compose -f docker-compose.yml -f docker-compose.production.yml build
+docker compose build
 
 # Start in detached mode
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+docker compose up -d
 
 # Watch logs
 docker compose logs -f
@@ -397,8 +397,8 @@ cd /opt/contentvault
 git pull  # or rsync from local
 
 # Rebuild and restart
-docker compose -f docker-compose.yml -f docker-compose.production.yml build
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+docker compose build
+docker compose up -d
 
 # Check logs for errors
 docker compose logs --tail=50
@@ -567,5 +567,5 @@ docker exec content-redis redis-cli ping
 docker stats
 
 # If postgres is using too much memory, adjust shared_buffers
-# in docker-compose.production.yml
+# in docker-compose.yml (postgres service command section)
 ```
