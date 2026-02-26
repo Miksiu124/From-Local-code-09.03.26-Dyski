@@ -17,6 +17,8 @@ services:
       - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - PORT=8080
+    expose:
+      - "8080"
     ports:
       - "8080:8080"
     healthcheck:

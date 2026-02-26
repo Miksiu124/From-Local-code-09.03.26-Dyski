@@ -17,6 +17,7 @@ import (
 )
 
 const blikTimerSeconds = 110
+const blikWSMaxRetries = 5
 
 type WSMessage struct {
 	Type    string      `json:"type"`
@@ -117,6 +118,8 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 		}
 	}()
 
+	wsRetryCount := 0
+
 	for {
 		timer := time.NewTimer(time.Duration(blikTimerSeconds) * time.Second)
 		sendWSMessage(ws, "TIMER_STARTED", map[string]int{"seconds": blikTimerSeconds})
@@ -138,6 +141,15 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 			}
 
 		case <-timer.C:
+			wsRetryCount++
+
+			if wsRetryCount > blikWSMaxRetries {
+				sendWSMessage(ws, "MAX_RETRIES", map[string]string{
+					"message": "Maximum BLIK code attempts reached",
+				})
+				return nil
+			}
+
 			_, _ = h.db.Exec(ctx, `
 				UPDATE credit_purchases 
 				SET retry_count = retry_count + 1,

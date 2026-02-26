@@ -249,7 +249,8 @@ func (h *Handler) Playlist(c echo.Context) error {
 		}
 		defer body.Close()
 
-		playlistBytes, readErr := io.ReadAll(body)
+		const maxPlaylistSize = 10 * 1024 * 1024 // 10 MB
+		playlistBytes, readErr := io.ReadAll(io.LimitReader(body, maxPlaylistSize))
 		if readErr != nil {
 			return common.InternalError(c)
 		}

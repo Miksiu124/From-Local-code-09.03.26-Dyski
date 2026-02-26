@@ -96,6 +96,7 @@ export function ModelDetail({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [overlayFavorited, setOverlayFavorited] = useState(false);
   const [overlayTogglingFav, setOverlayTogglingFav] = useState(false);
+  const savedScrollY = useRef(0);
 
   // Lock body scroll when overlay is open
   useEffect(() => {
@@ -125,7 +126,42 @@ export function ModelDetail({
     ? contentItems[selectedIndex + 1].id
     : null;
 
-  const closeOverlay = useCallback(() => setSelectedItemId(null), []);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const requestMobileFullscreen = useCallback((el: HTMLElement | null) => {
+    if (!el || window.innerWidth >= 768) return;
+    try {
+      if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => {});
+      } else if ((el as any).webkitRequestFullscreen) {
+        (el as any).webkitRequestFullscreen();
+      }
+    } catch {}
+  }, []);
+
+  const exitFullscreen = useCallback(() => {
+    try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else if ((document as any).webkitFullscreenElement) {
+        (document as any).webkitExitFullscreen();
+      }
+    } catch {}
+  }, []);
+
+  const closeOverlay = useCallback(() => {
+    exitFullscreen();
+    setSelectedItemId(null);
+    requestAnimationFrame(() => {
+      window.scrollTo(0, savedScrollY.current);
+    });
+  }, [exitFullscreen]);
+
+  useEffect(() => {
+    if (selectedItemId && overlayRef.current) {
+      requestMobileFullscreen(overlayRef.current);
+    }
+  }, [selectedItemId, requestMobileFullscreen]);
 
   const overlayToggleFavorite = useCallback(async () => {
     if (!selectedItemId || overlayTogglingFav) return;
@@ -255,6 +291,8 @@ export function ModelDetail({
       return;
     }
     if (!hasAccess) return;
+    savedScrollY.current = window.scrollY;
+    sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
     setSelectedItemId(contentId);
   };
 
@@ -716,7 +754,7 @@ export function ModelDetail({
 
       {/* ── Fullscreen content overlay ── */}
       {selectedItemId && selectedItem && (
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
+        <div ref={overlayRef} className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
           {/* Overlay top bar */}
           <div className="flex items-center justify-between px-4 py-3 shrink-0">
             <button
@@ -781,9 +819,19 @@ export function ModelDetail({
             </div>
           </div>
 
-          {/* Content area */}
-          <div className="flex-1 flex items-center justify-center overflow-auto px-4 pb-4">
-            <div className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl">
+          {/* Content area — click on backdrop (outside media) closes overlay */}
+          <div
+            className="flex-1 flex items-center justify-center overflow-auto px-4 pb-4 cursor-pointer"
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (target.closest("video, img, .video-player-controls, button")) return;
+              closeOverlay();
+            }}
+          >
+            <div
+              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
               {selectedItem.contentType === "VIDEO" ? (
                 <div className="w-full">
                   <VideoPlayer key={selectedItemId} contentItemId={selectedItemId} />

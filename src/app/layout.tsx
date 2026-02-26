@@ -9,6 +9,8 @@ import "./globals.css";
 
 const outfit = Outfit({ subsets: ["latin"] });
 
+const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://contentvault.io").replace(/\/+$/, "");
+
 export const metadata: Metadata = {
   title: {
     default: "ContentVault – Premium Content Platform",
@@ -17,7 +19,14 @@ export const metadata: Metadata = {
   description:
     "Browse exclusive premium content from top creators. Instant access, multiple payment methods, and a curated library updated daily.",
   keywords: ["premium content", "creators", "exclusive", "videos", "photos", "ContentVault"],
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://contentvault.io"),
+  metadataBase: new URL(baseUrl),
+  alternates: {
+    canonical: baseUrl,
+    languages: {
+      en: baseUrl,
+      pl: baseUrl,
+    },
+  },
   openGraph: {
     type: "website",
     siteName: "ContentVault",
@@ -25,6 +34,8 @@ export const metadata: Metadata = {
     description:
       "Browse exclusive premium content from top creators. Instant access, multiple payment methods.",
     locale: "en_US",
+    alternateLocale: ["pl_PL"],
+    url: baseUrl,
   },
   twitter: {
     card: "summary_large_image",
@@ -35,6 +46,13 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
   icons: {
     icon: "/favicon.svg",
@@ -53,6 +71,25 @@ export default async function RootLayout({
 
   return (
     <html lang={locale} className="dark">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              name: "ContentVault",
+              url: baseUrl,
+              description: "Browse exclusive premium content from top creators.",
+              potentialAction: {
+                "@type": "SearchAction",
+                target: `${baseUrl}/?search={search_term_string}`,
+                "query-input": "required name=search_term_string",
+              },
+            }),
+          }}
+        />
+      </head>
       <body className={`${outfit.className} min-h-screen bg-background text-foreground antialiased`} >
         <Providers
           locale={locale}

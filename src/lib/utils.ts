@@ -34,9 +34,14 @@ export function formatPrice(price: number, locale?: string): string {
   }).format(price);
 }
 
+export function getCurrencySymbol(locale?: string): string {
+  const loc = locale || getClientLocale();
+  return loc === "pl" ? "PLN" : "USD";
+}
+
 export function generateTransactionCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const length = 12;
+  const length = 6;
   const bytes = new Uint8Array(length);
   if (globalThis.crypto?.getRandomValues) {
     globalThis.crypto.getRandomValues(bytes);

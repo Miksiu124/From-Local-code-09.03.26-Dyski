@@ -1,15 +1,14 @@
 package credits
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/middleware"
 
@@ -31,10 +31,11 @@ type Handler struct {
 	redis   *redis.Client
 	cfg     *config.Config
 	discord *discord.Notifier
+	r2      *content.R2Client
 }
 
-func NewHandler(db *pgxpool.Pool, redis *redis.Client, cfg *config.Config) *Handler {
-	return &Handler{db: db, redis: redis, cfg: cfg, discord: discord.NewNotifier(db)}
+func NewHandler(db *pgxpool.Pool, redis *redis.Client, cfg *config.Config, r2 *content.R2Client) *Handler {
+	return &Handler{db: db, redis: redis, cfg: cfg, discord: discord.NewNotifier(db, cfg.FrontendURL), r2: r2}
 }
 
 type CreatePurchaseRequest struct {
@@ -226,13 +227,14 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	// Discord notification for new purchase
 	discordInfo := discord.PurchaseInfo{
 		PurchaseID:      purchaseID,
-		UserEmail:       "", // filled below
 		PackageName:     pkgName,
 		Credits:         pkgCredits,
 		Amount:          pkgPrice,
+		Currency:        "PLN",
 		PaymentMethod:   req.PaymentMethod,
 		TransactionCode: txCode,
 		Status:          "PENDING",
+		UserAgent:       c.Request().Header.Get("User-Agent"),
 	}
 	if blikCode != nil {
 		discordInfo.BlikCode = *blikCode
@@ -240,14 +242,21 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	if cryptoCurrencyStr != nil {
 		discordInfo.CryptoCurrency = *cryptoCurrencyStr
 	}
-	// Fetch user email for Discord
 	var uEmail string
 	var uName *string
-	if err := h.db.QueryRow(ctx, `SELECT email, name FROM users WHERE id = $1`, userID).Scan(&uEmail, &uName); err == nil {
+	var uCreatedAt time.Time
+	if err := h.db.QueryRow(ctx, `SELECT email, name, created_at FROM users WHERE id = $1`, userID).Scan(&uEmail, &uName, &uCreatedAt); err == nil {
 		discordInfo.UserEmail = uEmail
 		if uName != nil {
 			discordInfo.UserName = *uName
 		}
+		discordInfo.UserCreatedAt = uCreatedAt
+	}
+	// country column may not exist yet if migration hasn't been applied
+	var uCountry *string
+	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE id = $1`, userID).Scan(&uCountry)
+	if uCountry != nil {
+		discordInfo.UserCountry = *uCountry
 	}
 	h.discord.NotifyNewPurchase(ctx, discordInfo)
 
@@ -284,7 +293,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	})
 }
 
-// UploadProof handles the upload of payment proof files
+// UploadProof handles the upload of payment proof files to R2
 func (h *Handler) UploadProof(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
@@ -294,31 +303,31 @@ func (h *Handler) UploadProof(c echo.Context) error {
 		return common.Unauthorized(c)
 	}
 
-	// file validation
 	file, err := c.FormFile("file")
 	if err != nil {
 		return common.BadRequest(c, "No file uploaded")
 	}
 
-	// Max 10MB
 	if file.Size > 10*1024*1024 {
 		return common.BadRequest(c, "File too large (max 10MB)")
 	}
 
-	// Validate content type — only images allowed
-	src0, err := file.Open()
+	src, err := file.Open()
 	if err != nil {
 		return common.InternalError(c)
 	}
-	buf := make([]byte, 512)
-	n, _ := src0.Read(buf)
-	src0.Close()
-	contentType := http.DetectContentType(buf[:n])
-	if !strings.HasPrefix(contentType, "image/") {
+	defer src.Close()
+
+	data, err := io.ReadAll(io.LimitReader(src, 10*1024*1024+1))
+	if err != nil {
+		return common.InternalError(c)
+	}
+
+	detectedType := http.DetectContentType(data)
+	if !strings.HasPrefix(detectedType, "image/") {
 		return common.BadRequest(c, "Only image files are allowed (jpeg, png, webp, gif)")
 	}
 
-	// Check purchase ownership and status
 	var status string
 	err = h.db.QueryRow(ctx, `
 		SELECT status FROM credit_purchases WHERE id = $1 AND user_id = $2
@@ -326,52 +335,30 @@ func (h *Handler) UploadProof(c echo.Context) error {
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
-
 	if status != "PENDING" {
 		return common.BadRequest(c, "Can only upload proof for PENDING purchases")
 	}
 
-	// Create uploads directory
-	uploadDir := "uploads/proofs"
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	ext := filepath.Ext(file.Filename)
+	if ext == "" {
+		ext = ".jpg"
+	}
+	r2Key := fmt.Sprintf("proofs/%s_%s%s", purchaseID, userID, ext)
+
+	if err := h.r2.PutObject(ctx, r2Key, bytes.NewReader(data), detectedType); err != nil {
+		log.Printf("[UploadProof] R2 upload failed: %v", err)
 		return common.InternalError(c)
 	}
 
-	// Generate filename: purchaseID_userID_originalName
-	// Sanitize original filename
-	originalName := filepath.Base(file.Filename)
-	safeName := strings.ReplaceAll(originalName, " ", "_")
-	filename := fmt.Sprintf("%s_%s_%s", purchaseID, userID, safeName)
-	dstPath := filepath.Join(uploadDir, filename)
-
-	// Save file
-	src, err := file.Open()
-	if err != nil {
-		return common.InternalError(c)
-	}
-	defer src.Close()
-
-	dst, err := os.Create(dstPath)
-	if err != nil {
-		return common.InternalError(c)
-	}
-	defer dst.Close()
-
-	if _, err = io.Copy(dst, src); err != nil {
-		return common.InternalError(c)
-	}
-
-	// Update DB
 	_, err = h.db.Exec(ctx, `
 		UPDATE credit_purchases SET payment_proof_url = $1 WHERE id = $2
-	`, dstPath, purchaseID)
+	`, r2Key, purchaseID)
 	if err != nil {
 		return common.InternalError(c)
 	}
 
 	return common.Success(c, map[string]string{
 		"message": "Proof uploaded successfully",
-		"path":    dstPath,
 	})
 }
 
@@ -386,10 +373,11 @@ func (h *Handler) ListPurchases(c echo.Context) error {
 	statusFilter := c.QueryParam("status")
 	validStatuses := map[string]bool{"PENDING": true, "APPROVED": true, "REJECTED": true, "EXPIRED": true}
 
-	// Expire old PENDING purchases
+	// Expire old PENDING purchases (skip BLIK with retries remaining)
 	_, _ = h.db.Exec(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE user_id = $1 AND status = 'PENDING' AND expiration_time < now()
+			AND (payment_method != 'BLIK' OR retry_count >= 5)
 	`, userID)
 
 	query := `
@@ -511,10 +499,11 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 		return common.Unauthorized(c)
 	}
 
-	// Auto-expire
+	// Auto-expire (skip BLIK with retries remaining)
 	_, _ = h.db.Exec(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE id = $1 AND user_id = $2 AND status = 'PENDING' AND expiration_time < now()
+			AND (payment_method != 'BLIK' OR retry_count >= 5)
 	`, purchaseID, userID)
 
 	var status, paymentMethod string
@@ -581,6 +570,9 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
+	maxDuration := time.NewTimer(5 * time.Minute)
+	defer maxDuration.Stop()
+
 	for {
 		select {
 		case msg := <-redisCh:
@@ -589,7 +581,6 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 			return nil
 
 		case <-ticker.C:
-			// Poll DB as fallback
 			var currentStatus string
 			err := h.db.QueryRow(ctx, `SELECT status FROM credit_purchases WHERE id = $1`, purchaseID).Scan(&currentStatus)
 			if err == nil && currentStatus != "PENDING" {
@@ -597,9 +588,13 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 				c.Response().Flush()
 				return nil
 			}
-			// Send keepalive comment
 			fmt.Fprint(c.Response().Writer, ": keepalive\n\n")
 			c.Response().Flush()
+
+		case <-maxDuration.C:
+			fmt.Fprint(c.Response().Writer, "data: {\"status\":\"TIMEOUT\"}\n\n")
+			c.Response().Flush()
+			return nil
 
 		case <-ctx.Done():
 			return nil
@@ -655,16 +650,39 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 		return common.BadRequest(c, "Valid 6-digit BLIK code is required")
 	}
 
-	// Update code and extend expiration
-	var expirationTime string
+	const maxBlikRetries = 5
+	const blikCooldownSeconds = 20
+
+	var currentRetryCount int
+	var lastUpdated time.Time
 	err := h.db.QueryRow(ctx, `
+		SELECT retry_count, updated_at
+		FROM credit_purchases
+		WHERE id = $1 AND user_id = $2 AND status IN ('PENDING', 'EXPIRED') AND payment_method = 'BLIK'
+	`, purchaseID, userID).Scan(&currentRetryCount, &lastUpdated)
+	if err != nil {
+		return common.NotFound(c, "BLIK purchase not found or not pending")
+	}
+
+	if currentRetryCount >= maxBlikRetries {
+		return common.JSONError(c, http.StatusTooManyRequests, "BLIK_MAX_RETRIES", "Maximum BLIK code attempts reached")
+	}
+
+	if time.Since(lastUpdated) < time.Duration(blikCooldownSeconds)*time.Second {
+		return common.JSONError(c, http.StatusTooManyRequests, "BLIK_COOLDOWN", "Please wait before submitting a new BLIK code")
+	}
+
+	var expirationTime string
+	err = h.db.QueryRow(ctx, `
 		UPDATE credit_purchases
 		SET blik_code = $1,
 			expiration_time = now() + ($2 || ' minutes')::interval,
-			retry_count = retry_count + 1
-		WHERE id = $3 AND user_id = $4 AND status = 'PENDING' AND payment_method = 'BLIK'
+			retry_count = retry_count + 1,
+			status = 'PENDING'
+		WHERE id = $3 AND user_id = $4 AND status IN ('PENDING', 'EXPIRED') AND payment_method = 'BLIK'
+			AND retry_count < $5
 		RETURNING expiration_time::text
-	`, strings.TrimSpace(req.BlikCode), strconv.Itoa(h.cfg.BlikExpirationMinutes), purchaseID, userID).Scan(&expirationTime)
+	`, strings.TrimSpace(req.BlikCode), strconv.Itoa(h.cfg.BlikExpirationMinutes), purchaseID, userID, maxBlikRetries).Scan(&expirationTime)
 	if err != nil {
 		return common.NotFound(c, "BLIK purchase not found or not pending")
 	}
@@ -672,26 +690,38 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 	// Discord notification for updated BLIK code
 	var pkgName, uEmail string
 	var uName *string
-	var pkgCredits int
+	var pkgCredits, retryCount int
 	var amount float64
+	var uCreatedAt time.Time
 	_ = h.db.QueryRow(ctx, `
-		SELECT cp.amount, cp.credits, pkg.name, u.email, u.name
+		SELECT cp.amount, cp.credits, cp.retry_count, pkg.name,
+		       u.email, u.name, u.created_at
 		FROM credit_purchases cp
 		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
 		JOIN users u ON u.id = cp.user_id
 		WHERE cp.id = $1
-	`, purchaseID).Scan(&amount, &pkgCredits, &pkgName, &uEmail, &uName)
+	`, purchaseID).Scan(&amount, &pkgCredits, &retryCount, &pkgName, &uEmail, &uName, &uCreatedAt)
 
 	discordInfo := discord.PurchaseInfo{
-		PurchaseID:  purchaseID,
-		UserEmail:   uEmail,
-		BlikCode:    strings.TrimSpace(req.BlikCode),
-		PackageName: pkgName,
-		Credits:     pkgCredits,
-		Amount:      amount,
+		PurchaseID:      purchaseID,
+		UserEmail:       uEmail,
+		BlikCode:        strings.TrimSpace(req.BlikCode),
+		PackageName:     pkgName,
+		Credits:         pkgCredits,
+		Amount:          amount,
+		Currency:        "PLN",
+		PaymentAttempts: retryCount,
+		UserCreatedAt:   uCreatedAt,
+		UserAgent:       c.Request().Header.Get("User-Agent"),
 	}
 	if uName != nil {
 		discordInfo.UserName = *uName
+	}
+	// country column may not exist yet if migration hasn't been applied
+	var uCountry *string
+	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE id = $1`, userID).Scan(&uCountry)
+	if uCountry != nil {
+		discordInfo.UserCountry = *uCountry
 	}
 	h.discord.NotifyBlikCodeUpdated(ctx, discordInfo)
 
@@ -713,9 +743,14 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 // BlikWebSocket — handled in blik_ws.go
 
 func generateTransactionCode() string {
-	b := make([]byte, 8)
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	b := make([]byte, 6)
 	_, _ = rand.Read(b)
-	return strings.ToUpper(hex.EncodeToString(b))
+	code := make([]byte, 6)
+	for i := range code {
+		code[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(code)
 }
 
 // GetSetting is a helper

@@ -26,8 +26,13 @@ interface SettingItem {
   description: string | null;
 }
 
-export default async function AdminPaymentsPage() {
+interface PageProps {
+  searchParams: Promise<{ id?: string }>;
+}
+
+export default async function AdminPaymentsPage({ searchParams }: PageProps) {
   const t = await getTranslations("admin");
+  const { id: highlightId } = await searchParams;
 
   const data = await fetchApi<{ purchases: ApiPurchase[] }>("/admin/credits/purchases").catch(() => ({ purchases: [] }));
   const allPurchases = data?.purchases ?? [];
@@ -60,7 +65,7 @@ export default async function AdminPaymentsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">{t("creditPurchases")}</h1>
-      <AdminPaymentsList purchases={pendingPurchases} initialBlikEnabled={blikEnabled} />
+      <AdminPaymentsList purchases={pendingPurchases} initialBlikEnabled={blikEnabled} highlightId={highlightId} />
     </div>
   );
 }

@@ -43,6 +43,17 @@ export function ContentViewer({
     setBackHref(`/models/${modelSlug}${qs ? `?${qs}` : ""}`);
   }, [modelSlug]);
 
+  const handleBack = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const savedY = sessionStorage.getItem(`scroll_model_${modelSlug}`);
+    router.push(backHref);
+    if (savedY) {
+      requestAnimationFrame(() => {
+        setTimeout(() => window.scrollTo(0, parseInt(savedY, 10)), 50);
+      });
+    }
+  }, [backHref, modelSlug, router]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -128,15 +139,15 @@ export function ContentViewer({
       transition={{ duration: 0.3 }}
     >
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
-        <Link
+        <a
           href={backHref}
-          scroll={false}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          onClick={handleBack}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">{t("backToModel", { modelName })}</span>
           <span className="sm:hidden">Back</span>
-        </Link>
+        </a>
 
         <div className="flex items-center gap-1.5">
           <Button

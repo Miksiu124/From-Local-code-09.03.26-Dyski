@@ -2,6 +2,8 @@ package purchases
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"content-platform-backend/internal/common"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 )
 
 // Fallback pricing (used only if settings table has no value)
@@ -22,12 +25,13 @@ const (
 )
 
 type Handler struct {
-	db  *pgxpool.Pool
-	cfg *config.Config
+	db    *pgxpool.Pool
+	cfg   *config.Config
+	redis *redis.Client
 }
 
-func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
-	return &Handler{db: db, cfg: cfg}
+func NewHandler(db *pgxpool.Pool, cfg *config.Config, redisClient *redis.Client) *Handler {
+	return &Handler{db: db, cfg: cfg, redis: redisClient}
 }
 
 type pricingConfig struct {
@@ -243,6 +247,8 @@ func (h *Handler) Create(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	h.publishNotification(ctx, userID, "PURCHASE_COMPLETE", title, message)
+
 	return common.Success(c, map[string]interface{}{
 		"success":    true,
 		"purchaseId": purchaseID,
@@ -339,4 +345,16 @@ func (h *Handler) List(c echo.Context) error {
 	}
 
 	return common.Success(c, purchases)
+}
+
+func (h *Handler) publishNotification(ctx context.Context, userID, nType, title, message string) {
+	if h.redis == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"type":    nType,
+		"title":   title,
+		"message": message,
+	})
+	_ = h.redis.Publish(ctx, fmt.Sprintf("notifications:%s", userID), string(payload)).Err()
 }

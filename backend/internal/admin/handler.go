@@ -31,7 +31,7 @@ type Handler struct {
 }
 
 func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, cfg *config.Config, redisClient *redis.Client, contentService *content.Service) *Handler {
-	return &Handler{db: db, r2: r2, cfg: cfg, redis: redisClient, contentService: contentService, discord: discord.NewNotifier(db)}
+	return &Handler{db: db, r2: r2, cfg: cfg, redis: redisClient, contentService: contentService, discord: discord.NewNotifier(db, cfg.FrontendURL)}
 }
 
 // ═══ Credit Purchases ════════════════════════════════════════════════════════
@@ -39,10 +39,11 @@ func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, cfg *config.Config, redi
 func (h *Handler) ListCreditPurchases(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Auto-expire old pending purchases
+	// Auto-expire old pending purchases (skip BLIK with retries remaining)
 	_, _ = h.db.Exec(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE status = 'PENDING' AND expiration_time < now()
+			AND (payment_method != 'BLIK' OR retry_count >= 5)
 	`)
 
 	statusFilter := c.QueryParam("status")
@@ -143,6 +144,9 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 func (h *Handler) ApprovePurchase(c echo.Context) error {
 	ctx := c.Request().Context()
 	purchaseID := c.Param("id")
+	if !common.IsValidUUID(purchaseID) {
+		return common.BadRequest(c, "Invalid purchase ID format")
+	}
 
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
@@ -184,17 +188,18 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	approveMsg := fmt.Sprintf("Your purchase of %d credits has been approved.", credits)
 	_, _ = tx.Exec(ctx, `
 		INSERT INTO notifications (user_id, type, title, message, metadata)
 		VALUES ($1, 'PAYMENT_APPROVED', 'Payment Approved', $2, $3)
-	`, userID, fmt.Sprintf("Your purchase of %d credits has been approved.", credits),
-		map[string]interface{}{"creditPurchaseId": purchaseID})
+	`, userID, approveMsg, map[string]interface{}{"creditPurchaseId": purchaseID})
 
 	if err := tx.Commit(ctx); err != nil {
 		return common.InternalError(c)
 	}
 
 	h.publishBlikAction(ctx, purchaseID, "APPROVED")
+	h.publishNotification(ctx, userID, "PAYMENT_APPROVED", "Payment Approved", approveMsg)
 
 	// Discord notification
 	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
@@ -207,6 +212,9 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 func (h *Handler) RejectPurchase(c echo.Context) error {
 	ctx := c.Request().Context()
 	purchaseID := c.Param("id")
+	if !common.IsValidUUID(purchaseID) {
+		return common.BadRequest(c, "Invalid purchase ID format")
+	}
 
 	var req struct {
 		Reason string `json:"reason"`
@@ -251,6 +259,7 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 	}
 
 	h.publishBlikAction(ctx, purchaseID, "REJECTED")
+	h.publishNotification(ctx, userID, "PAYMENT_REJECTED", "Payment Rejected", msg)
 
 	// Discord notification
 	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
@@ -266,6 +275,18 @@ func (h *Handler) publishBlikAction(ctx context.Context, purchaseID, action stri
 	if h.redis != nil {
 		_ = h.redis.Publish(ctx, channel, string(payload)).Err()
 	}
+}
+
+func (h *Handler) publishNotification(ctx context.Context, userID, nType, title, message string) {
+	if h.redis == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"type":    nType,
+		"title":   title,
+		"message": message,
+	})
+	_ = h.redis.Publish(ctx, fmt.Sprintf("notifications:%s", userID), string(payload)).Err()
 }
 
 // StreamPendingPurchases sends SSE events when new PENDING purchases appear.
@@ -287,6 +308,9 @@ func (h *Handler) StreamPendingPurchases(c echo.Context) error {
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 
+	maxDuration := time.NewTimer(30 * time.Minute)
+	defer maxDuration.Stop()
+
 	for {
 		select {
 		case msg := <-redisCh:
@@ -296,6 +320,11 @@ func (h *Handler) StreamPendingPurchases(c echo.Context) error {
 		case <-keepalive.C:
 			fmt.Fprint(c.Response().Writer, ": keepalive\n\n")
 			c.Response().Flush()
+
+		case <-maxDuration.C:
+			fmt.Fprint(c.Response().Writer, "data: {\"event\":\"reconnect\"}\n\n")
+			c.Response().Flush()
+			return nil
 
 		case <-ctx.Done():
 			return nil
@@ -390,6 +419,9 @@ func (h *Handler) ListUsers(c echo.Context) error {
 func (h *Handler) GetUser(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := c.Param("id")
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
 
 	var id, email, role, createdAt string
 	var name, lastLogin, avatarUrl *string
@@ -408,68 +440,85 @@ func (h *Handler) GetUser(c echo.Context) error {
 
 	// Fetch detailed history for single user view
 	// Purchases
-	pRows, _ := h.db.Query(ctx, `
+	pRows, err := h.db.Query(ctx, `
 		SELECT p.id, p.purchase_type, p.access_duration, p.credits_spent, p.created_at::text, m.name
 		FROM purchases p
 		LEFT JOIN models m ON m.id = p.model_id
 		WHERE p.user_id = $1 ORDER BY p.created_at DESC LIMIT 20
 	`, userID)
 	purchasesList := []map[string]interface{}{}
-	defer pRows.Close()
-	for pRows.Next() {
-		var pid, ptype, pcreated string
-		var  pduration, mname *string
-		var pspent int
-		pRows.Scan(&pid, &ptype, &pduration, &pspent, &pcreated, &mname)
-		modelObj := interface{}(nil)
-		if mname != nil { modelObj = map[string]interface{}{"name": *mname} }
-		purchasesList = append(purchasesList, map[string]interface{}{
-			"id": pid, "purchaseType": ptype, "accessDuration": pduration,
-			"creditsSpent": pspent, "createdAt": pcreated, "model": modelObj,
-		})
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var pid, ptype, pcreated string
+			var pduration, mname *string
+			var pspent int
+			if scanErr := pRows.Scan(&pid, &ptype, &pduration, &pspent, &pcreated, &mname); scanErr != nil {
+				log.Printf("[GetUser] purchases scan error: %v", scanErr)
+				continue
+			}
+			modelObj := interface{}(nil)
+			if mname != nil {
+				modelObj = map[string]interface{}{"name": *mname}
+			}
+			purchasesList = append(purchasesList, map[string]interface{}{
+				"id": pid, "purchaseType": ptype, "accessDuration": pduration,
+				"creditsSpent": pspent, "createdAt": pcreated, "model": modelObj,
+			})
+		}
 	}
 
-	// Credit Purchases
-	cpRows, _ := h.db.Query(ctx, `
+	cpRows, err := h.db.Query(ctx, `
 		SELECT cp.id, cp.credits, cp.amount, cp.payment_method, cp.status, cp.created_at::text, pkg.name
 		FROM credit_purchases cp
 		LEFT JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
 		WHERE cp.user_id = $1 ORDER BY cp.created_at DESC LIMIT 20
 	`, userID)
 	cpList := []map[string]interface{}{}
-	defer cpRows.Close()
-	for cpRows.Next() {
-		var cpid, cpstatus, cpcreated, cppkg string
-		var cpcredits int
-		var cpamount float64
-		var cpmethod string
-		cpRows.Scan(&cpid, &cpcredits, &cpamount, &cpmethod, &cpstatus, &cpcreated, &cppkg)
-		cpList = append(cpList, map[string]interface{}{
-			"id": cpid, "credits": cpcredits, "amount": cpamount,
-			"paymentMethod": cpmethod, "status": cpstatus, "createdAt": cpcreated,
-			"creditPackage": map[string]interface{}{"name": cppkg},
-		})
+	if err == nil {
+		defer cpRows.Close()
+		for cpRows.Next() {
+			var cpid, cpstatus, cpcreated, cppkg string
+			var cpcredits int
+			var cpamount float64
+			var cpmethod string
+			if scanErr := cpRows.Scan(&cpid, &cpcredits, &cpamount, &cpmethod, &cpstatus, &cpcreated, &cppkg); scanErr != nil {
+				log.Printf("[GetUser] credit_purchases scan error: %v", scanErr)
+				continue
+			}
+			cpList = append(cpList, map[string]interface{}{
+				"id": cpid, "credits": cpcredits, "amount": cpamount,
+				"paymentMethod": cpmethod, "status": cpstatus, "createdAt": cpcreated,
+				"creditPackage": map[string]interface{}{"name": cppkg},
+			})
+		}
 	}
 
-	// Access
-	uaRows, _ := h.db.Query(ctx, `
+	uaRows, err := h.db.Query(ctx, `
 		SELECT ua.id, ua.model_id, ua.expires_at::text, ua.created_at::text, m.name
 		FROM user_access ua
 		LEFT JOIN models m ON m.id = ua.model_id
 		WHERE ua.user_id = $1 ORDER BY ua.created_at DESC LIMIT 50
 	`, userID)
 	uaList := []map[string]interface{}{}
-	defer uaRows.Close()
-	for uaRows.Next() {
-		var uaid, uacreated string
-		var uamodelid, uaexpires, uamodelname *string
-		uaRows.Scan(&uaid, &uamodelid, &uaexpires, &uacreated, &uamodelname)
-		modelObj := interface{}(nil)
-		if uamodelname != nil { modelObj = map[string]interface{}{"name": *uamodelname} }
-		uaList = append(uaList, map[string]interface{}{
-			"id": uaid, "modelId": uamodelid, "expiresAt": uaexpires,
-			"createdAt": uacreated, "model": modelObj,
-		})
+	if err == nil {
+		defer uaRows.Close()
+		for uaRows.Next() {
+			var uaid, uacreated string
+			var uamodelid, uaexpires, uamodelname *string
+			if scanErr := uaRows.Scan(&uaid, &uamodelid, &uaexpires, &uacreated, &uamodelname); scanErr != nil {
+				log.Printf("[GetUser] user_access scan error: %v", scanErr)
+				continue
+			}
+			modelObj := interface{}(nil)
+			if uamodelname != nil {
+				modelObj = map[string]interface{}{"name": *uamodelname}
+			}
+			uaList = append(uaList, map[string]interface{}{
+				"id": uaid, "modelId": uamodelid, "expiresAt": uaexpires,
+				"createdAt": uacreated, "model": modelObj,
+			})
+		}
 	}
 
 	return common.Success(c, map[string]interface{}{
@@ -491,6 +540,9 @@ func (h *Handler) GetUser(c echo.Context) error {
 func (h *Handler) UpdateUser(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := c.Param("id")
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
 
 	var req struct {
 		Name          *string `json:"name"`
@@ -517,6 +569,9 @@ func (h *Handler) UpdateUser(c echo.Context) error {
 func (h *Handler) DeleteUser(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := c.Param("id")
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
 	_, err := h.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
 	if err != nil {
 		return common.InternalError(c)
@@ -528,6 +583,9 @@ func (h *Handler) DeleteUser(c echo.Context) error {
 func (h *Handler) UpdateUserCredits(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := c.Param("id")
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
 	var req struct {
 		Credits int `json:"credits"` // Delta or absolute? Let's assume SET absolute or ADD delta. Usage implies "give/take".
 		// Let's implement ADD (positive) / REMOVE (negative) via a "delta" field, or just set absolute.
@@ -568,6 +626,9 @@ func (h *Handler) UpdateUserCredits(c echo.Context) error {
 func (h *Handler) ToggleBan(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := c.Param("id")
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
 	var req struct {
 		IsBanned bool `json:"isBanned"`
 	}
@@ -584,6 +645,9 @@ func (h *Handler) ToggleBan(c echo.Context) error {
 func (h *Handler) GrantAccess(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := c.Param("id")
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
 
 	var req struct {
 		ModelID      *string `json:"modelId"`
@@ -638,6 +702,9 @@ func (h *Handler) RevokeAccess(c echo.Context) error {
 	accessID := c.QueryParam("accessId")
 	if accessID == "" {
 		return common.BadRequest(c, "accessId query parameter is required")
+	}
+	if !common.IsValidUUID(accessID) {
+		return common.BadRequest(c, "Invalid access ID format")
 	}
 
 	result, err := h.db.Exec(ctx, `DELETE FROM user_access WHERE id = $1`, accessID)
@@ -971,6 +1038,7 @@ func (h *Handler) ListModels(c echo.Context) error {
 	validSorts := map[string]string{
 		"name":         "m.name",
 		"folderName":   "m.folder_name",
+		"countryName":  "c.name",
 		"contentCount": "content_count",
 		"isActive":     "m.is_active",
 		"isFeatured":   "m.is_featured",
@@ -983,8 +1051,10 @@ func (h *Handler) ListModels(c echo.Context) error {
 
 	query := `
 		SELECT m.id, m.name, m.folder_name, m.last_synced_at::text, m.is_active, m.is_featured,
-			   (SELECT COUNT(*) FROM content_items WHERE model_id = m.id) as content_count
+			   (SELECT COUNT(*) FROM content_items WHERE model_id = m.id) as content_count,
+			   c.name AS country_name
 		FROM models m
+		LEFT JOIN countries c ON c.id = m.country_id
 		ORDER BY ` + orderCol + ` ` + sortDir
 
 	rows, err := h.db.Query(ctx, query)
@@ -998,10 +1068,11 @@ func (h *Handler) ListModels(c echo.Context) error {
 		var id, name, folderName, lastSynced string
 		var isActive, isFeatured bool
 		var contentCount int
-		if err := rows.Scan(&id, &name, &folderName, &lastSynced, &isActive, &isFeatured, &contentCount); err != nil {
+		var countryName *string
+		if err := rows.Scan(&id, &name, &folderName, &lastSynced, &isActive, &isFeatured, &contentCount, &countryName); err != nil {
 			continue
 		}
-		models = append(models, map[string]interface{}{
+		m := map[string]interface{}{
 			"id":           id,
 			"name":         name,
 			"folderName":   folderName,
@@ -1009,7 +1080,13 @@ func (h *Handler) ListModels(c echo.Context) error {
 			"isActive":     isActive,
 			"isFeatured":   isFeatured,
 			"contentCount": contentCount,
-		})
+		}
+		if countryName != nil {
+			m["countryName"] = *countryName
+		} else {
+			m["countryName"] = nil
+		}
+		models = append(models, m)
 	}
 	if models == nil {
 		models = []map[string]interface{}{}
@@ -1068,20 +1145,23 @@ func (h *Handler) ToggleContentHidden(c echo.Context) error {
 func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID string) discord.PurchaseInfo {
 	var info discord.PurchaseInfo
 	info.PurchaseID = purchaseID
+	info.Currency = "PLN"
 
 	var blikCode, crypto, txId, uname *string
 	err := h.db.QueryRow(ctx, `
 		SELECT cp.credits, cp.amount, cp.payment_method, cp.transaction_code,
-		       cp.blik_code, cp.crypto_currency, cp.tx_id,
-		       u.email, u.name, pkg.name
+		       cp.blik_code, cp.crypto_currency, cp.tx_id, cp.retry_count,
+		       u.email, u.name, u.created_at,
+		       pkg.name
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
 		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
 		WHERE cp.id = $1
 	`, purchaseID).Scan(
 		&info.Credits, &info.Amount, &info.PaymentMethod, &info.TransactionCode,
-		&blikCode, &crypto, &txId,
-		&info.UserEmail, &uname, &info.PackageName,
+		&blikCode, &crypto, &txId, &info.PaymentAttempts,
+		&info.UserEmail, &uname, &info.UserCreatedAt,
+		&info.PackageName,
 	)
 	if err != nil {
 		log.Printf("[Discord] Failed to fetch purchase info for %s: %v", purchaseID, err)
@@ -1098,6 +1178,12 @@ func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID st
 	}
 	if uname != nil {
 		info.UserName = *uname
+	}
+	// country column may not exist yet if migration hasn't been applied
+	var uCountry *string
+	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE email = $1`, info.UserEmail).Scan(&uCountry)
+	if uCountry != nil {
+		info.UserCountry = *uCountry
 	}
 	return info
 }

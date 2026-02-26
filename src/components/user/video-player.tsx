@@ -47,14 +47,22 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState(0);
+  const [autoplayEnabled, setAutoplayEnabled] = useState(false);
 
-  // Error state
   const [hlsError, setHlsError] = useState<string | null>(null);
   const retryCountRef = useRef(0);
-  // Bumped to trigger useEffect re-run on manual retry only
   const [initKey, setInitKey] = useState(0);
 
   const MAX_AUTO_RETRIES = 2;
+
+  useEffect(() => {
+    fetch("/api/user/preferences")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.autoplay) setAutoplayEnabled(true);
+      })
+      .catch(() => {});
+  }, []);
 
   // Initialize HLS.js
   useEffect(() => {
@@ -81,6 +89,12 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (destroyed) return;
+            if (autoplayEnabled && videoRef.current) {
+              videoRef.current.muted = true;
+              videoRef.current.play().then(() => {
+                if (videoRef.current) videoRef.current.muted = false;
+              }).catch(() => {});
+            }
             const rawLevels = hls.levels as { height: number; width: number; bitrate: number; url: string[] }[];
             const levels: QualityLevel[] = rawLevels.map(
               (level, index: number) => {
@@ -144,6 +158,13 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
             }
           });
 
+          if (autoplayEnabled) {
+            videoRef.current.muted = true;
+            videoRef.current.play().then(() => {
+              if (videoRef.current) videoRef.current.muted = false;
+            }).catch(() => {});
+          }
+
           setLoading(false);
         }
       } catch (error) {
@@ -161,7 +182,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         hlsRef.current = null;
       }
     };
-  }, [contentItemId, initKey]);
+  }, [contentItemId, initKey, autoplayEnabled]);
 
   // Manual retry handler
   const handleRetry = useCallback(() => {

@@ -46,9 +46,20 @@ type Config struct {
 	// Admin
 	AdminEmails []string
 
-	// Crypto wallets (loaded from DB settings in practice)
 	// BLIK
 	BlikExpirationMinutes int
+
+	// SMTP
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
+
+	// Discord OAuth
+	DiscordClientID     string
+	DiscordClientSecret string
+	DiscordRedirectURI  string
 }
 
 func Load() (*Config, error) {
@@ -77,7 +88,19 @@ func Load() (*Config, error) {
 		StreamingTokenSecret:  requireEnv("STREAMING_TOKEN_SECRET"),
 		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600), // 6 hours
 		BlikExpirationMinutes: getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
+		SMTPHost:              getEnvOrDefault("SMTP_HOST", ""),
+		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 587),
+		SMTPUser:              getEnvOrDefault("SMTP_USER", ""),
+		SMTPPassword:          getEnvOrDefault("SMTP_PASSWORD", ""),
+		SMTPFrom:              getEnvOrDefault("SMTP_FROM", "noreply@contentvault.io"),
+		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
+		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
+		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
 	}
+
+	// Normalize URLs: strip trailing slashes to prevent double-slash bugs
+	cfg.FrontendURL = strings.TrimRight(cfg.FrontendURL, "/")
+	cfg.DiscordRedirectURI = strings.TrimRight(cfg.DiscordRedirectURI, "/")
 
 	// R2 endpoint fallback
 	if cfg.R2Endpoint == "" && cfg.R2AccountID != "" {

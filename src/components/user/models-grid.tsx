@@ -78,6 +78,7 @@ export function ModelsGrid({
   const [activeIndex, setActiveIndex] = useState(0);
 
   const [filteredMode, setFilteredMode] = useState(false);
+  const [showPurchasedOnly, setShowPurchasedOnly] = useState(false);
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -209,8 +210,23 @@ export function ModelsGrid({
     setPopupOpen(true);
   };
 
-  const countriesWithModels = countries;
+  const [clientCountries, setClientCountries] = useState<CountryItem[]>(countries);
 
+  useEffect(() => {
+    if (countries.length > 0) return;
+    fetch("/api/countries")
+      .then((res) => res.ok ? res.json() : [])
+      .then((data: CountryItem[]) => {
+        if (Array.isArray(data) && data.length > 0) setClientCountries(data);
+      })
+      .catch(() => {});
+  }, [countries.length]);
+
+  const countriesWithModels = clientCountries;
+
+  const displayModels = showPurchasedOnly
+    ? models.filter((m) => hasAccess(m.id))
+    : models;
 
   return (
     <>
@@ -265,17 +281,17 @@ export function ModelsGrid({
                 <div className="absolute bottom-0 left-0 p-6 sm:p-8 w-full">
                   <div className="mb-3">
                     <Badge className="bg-primary/80 backdrop-blur-sm text-white border-none rounded-lg px-2.5 py-1 text-[10px] tracking-widest uppercase font-semibold">
-                      Featured
+                      {t("featured")}
                     </Badge>
                   </div>
                   <h3 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2 tracking-tight leading-tight">
                     {heroModel.name}
                   </h3>
                   <p className="text-white/60 line-clamp-2 max-w-lg text-sm sm:text-base mb-4">
-                    {heroModel.description || `Exclusive content from ${heroModel.name}`}
+                    {heroModel.description || t("exclusiveContent", { name: heroModel.name })}
                   </p>
                   <div className="flex items-center gap-4 text-xs sm:text-sm text-white/70">
-                    <span>{heroModel.contentCount} items</span>
+                    <span>{heroModel.contentCount} {t("items")}</span>
                     <span className="text-white/30">|</span>
                     <span>{heroModel.countryName} {heroModel.countryFlag}</span>
                   </div>
@@ -319,7 +335,7 @@ export function ModelsGrid({
                     </div>
                     <div className="flex-1 p-4 flex flex-col justify-center">
                       <h4 className="text-sm lg:text-base font-bold text-white group-hover:text-primary transition-colors truncate">{model.name}</h4>
-                      <span className="text-xs text-muted-foreground mt-0.5">{model.contentCount} items</span>
+                      <span className="text-xs text-muted-foreground mt-0.5">{model.contentCount} {t("items")}</span>
                     </div>
                   </div>
                 </Link>
@@ -370,7 +386,7 @@ export function ModelsGrid({
                   <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-purple-600 group-hover:opacity-90 transition-opacity" />
                   <span className="relative text-[10px] text-white/70 mb-1 uppercase tracking-widest">30 {t("days")}</span>
                   <span className="relative text-base font-bold">{bundleCost30d} {t("credits")}</span>
-                  <div className="absolute -right-1 -top-1 bg-yellow-400 text-black text-[9px] font-black px-2 py-0.5 rotate-12 rounded-sm">BEST</div>
+                  <div className="absolute -right-1 -top-1 bg-yellow-400 text-black text-[9px] font-black px-2 py-0.5 rotate-12 rounded-sm">{t("best")}</div>
                 </Button>
               )}
             </div>
@@ -392,23 +408,39 @@ export function ModelsGrid({
         {countriesWithModels.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={() => setSelectedCountry(null)}
+              onClick={() => { setSelectedCountry(null); setShowPurchasedOnly(false); }}
               className={cn(
                 "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border",
-                !selectedCountry
+                !selectedCountry && !showPurchasedOnly
                   ? "bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20"
                   : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground"
               )}
             >
-              All
+              {t("all")}
             </button>
+            {isAuthenticated && userAccessModelIds !== "all" && userAccessModelIds.length > 0 && (
+              <button
+                onClick={() => {
+                  setShowPurchasedOnly(!showPurchasedOnly);
+                  if (!showPurchasedOnly) setSelectedCountry(null);
+                }}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border",
+                  showPurchasedOnly
+                    ? "bg-green-500 text-white border-green-500 shadow-sm shadow-green-500/20"
+                    : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground"
+                )}
+              >
+                {t("purchasedTab")}
+              </button>
+            )}
             {countriesWithModels.map((country) => (
               <button
                 key={country.id}
-                onClick={() => setSelectedCountry(country.id)}
+                onClick={() => { setSelectedCountry(country.id); setShowPurchasedOnly(false); }}
                 className={cn(
                   "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border",
-                  selectedCountry === country.id
+                  selectedCountry === country.id && !showPurchasedOnly
                     ? "bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20"
                     : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground"
                 )}
@@ -421,7 +453,7 @@ export function ModelsGrid({
       </div>
 
       {/* Models Grid */}
-      {models.length === 0 && !loading ? (
+      {displayModels.length === 0 && !loading ? (
         <div className="text-center py-20 text-muted-foreground">
           <Search className="mx-auto h-10 w-10 mb-3 opacity-30" />
           <p className="font-medium">{t("noModels")}</p>
@@ -429,7 +461,7 @@ export function ModelsGrid({
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-            {models.map((model, index) => (
+            {displayModels.map((model, index) => (
               <div
                 key={model.id}
                 className={cn("animate-in fade-in", `stagger-${Math.min(index % 10 + 1, 10)}`)}
@@ -484,16 +516,27 @@ export function ModelsGrid({
                       </div>
                     )}
 
+                    {/* Model avatar */}
+                    <div className="absolute bottom-12 sm:bottom-14 right-2.5">
+                      <img
+                        src={`/api/models/${model.folderName}/avatar`}
+                        alt=""
+                        className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    </div>
+
                     {/* Info overlay */}
                     <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 transform translate-y-0.5 group-hover:translate-y-0 transition-transform duration-300">
                       <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[10px] sm:text-xs font-medium text-white/50">
-                          {model.contentCount} items
+                          {model.contentCount} {t("items")}
                         </span>
                         {!hasAccess(model.id) && cost7d > 0 && (
                           <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">
-                            Get Access
+                            {t("getAccess")}
                           </span>
                         )}
                       </div>
@@ -509,9 +552,9 @@ export function ModelsGrid({
             {loading && (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             )}
-            {!loading && !cursor && models.length > 0 && (
+            {!loading && !cursor && displayModels.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {models.length} of {filteredMode ? models.length : totalModelCount} models
+                {displayModels.length} / {filteredMode || showPurchasedOnly ? displayModels.length : totalModelCount} {t("modelsCount")}
               </p>
             )}
           </div>
