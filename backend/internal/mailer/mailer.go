@@ -29,7 +29,11 @@ func New(cfg *config.Config) *Mailer {
 }
 
 func (m *Mailer) IsConfigured() bool {
-	return m.host != "" && m.user != "" && m.password != ""
+	return m.host != ""
+}
+
+func (m *Mailer) needsAuth() bool {
+	return m.user != "" && m.password != ""
 }
 
 func (m *Mailer) Send(to, subject, htmlBody string) error {
@@ -54,15 +58,25 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 	msg.WriteString(htmlBody)
 
 	addr := fmt.Sprintf("%s:%d", m.host, m.port)
-	auth := smtp.PlainAuth("", m.user, m.password, m.host)
 
+	var auth smtp.Auth
+	if m.needsAuth() {
+		auth = smtp.PlainAuth("", m.user, m.password, m.host)
+	}
+
+	// Port 25: plain SMTP (typical for local/Docker BillionMail relay)
+	if m.port == 25 {
+		return smtp.SendMail(addr, auth, m.from, []string{to}, []byte(msg.String()))
+	}
+
+	// Port 465: implicit TLS
 	tlsConfig := &tls.Config{
 		ServerName: m.host,
 	}
 
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
-		// Fallback to STARTTLS
+		// Fallback to STARTTLS (port 587 or misconfigured 465)
 		return smtp.SendMail(addr, auth, m.from, []string{to}, []byte(msg.String()))
 	}
 	defer conn.Close()
@@ -73,8 +87,10 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 	}
 	defer client.Close()
 
-	if err = client.Auth(auth); err != nil {
-		return err
+	if auth != nil {
+		if err = client.Auth(auth); err != nil {
+			return err
+		}
 	}
 	if err = client.Mail(m.from); err != nil {
 		return err

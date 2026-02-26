@@ -37,6 +37,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      billionmail-postfix:
+        condition: service_healthy
     networks:
       - internal
 
@@ -126,6 +128,39 @@ services:
     networks:
       - internal
 
+  # ── BillionMail SMTP (Postfix) ───────────────────────────────
+  # Self-hosted mail server — https://github.com/Billionmail/BillionMail
+  billionmail-postfix:
+    image: billionmail/postfix:1.6
+    container_name: content-billionmail-postfix
+    hostname: postfix
+    restart: unless-stopped
+    volumes:
+      - billionmail_postfix_data:/var/spool/postfix
+      - billionmail_logs:/var/log/mail
+    environment:
+      - TZ=${TZ:-UTC}
+      - BILLIONMAIL_HOSTNAME=${BILLIONMAIL_HOSTNAME:-mail.yourdomain.com}
+    expose:
+      - "25"
+      - "587"
+    ports:
+      - "127.0.0.1:25:25"
+      - "127.0.0.1:587:587"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - internal
+
   # ── Nginx Reverse Proxy ──────────────────────────────────────
   nginx:
     image: nginx:alpine
@@ -153,6 +188,8 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  billionmail_postfix_data:
+  billionmail_logs:
 
 
 networks:

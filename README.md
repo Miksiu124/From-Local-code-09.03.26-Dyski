@@ -14,6 +14,7 @@ A full-stack premium content platform with credit-based payments, HLS video stre
 | Cache / PubSub | Redis 7 |
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
+| SMTP | BillionMail / Postfix (self-hosted mail server) |
 | Proxy | Nginx (reverse proxy, rate limiting, WAF) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
@@ -158,6 +159,12 @@ ADMIN_EMAILS=your_email@example.com
 # BLIK
 BLIK_EXPIRATION_MINUTES=2
 
+# SMTP (BillionMail — self-hosted, no external provider needed)
+SMTP_HOST=billionmail-postfix
+SMTP_PORT=25
+SMTP_FROM=noreply@yourdomain.com
+BILLIONMAIL_HOSTNAME=mail.yourdomain.com
+
 # Frontend (used by docker-compose)
 NEXT_PUBLIC_APP_URL=http://localhost
 ```
@@ -168,7 +175,7 @@ NEXT_PUBLIC_APP_URL=http://localhost
 docker compose up -d --build
 ```
 
-This starts 5 containers:
+This starts 6 containers:
 
 | Service | Port | Description |
 |---|---|---|
@@ -177,6 +184,7 @@ This starts 5 containers:
 | api | 8080 | Go API |
 | postgres | 5432 (localhost only) | Database |
 | redis | 6379 (localhost only) | Cache and PubSub |
+| billionmail-postfix | 25, 587 (localhost only) | Self-hosted SMTP ([BillionMail](https://github.com/Billionmail/BillionMail)) |
 
 ### 4. Seed the database
 
@@ -270,6 +278,12 @@ All payment methods support:
 | `STREAMING_TOKEN_TTL` | No | HLS token TTL in seconds (default: 21600) |
 | `ADMIN_EMAILS` | Yes | Comma-separated admin emails |
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
+| `SMTP_HOST` | No | SMTP server hostname (default: `billionmail-postfix`) |
+| `SMTP_PORT` | No | SMTP port (default: `25`) |
+| `SMTP_USER` | No | SMTP username (empty for local BillionMail relay) |
+| `SMTP_PASSWORD` | No | SMTP password (empty for local BillionMail relay) |
+| `SMTP_FROM` | No | Sender address (default: `noreply@contentvault.io`) |
+| `BILLIONMAIL_HOSTNAME` | No | BillionMail mail hostname for DNS records |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |
 

@@ -229,7 +229,7 @@ Replace ALL placeholder values:
 7. `STREAMING_TOKEN_SECRET` → generated secret
 8. `R2_*` → your Cloudflare R2 credentials
 9. `ADMIN_EMAILS` → your admin email(s)
-10. `SMTP_*` → your email provider credentials
+10. `SMTP_*` → BillionMail defaults (local Postfix relay, no auth needed)
 11. `NEXT_PUBLIC_APP_URL` → `https://yourdomain.com`
 
 ### Update nginx.conf.production
@@ -459,10 +459,13 @@ docker compose logs --tail=100 api
 - Use Tor or a trusted VPN when managing the server
 - Consider using a jump box / bastion host
 
-### Email
+### Email (BillionMail)
 
-- Use a dedicated email for SMTP that is not linked to your identity
-- Consider using a transactional email service (Resend, Postmark) with crypto payment
+- The platform uses a self-hosted BillionMail (Postfix) container for SMTP — no third-party email provider needed
+- Configure DNS records (MX, SPF, DKIM, DMARC) for your `BILLIONMAIL_HOSTNAME` to ensure deliverability
+- Set `SMTP_FROM` to an address on your domain (e.g. `noreply@yourdomain.com`)
+- BillionMail runs on the internal Docker network — no SMTP credentials are required for local relay
+- For more info see: https://github.com/Billionmail/BillionMail
 
 ### DNS Leak Prevention
 
