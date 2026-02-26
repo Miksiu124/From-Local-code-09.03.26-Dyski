@@ -88,8 +88,8 @@ func Load() (*Config, error) {
 		StreamingTokenSecret:  requireEnv("STREAMING_TOKEN_SECRET"),
 		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600), // 6 hours
 		BlikExpirationMinutes: getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
-		SMTPHost:              getEnvOrDefault("SMTP_HOST", "billionmail-postfix"),
-		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 25),
+		SMTPHost:              getEnvOrDefault("SMTP_HOST", "smtp"),
+		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 587),
 		SMTPUser:              getEnvOrDefault("SMTP_USER", ""),
 		SMTPPassword:          getEnvOrDefault("SMTP_PASSWORD", ""),
 		SMTPFrom:              getEnvOrDefault("SMTP_FROM", "noreply@contentvault.io"),

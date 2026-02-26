@@ -20,7 +20,7 @@ services:
     expose:
       - "8080"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 15s
@@ -37,8 +37,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      billionmail-postfix:
-        condition: service_healthy
+      smtp:
+        condition: service_started
     networks:
       - internal
 
@@ -60,7 +60,7 @@ services:
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
       - ADMIN_EMAILS=${ADMIN_EMAILS}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 15s
@@ -128,36 +128,32 @@ services:
     networks:
       - internal
 
-  # ── BillionMail SMTP (Postfix) ───────────────────────────────
-  # Self-hosted mail server — https://github.com/Billionmail/BillionMail
-  billionmail-postfix:
-    image: billionmail/postfix:1.6
-    container_name: content-billionmail-postfix
-    hostname: postfix
+  # ── SMTP Relay (Postfix) ─────────────────────────────────────
+  # Lightweight Postfix relay for outbound email delivery.
+  # Accepts mail from the Docker network without authentication.
+  # https://github.com/bokysan/docker-postfix
+  smtp:
+    image: boky/postfix:latest
+    container_name: content-smtp
+    hostname: ${SMTP_HOSTNAME:-mail.yourdomain.com}
     restart: unless-stopped
-    volumes:
-      - billionmail_postfix_data:/var/spool/postfix
-      - billionmail_logs:/var/log/mail
     environment:
+      - ALLOWED_SENDER_DOMAINS=${SMTP_ALLOWED_DOMAINS:-yourdomain.com}
+      - RELAYHOST=${SMTP_RELAYHOST:-}
       - TZ=${TZ:-UTC}
-      - BILLIONMAIL_HOSTNAME=${BILLIONMAIL_HOSTNAME:-mail.yourdomain.com}
     expose:
-      - "25"
       - "587"
-    ports:
-      - "127.0.0.1:25:25"
-      - "127.0.0.1:587:587"
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: "0.5"
+          memory: 128M
+          cpus: "0.25"
     healthcheck:
-      test: ["CMD-SHELL", "postfix status || exit 1"]
+      test: ["CMD", "postfix", "status"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 20s
     networks:
       - internal
 
@@ -170,8 +166,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # SSL certificates managed by Certbot on the host, mounted read-only
+      - ${NGINX_CONFIG:-./nginx/nginx.conf}:/etc/nginx/nginx.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./nginx/certs/security:/etc/nginx/certs/security:ro
     depends_on:
@@ -188,8 +183,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  billionmail_postfix_data:
-  billionmail_logs:
 
 
 networks:

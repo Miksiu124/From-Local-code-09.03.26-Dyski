@@ -14,7 +14,7 @@ A full-stack premium content platform with credit-based payments, HLS video stre
 | Cache / PubSub | Redis 7 |
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
-| SMTP | BillionMail / Postfix (self-hosted mail server) |
+| SMTP | Postfix relay (boky/postfix, self-hosted) |
 | Proxy | Nginx (reverse proxy, rate limiting, WAF) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
@@ -159,11 +159,12 @@ ADMIN_EMAILS=your_email@example.com
 # BLIK
 BLIK_EXPIRATION_MINUTES=2
 
-# SMTP (BillionMail — self-hosted, no external provider needed)
-SMTP_HOST=billionmail-postfix
-SMTP_PORT=25
+# SMTP (self-hosted Postfix relay, no external provider needed)
+SMTP_HOST=smtp
+SMTP_PORT=587
 SMTP_FROM=noreply@yourdomain.com
-BILLIONMAIL_HOSTNAME=mail.yourdomain.com
+SMTP_HOSTNAME=mail.yourdomain.com
+SMTP_ALLOWED_DOMAINS=yourdomain.com
 
 # Frontend (used by docker-compose)
 NEXT_PUBLIC_APP_URL=http://localhost
@@ -179,12 +180,12 @@ This starts 6 containers:
 
 | Service | Port | Description |
 |---|---|---|
-| nginx | **80** | Reverse proxy (main entry point) |
-| frontend | 3000 | Next.js SSR |
-| api | 8080 | Go API |
+| nginx | **80, 443** | Reverse proxy (main entry point) |
+| frontend | 3000 (localhost only) | Next.js SSR |
+| api | 8080 (localhost only) | Go API |
 | postgres | 5432 (localhost only) | Database |
 | redis | 6379 (localhost only) | Cache and PubSub |
-| billionmail-postfix | 25, 587 (localhost only) | Self-hosted SMTP ([BillionMail](https://github.com/Billionmail/BillionMail)) |
+| smtp | 587 (internal only) | Postfix mail relay ([boky/postfix](https://github.com/bokysan/docker-postfix)) |
 
 ### 4. Seed the database
 
@@ -278,12 +279,14 @@ All payment methods support:
 | `STREAMING_TOKEN_TTL` | No | HLS token TTL in seconds (default: 21600) |
 | `ADMIN_EMAILS` | Yes | Comma-separated admin emails |
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
-| `SMTP_HOST` | No | SMTP server hostname (default: `billionmail-postfix`) |
-| `SMTP_PORT` | No | SMTP port (default: `25`) |
-| `SMTP_USER` | No | SMTP username (empty for local BillionMail relay) |
-| `SMTP_PASSWORD` | No | SMTP password (empty for local BillionMail relay) |
+| `SMTP_HOST` | No | SMTP server hostname (default: `smtp`) |
+| `SMTP_PORT` | No | SMTP port (default: `587`) |
+| `SMTP_USER` | No | SMTP username (empty for local Postfix relay) |
+| `SMTP_PASSWORD` | No | SMTP password (empty for local Postfix relay) |
 | `SMTP_FROM` | No | Sender address (default: `noreply@contentvault.io`) |
-| `BILLIONMAIL_HOSTNAME` | No | BillionMail mail hostname for DNS records |
+| `SMTP_HOSTNAME` | No | Mail server hostname for DNS records |
+| `SMTP_ALLOWED_DOMAINS` | No | Domains allowed to send mail |
+| `NGINX_CONFIG` | No | Path to nginx config (default: `./nginx/nginx.conf`) |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |
 

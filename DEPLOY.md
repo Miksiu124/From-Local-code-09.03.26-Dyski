@@ -255,14 +255,17 @@ ADMIN_EMAILS=your-admin@email.com
 # ── BLIK ──────────────────────────────────────────────────────
 BLIK_EXPIRATION_MINUTES=2
 
-# ── SMTP (BillionMail) ───────────────────────────────────────
-# Self-hosted Postfix relay — no external provider needed
-SMTP_HOST=billionmail-postfix
-SMTP_PORT=25
+# ── SMTP (Self-hosted Postfix relay) ──────────────────────────
+SMTP_HOST=smtp
+SMTP_PORT=587
 SMTP_USER=
 SMTP_PASSWORD=
 SMTP_FROM=noreply@yourdomain.com
-BILLIONMAIL_HOSTNAME=mail.yourdomain.com
+SMTP_HOSTNAME=mail.yourdomain.com
+SMTP_ALLOWED_DOMAINS=yourdomain.com
+
+# ── Nginx ─────────────────────────────────────────────────────
+NGINX_CONFIG=./nginx/nginx.conf.production
 
 # ── Frontend ──────────────────────────────────────────────────
 NEXT_PUBLIC_APP_URL=https://yourdomain.com
@@ -349,7 +352,7 @@ content-frontend              healthy             0.0.0.0:3000->3000/tcp
 content-api                   healthy             0.0.0.0:8080->8080/tcp
 content-postgres              healthy             127.0.0.1:5432->5432/tcp
 content-redis                 healthy             127.0.0.1:6379->6379/tcp
-content-billionmail-postfix   healthy             127.0.0.1:25->25/tcp, 127.0.0.1:587->587/tcp
+content-smtp                  healthy             587/tcp
 ```
 
 ---
@@ -513,8 +516,9 @@ docker compose logs --tail=50 api
 - [ ] SSL certificate issued and auto-renewal configured
 - [ ] Nginx HTTPS config updated with your domain name
 - [ ] All API secrets are 64+ random character strings
-- [ ] `BILLIONMAIL_HOSTNAME` set to your mail subdomain (e.g. `mail.yourdomain.com`)
-- [ ] DNS records configured for BillionMail: MX, SPF, DKIM, DMARC
+- [ ] `SMTP_HOSTNAME` set to your mail subdomain (e.g. `mail.yourdomain.com`)
+- [ ] DNS records configured for mail: MX, SPF, DKIM, DMARC
+- [ ] `NGINX_CONFIG=./nginx/nginx.conf.production` set in `.env`
 
 ### Recommended Additions (Post-Launch)
 
@@ -537,8 +541,8 @@ docker compose logs --tail=50 api
 | Redis connection errors | Verify `REDIS_URL` doesn't have a password if Redis has none |
 | 502 Bad Gateway | Check if `api` or `frontend` containers are healthy: `docker compose ps` |
 | BLIK WebSocket fails | Ensure nginx WebSocket config is correct; check `FRONTEND_URL` env var |
-| Emails not sending | Check BillionMail Postfix is healthy: `docker compose logs billionmail-postfix` |
-| Emails going to spam | Verify MX, SPF, DKIM, DMARC DNS records for `BILLIONMAIL_HOSTNAME` |
+| Emails not sending | Check SMTP relay is healthy: `docker compose logs smtp` |
+| Emails going to spam | Verify MX, SPF, DKIM, DMARC DNS records for `SMTP_HOSTNAME` |
 
 ---
 
