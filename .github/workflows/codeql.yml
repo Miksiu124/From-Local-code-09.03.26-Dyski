@@ -30,8 +30,8 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          # Build the repo for more accurate analysis
           build-mode: auto
+          source-root: ${{ matrix.language == 'go' && 'backend' || '.' }}
 
       - name: Set up Go
         if: matrix.language == 'go'
