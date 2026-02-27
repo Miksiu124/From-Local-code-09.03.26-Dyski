@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -67,8 +67,14 @@ export function ModelsGrid({
   const [models, setModels] = useState<ModelItem[]>(initialModels);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [search, setSearch] = useState(() => {
+    const v = sessionStorage.getItem("models_search");
+    return v != null ? String(v).slice(0, 500) : "";
+  });
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(() => {
+    const v = sessionStorage.getItem("models_country");
+    return v && v.length <= 64 ? v : null;
+  });
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupModelId, setPopupModelId] = useState<string | undefined>();
   const [popupModelName, setPopupModelName] = useState<string | undefined>();
@@ -77,8 +83,56 @@ export function ModelsGrid({
 
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const [filteredMode, setFilteredMode] = useState(false);
-  const [showPurchasedOnly, setShowPurchasedOnly] = useState(false);
+  const [filteredMode, setFilteredMode] = useState(
+    () => !!(sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country"))
+  );
+  const [showPurchasedOnly, setShowPurchasedOnly] = useState(
+    () => sessionStorage.getItem("models_purchased_only") === "1"
+  );
+
+  // Persist folder search state (same logic as filter/sort in model folders)
+  useEffect(() => {
+    sessionStorage.setItem("models_search", search.slice(0, 500));
+  }, [search]);
+  useEffect(() => {
+    if (selectedCountry) sessionStorage.setItem("models_country", selectedCountry);
+    else sessionStorage.removeItem("models_country");
+  }, [selectedCountry]);
+  useEffect(() => {
+    sessionStorage.setItem("models_purchased_only", showPurchasedOnly ? "1" : "0");
+  }, [showPurchasedOnly]);
+
+  // Fix #1: Scroll Restoration — restore scroll before first paint (useLayoutEffect)
+  // Same as folder exit: instant, no visible jump from top
+  const savedScrollTargetRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const saved = sessionStorage.getItem("models_scroll_y");
+    if (saved) {
+      sessionStorage.removeItem("models_scroll_y");
+      const target = parseInt(saved, 10);
+      if (!Number.isNaN(target) && target >= 0) {
+        savedScrollTargetRef.current = target;
+        window.scrollTo({ top: target, behavior: "instant" });
+      }
+    }
+  }, []);
+
+  // When content grows (load more), re-apply scroll before paint
+  useLayoutEffect(() => {
+    const target = savedScrollTargetRef.current;
+    if (target === null || loading) return;
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    if (maxScroll >= target) {
+      window.scrollTo({ top: target, behavior: "instant" });
+      savedScrollTargetRef.current = null;
+    } else if (cursor) {
+      loadMoreRef.current();
+    } else {
+      window.scrollTo({ top: maxScroll, behavior: "instant" });
+      savedScrollTargetRef.current = null;
+    }
+  }, [models.length, loading, cursor]);
+
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -200,6 +254,9 @@ export function ModelsGrid({
       setPopupModelId(model.id);
       setPopupModelName(model.name);
       setPopupOpen(true);
+    } else {
+      // Save scroll position so we can restore it when user returns
+      sessionStorage.setItem("models_scroll_y", String(window.scrollY));
     }
   };
 
@@ -219,7 +276,7 @@ export function ModelsGrid({
       .then((data: CountryItem[]) => {
         if (Array.isArray(data) && data.length > 0) setClientCountries(data);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [countries.length]);
 
   const countriesWithModels = clientCountries;

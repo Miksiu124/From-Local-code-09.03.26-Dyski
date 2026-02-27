@@ -353,7 +353,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
               type="button"
               onClick={toggleBlik}
               disabled={blikSaving}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors cursor-pointer disabled:opacity-50 ${
+              className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full px-1 transition-colors cursor-pointer disabled:opacity-50 ${
                 blikEnabled ? "bg-green-500" : "bg-red-500/70"
               }`}
             >
@@ -361,8 +361,8 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                 <Loader2 className="h-5 w-5 text-white animate-spin mx-auto" />
               ) : (
                 <span
-                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                    blikEnabled ? "translate-x-7" : "translate-x-1"
+                  className={`inline-block h-6 w-6 shrink-0 transform rounded-full bg-white shadow transition-transform ${
+                    blikEnabled ? "translate-x-6" : "translate-x-0"
                   }`}
                 />
               )}

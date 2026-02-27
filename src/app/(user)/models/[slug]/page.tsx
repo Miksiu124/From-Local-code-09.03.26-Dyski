@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ModelDetail } from "@/components/user/model-detail";
+import { FolderBackdrop } from "@/components/user/folder-backdrop";
 import { fetchApi } from "@/lib/api-client";
 
 interface Props {
@@ -80,7 +81,7 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
   const realCreditBalance = me?.creditBalance ?? 0;
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <FolderBackdrop folderName={model.folderName}>
       <ModelDetail
         model={{
           id: model.id,
@@ -104,6 +105,6 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
         cost30d={cost30d}
         creditBalance={realCreditBalance}
       />
-    </div>
+    </FolderBackdrop>
   );
 }

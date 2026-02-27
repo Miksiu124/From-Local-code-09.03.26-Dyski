@@ -103,8 +103,8 @@ func (am *AuthMiddleware) extractAndValidateToken(c echo.Context) (*Claims, erro
 		tokenStr = cookie.Value
 	}
 
-	// 2. Fall back to Authorization header
-	if tokenStr == "" {
+	// 2. Fall back to Authorization header (unless DISABLE_BEARER_AUTH=true for security)
+	if tokenStr == "" && !am.cfg.DisableBearerAuth {
 		authHeader := c.Request().Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			tokenStr = strings.TrimPrefix(authHeader, "Bearer ")

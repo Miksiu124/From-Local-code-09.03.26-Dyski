@@ -46,7 +46,17 @@ func NewHandler(db *pgxpool.Pool, r2 *R2Client, cfg *config.Config) *Handler {
 func (h *Handler) Thumbnail(c echo.Context) error {
 	ctx := c.Request().Context()
 	contentItemID := c.Param("id")
-	filename := c.Param("filename")
+	rawFilename := c.Param("filename")
+
+	// Sanitize filename if provided (prevents path traversal)
+	var filename string
+	if rawFilename != "" {
+		sanitized, err := sanitizeFilename(rawFilename)
+		if err != nil {
+			return common.BadRequest(c, "Invalid filename")
+		}
+		filename = sanitized
+	}
 
 	// Get content item to find the R2 path
 	var thumbnailPath *string
@@ -70,7 +80,7 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 	// 1. explicit path (highest priority)
 	if thumbnailPath != nil && *thumbnailPath != "" {
 		r2Key := *thumbnailPath
-		// Only try to match filename if it was actually provided in the URL
+		// Only try to match filename if it was actually provided in the URL (and sanitized above)
 		if filename != "" && !strings.HasSuffix(r2Key, filename) {
 			// If specific filename is given in URL, try to respect the folder structure of the stored path
 			parts := strings.Split(r2Key, "/")

@@ -302,6 +302,9 @@ func (h *Handler) UploadProof(c echo.Context) error {
 	if userID == "" {
 		return common.Unauthorized(c)
 	}
+	if !common.IsValidUUID(purchaseID) {
+		return common.NotFound(c, "Purchase not found")
+	}
 
 	file, err := c.FormFile("file")
 	if err != nil {

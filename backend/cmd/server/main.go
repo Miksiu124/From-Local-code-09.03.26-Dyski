@@ -207,7 +207,7 @@ func main() {
 	favGroup.POST("/check", favoritesHandler.BatchCheck)
 
 	// Notifications (requires auth)
-	notifHandler := notifications.NewHandler(pgPool)
+	notifHandler := notifications.NewHandler(pgPool, redisClient)
 	notifGroup := api.Group("/notifications", authMW.Authenticate)
 	notifGroup.GET("", notifHandler.List)
 	notifGroup.PATCH("", notifHandler.MarkAllRead)

@@ -76,8 +76,12 @@ export function ModelDetail({
   const initialFilter = (searchParams.get("filter") as ContentFilter) || "ALL";
   const initialSort = (searchParams.get("sort") as SortOrder) || "newest";
 
-  const [contentItems, setContentItems] = useState<ContentItem[]>(initialContentItems);
-  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [contentItems, setContentItems] = useState<ContentItem[]>(
+    initialFilter === "FAVORITES" ? [] : initialContentItems
+  );
+  const [cursor, setCursor] = useState<string | null>(
+    initialFilter === "FAVORITES" ? null : initialCursor
+  );
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ContentFilter>(
     ["ALL", "VIDEO", "PHOTO", "FAVORITES"].includes(initialFilter) ? initialFilter : "ALL"
@@ -86,8 +90,16 @@ export function ModelDetail({
     ["newest", "oldest", "longest", "shortest"].includes(initialSort) ? initialSort : "newest"
   );
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [filteredTotal, setFilteredTotal] = useState(totalContentCount);
+  const [filteredTotal, setFilteredTotal] = useState(
+    initialFilter === "FAVORITES" ? 0 : totalContentCount
+  );
   const [isFiltering, setIsFiltering] = useState(false);
+
+  // Favorites tab uses a dedicated API; state is separate from content
+  const [favoritesItems, setFavoritesItems] = useState<ContentItem[]>([]);
+  const [favoritesCursor, setFavoritesCursor] = useState<string | null>(null);
+  const [favoritesTotal, setFavoritesTotal] = useState(0);
+  const [favoritesLoading, setFavoritesLoading] = useState(initialFilter === "FAVORITES");
 
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [togglingFav, setTogglingFav] = useState<string | null>(null);
@@ -97,6 +109,33 @@ export function ModelDetail({
   const [overlayFavorited, setOverlayFavorited] = useState(false);
   const [overlayTogglingFav, setOverlayTogglingFav] = useState(false);
   const savedScrollY = useRef(0);
+
+  // Persist filter/sort to sessionStorage (for content-viewer back link) — sync from URL on mount
+  useEffect(() => {
+    sessionStorage.setItem(`filter_model_${model.folderName}`, activeFilter);
+    sessionStorage.setItem(`sort_model_${model.folderName}`, activeSort);
+  }, [model.folderName, activeFilter, activeSort]);
+
+  // Restore scroll position when entering model folder (from list or from content viewer)
+  useEffect(() => {
+    const saved = sessionStorage.getItem(`scroll_model_${model.folderName}`);
+    if (!saved) return;
+    const y = parseInt(saved, 10);
+    if (Number.isNaN(y) || y < 0) return;
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      timeoutId = setTimeout(() => {
+        if (!cancelled) window.scrollTo({ top: y, behavior: "instant" });
+      }, 50);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [model.folderName]);
 
   // Lock body scroll when overlay is open
   useEffect(() => {
@@ -114,17 +153,23 @@ export function ModelDetail({
     setOverlayFavorited(favoritedIds.has(selectedItemId));
   }, [selectedItemId, isAuthenticated, favoritedIds]);
 
-  // Compute overlay data from contentItems
+  // Hoist displayItems — FAVORITES tab uses favorites API (both photos & videos), others use content API
+  const displayItems = activeFilter === "FAVORITES" ? favoritesItems : contentItems;
+
+  const displayTotal = activeFilter === "FAVORITES" ? favoritesTotal : filteredTotal;
+
+  // Compute overlay data — scope navigation to displayItems so FAVORITES boundary is respected
   const selectedItem = selectedItemId
-    ? contentItems.find((i) => i.id === selectedItemId) ?? null
+    ? displayItems.find((i) => i.id === selectedItemId) ?? null
     : null;
-  const selectedIndex = selectedItem
-    ? contentItems.indexOf(selectedItem)
+  const displaySelectedIndex = selectedItemId
+    ? displayItems.findIndex((i) => i.id === selectedItemId)
     : -1;
-  const overlayPrevId = selectedIndex > 0 ? contentItems[selectedIndex - 1].id : null;
-  const overlayNextId = selectedIndex >= 0 && selectedIndex < contentItems.length - 1
-    ? contentItems[selectedIndex + 1].id
-    : null;
+  const overlayPrevId = displaySelectedIndex > 0 ? displayItems[displaySelectedIndex - 1].id : null;
+  const overlayNextId =
+    displaySelectedIndex >= 0 && displaySelectedIndex < displayItems.length - 1
+      ? displayItems[displaySelectedIndex + 1].id
+      : null;
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -132,28 +177,28 @@ export function ModelDetail({
     if (!el || window.innerWidth >= 768) return;
     try {
       if (el.requestFullscreen) {
-        el.requestFullscreen().catch(() => {});
+        el.requestFullscreen().catch(() => { });
       } else if ((el as any).webkitRequestFullscreen) {
         (el as any).webkitRequestFullscreen();
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const exitFullscreen = useCallback(() => {
     try {
       if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch(() => { });
       } else if ((document as any).webkitFullscreenElement) {
         (document as any).webkitExitFullscreen();
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const closeOverlay = useCallback(() => {
     exitFullscreen();
     setSelectedItemId(null);
     requestAnimationFrame(() => {
-      window.scrollTo(0, savedScrollY.current);
+      window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
     });
   }, [exitFullscreen]);
 
@@ -181,32 +226,20 @@ export function ModelDetail({
           if (data.favorited) next.add(selectedItemId); else next.delete(selectedItemId);
           return next;
         });
+        if (activeFilter === "FAVORITES" && !data.favorited) {
+          setFavoritesItems((prev) => prev.filter((i) => i.id !== selectedItemId));
+          setFavoritesTotal((prev) => Math.max(0, prev - 1));
+          setSelectedItemId(null);
+        }
       }
     } catch { /* ignore */ }
     finally { setOverlayTogglingFav(false); }
-  }, [selectedItemId, overlayTogglingFav]);
+  }, [selectedItemId, overlayTogglingFav, activeFilter]);
 
-  // Keyboard handler for overlay
-  useEffect(() => {
-    if (!selectedItemId) return;
-    const handleKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "Escape") { closeOverlay(); return; }
-      const isVideo = selectedItem?.contentType === "VIDEO";
-      if (isVideo ? (e.key === "ArrowLeft" && e.shiftKey) : e.key === "ArrowLeft") {
-        e.preventDefault();
-        if (overlayPrevId) setSelectedItemId(overlayPrevId);
-      } else if (isVideo ? (e.key === "ArrowRight" && e.shiftKey) : e.key === "ArrowRight") {
-        e.preventDefault();
-        if (overlayNextId) setSelectedItemId(overlayNextId);
-      }
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [selectedItemId, selectedItem, overlayPrevId, overlayNextId, closeOverlay]);
 
   const updateUrlParams = useCallback((filter: ContentFilter, sort: SortOrder) => {
+    sessionStorage.setItem(`filter_model_${model.folderName}`, filter);
+    sessionStorage.setItem(`sort_model_${model.folderName}`, sort);
     const params = new URLSearchParams();
     if (filter !== "ALL") params.set("filter", filter);
     if (sort !== "newest") params.set("sort", sort);
@@ -237,10 +270,63 @@ export function ModelDetail({
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (initialContentItems.length > 0) {
+    if (initialFilter !== "FAVORITES" && initialContentItems.length > 0) {
       checkFavorites(initialContentItems.map((i) => i.id));
     }
-  }, [initialContentItems, checkFavorites]);
+  }, [initialFilter, initialContentItems, checkFavorites]);
+
+  const loadFavorites = useCallback(async (
+    cursorVal?: string | null,
+    append = false,
+  ) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setIsFiltering(true);
+      setFavoritesLoading(true);
+    }
+    try {
+      const params = new URLSearchParams({
+        limit: "24",
+        sort: activeSort,
+        modelSlug: model.folderName,
+      });
+      if (append && cursorVal) params.set("cursor", cursorVal);
+
+      const res = await fetch(`/api/favorites?${params.toString()}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        const mapped: ContentItem[] = (data.items || []).map((i: { contentItemId: string; contentType: string; thumbnailPath: string | null; duration: number | null }) => ({
+          id: i.contentItemId,
+          contentType: i.contentType,
+          thumbnailPath: i.thumbnailPath,
+          duration: i.duration,
+        }));
+        if (append) {
+          setFavoritesItems((prev) => [...prev, ...mapped]);
+        } else {
+          setFavoritesItems(mapped);
+        }
+        setFavoritesCursor(data.nextCursor ?? null);
+        setFavoritesTotal(data.totalCount ?? 0);
+        setFavoritedIds((prev) => {
+          const next = new Set(prev);
+          mapped.forEach((i) => next.add(i.id));
+          return next;
+        });
+      }
+    } finally {
+      setLoadingMore(false);
+      setIsFiltering(false);
+      setFavoritesLoading(false);
+    }
+  }, [model.folderName, activeSort]);
+
+  useEffect(() => {
+    if (activeFilter === "FAVORITES" && isAuthenticated && hasAccess) {
+      loadFavorites();
+    }
+  }, [activeFilter, isAuthenticated, hasAccess, activeSort, loadFavorites]);
 
   const handleModelPurchase = async (duration: "SEVEN_DAYS" | "THIRTY_DAYS") => {
     if (!isAuthenticated) {
@@ -322,6 +408,10 @@ export function ModelDetail({
           }
           return next;
         });
+        if (activeFilter === "FAVORITES" && !data.favorited) {
+          setFavoritesItems((prev) => prev.filter((i) => i.id !== contentItemId));
+          setFavoritesTotal((prev) => Math.max(0, prev - 1));
+        }
       } else {
         console.error("[Favorites] Toggle failed:", res.status);
       }
@@ -373,12 +463,77 @@ export function ModelDetail({
     }
   }, [model.folderName, checkFavorites]);
 
+  const triggerLoadMoreForNav = useCallback(() => {
+    if (loadingMore) return;
+    if (activeFilter === "FAVORITES") {
+      if (favoritesCursor) loadFavorites(favoritesCursor, true);
+    } else {
+      if (cursor) loadContent(activeFilter, activeSort, true, cursor);
+    }
+  }, [loadingMore, activeFilter, favoritesCursor, cursor, activeSort, loadFavorites, loadContent]);
+
+  // Keyboard handler for overlay
+  useEffect(() => {
+    if (!selectedItemId) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "Escape") { closeOverlay(); return; }
+      const isVideo = selectedItem?.contentType === "VIDEO";
+      if (isVideo ? (e.key === "ArrowLeft" && e.shiftKey) : e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (overlayPrevId) setSelectedItemId(overlayPrevId);
+      } else if (isVideo ? (e.key === "ArrowRight" && e.shiftKey) : e.key === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (overlayNextId) {
+          setSelectedItemId(overlayNextId);
+        } else if (cursor || favoritesCursor) {
+          pendingNextAfterLoadRef.current = true;
+          triggerLoadMoreForNav();
+        }
+      }
+    };
+    document.addEventListener("keydown", handleKey, { capture: true });
+    return () => document.removeEventListener("keydown", handleKey, { capture: true });
+  }, [selectedItemId, selectedItem, overlayPrevId, overlayNextId, closeOverlay, cursor, favoritesCursor, triggerLoadMoreForNav]);
+
+  // Fix #2: Fetch-ahead — when keyboard-navigating close to end, pre-load more items (aggressive: 6 items)
+  useEffect(() => {
+    if (!selectedItemId) return;
+    const nearEnd = displaySelectedIndex >= Math.max(0, displayItems.length - 6);
+    if (!nearEnd) return;
+    if (activeFilter === "FAVORITES") {
+      if (favoritesCursor && !loadingMore) loadFavorites(favoritesCursor, true);
+    } else {
+      if (cursor && !loadingMore) loadContent(activeFilter, activeSort, true, cursor);
+    }
+  }, [displaySelectedIndex, displayItems.length, cursor, favoritesCursor, loadingMore, activeFilter, activeSort, selectedItemId, loadContent, loadFavorites]);
+
+  // Load on demand when user presses next at end — then auto-advance when content arrives
+  const pendingNextAfterLoadRef = useRef(false);
+  const prevLoadingMoreRef = useRef(false);
+  useEffect(() => {
+    if (prevLoadingMoreRef.current && !loadingMore && pendingNextAfterLoadRef.current) {
+      pendingNextAfterLoadRef.current = false;
+      const nextIndex = displaySelectedIndex + 1;
+      if (nextIndex < displayItems.length) {
+        setSelectedItemId(displayItems[nextIndex].id);
+      }
+    }
+    prevLoadingMoreRef.current = loadingMore;
+  }, [loadingMore, displaySelectedIndex, displayItems]);
+
   const handleFilterChange = (filter: ContentFilter) => {
     if (filter === activeFilter) return;
     setActiveFilter(filter);
     setCursor(null);
+    setFavoritesCursor(null);
     updateUrlParams(filter, activeSort);
-    if (filter !== "FAVORITES") {
+    if (filter === "FAVORITES") {
+      // Favorites tab uses dedicated API (photos + videos), loaded by useEffect
+    } else {
       loadContent(filter, activeSort);
     }
   };
@@ -391,16 +546,25 @@ export function ModelDetail({
     setActiveSort(next);
     setSortMenuOpen(false);
     setCursor(null);
+    setFavoritesCursor(null);
     updateUrlParams(activeFilter, next);
-    if (activeFilter !== "FAVORITES") {
+    if (activeFilter === "FAVORITES") {
+      loadFavorites();
+    } else {
       loadContent(activeFilter, next);
     }
   };
 
   const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
-    if (loadingMore || !cursor || activeFilter === "FAVORITES") return;
-    loadContent(activeFilter, activeSort, true, cursor);
+    if (loadingMore) return;
+    if (activeFilter === "FAVORITES") {
+      if (!favoritesCursor) return;
+      loadFavorites(favoritesCursor, true);
+    } else {
+      if (!cursor) return;
+      loadContent(activeFilter, activeSort, true, cursor);
+    }
   };
 
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -429,19 +593,19 @@ export function ModelDetail({
     };
   }, []);
 
-  const displayItems = activeFilter === "FAVORITES"
-    ? contentItems.filter((i) => favoritedIds.has(i.id))
-    : contentItems;
-
-  const displayTotal = activeFilter === "FAVORITES"
-    ? displayItems.length
-    : filteredTotal;
+  // displayItems and displayTotal are hoisted above (near overlay nav computation)
 
   return (
     <>
       {/* Header */}
       <div className="mb-6 slide-up">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+          onClick={() => {
+            sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
+          }}
+        >
           <ArrowLeft className="h-3.5 w-3.5" />
           {t("allModels")}
         </Link>
@@ -754,7 +918,30 @@ export function ModelDetail({
 
       {/* ── Fullscreen content overlay ── */}
       {selectedItemId && selectedItem && (
-        <div ref={overlayRef} className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
+        <div
+          ref={overlayRef}
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col"
+          // Fix #6: Mobile swipe support
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            (overlayRef.current as any).__touchStartX = touch.clientX;
+            (overlayRef.current as any).__touchStartY = touch.clientY;
+          }}
+          onTouchEnd={(e) => {
+            const el = overlayRef.current as any;
+            if (!el?.__touchStartX) return;
+            const dx = e.changedTouches[0].clientX - el.__touchStartX;
+            const dy = Math.abs(e.changedTouches[0].clientY - el.__touchStartY);
+            if (Math.abs(dx) < 50 || dy > Math.abs(dx)) return;
+            if (dx < 0) {
+              if (overlayNextId) setSelectedItemId(overlayNextId);
+              else if (cursor || favoritesCursor) {
+                pendingNextAfterLoadRef.current = true;
+                triggerLoadMoreForNav();
+              }
+            } else if (dx > 0 && overlayPrevId) setSelectedItemId(overlayPrevId);
+          }}
+        >
           {/* Overlay top bar */}
           <div className="flex items-center justify-between px-4 py-3 shrink-0">
             <button
@@ -779,11 +966,21 @@ export function ModelDetail({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => overlayNextId && setSelectedItemId(overlayNextId)}
-                disabled={!overlayNextId}
+                onClick={() => {
+                  if (overlayNextId) setSelectedItemId(overlayNextId);
+                  else if (cursor || favoritesCursor) {
+                    pendingNextAfterLoadRef.current = true;
+                    triggerLoadMoreForNav();
+                  }
+                }}
+                disabled={!overlayNextId && !(cursor || favoritesCursor)}
                 className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
-                <ChevronRight className="h-4 w-4" />
+                {!overlayNextId && (cursor || favoritesCursor) && loadingMore ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
               </Button>
 
               <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
@@ -834,7 +1031,10 @@ export function ModelDetail({
             >
               {selectedItem.contentType === "VIDEO" ? (
                 <div className="w-full">
-                  <VideoPlayer key={selectedItemId} contentItemId={selectedItemId} />
+                  {/* Fix #3 (real): No key prop — React keeps VideoPlayer mounted between video changes.
+                    The HLS useEffect re-initializes on contentItemId change without unmounting the
+                    container. This preserves the browser's native fullscreen state. */}
+                  <VideoPlayer contentItemId={selectedItemId} />
                 </div>
               ) : (
                 <img

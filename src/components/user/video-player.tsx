@@ -61,18 +61,25 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       .then((data) => {
         if (data?.autoplay) setAutoplayEnabled(true);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Initialize HLS.js
   useEffect(() => {
     if (!videoRef.current) return;
     let destroyed = false;
+    let nativeErrorHandler: (() => void) | null = null;
 
     // Clear previous error on re-init
     setHlsError(null);
 
     async function initHls() {
+      // Reset UI state from previous video so we don't show stale progress/time
+      setCurrentTime(0);
+      setDuration(0);
+      setBuffered(0);
+      setPlaying(false);
+      setHlsError(null);
       try {
         const Hls = (await import("hls.js")).default;
         if (destroyed) return;
@@ -93,7 +100,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
               videoRef.current.muted = true;
               videoRef.current.play().then(() => {
                 if (videoRef.current) videoRef.current.muted = false;
-              }).catch(() => {});
+              }).catch(() => { });
             }
             const rawLevels = hls.levels as { height: number; width: number; bitrate: number; url: string[] }[];
             const levels: QualityLevel[] = rawLevels.map(
@@ -149,20 +156,22 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
           hlsRef.current = hls;
         } else if (videoRef.current?.canPlayType("application/vnd.apple.mpegurl")) {
-          videoRef.current.src = `/api/content/${contentItemId}/playlist/master.m3u8`;
+          const video = videoRef.current;
+          video.src = `/api/content/${contentItemId}/playlist/master.m3u8`;
 
-          videoRef.current.addEventListener("error", () => {
+          nativeErrorHandler = () => {
             if (!destroyed) {
               setHlsError("Could not load the video.");
               setLoading(false);
             }
-          });
+          };
+          video.addEventListener("error", nativeErrorHandler);
 
           if (autoplayEnabled) {
-            videoRef.current.muted = true;
-            videoRef.current.play().then(() => {
+            video.muted = true;
+            video.play().then(() => {
               if (videoRef.current) videoRef.current.muted = false;
-            }).catch(() => {});
+            }).catch(() => { });
           }
 
           setLoading(false);
@@ -180,6 +189,10 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
+      }
+      // Clean up native HLS error listener (Safari)
+      if (videoRef.current && nativeErrorHandler) {
+        videoRef.current.removeEventListener("error", nativeErrorHandler);
       }
     };
   }, [contentItemId, initKey, autoplayEnabled]);

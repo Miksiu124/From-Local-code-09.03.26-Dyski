@@ -27,6 +27,9 @@ type Config struct {
 	JWTExpirySecs   int
 	SessionTokenTTL int // seconds
 
+	// Security (optional, see SECURITY_AUDIT.md)
+	DisableBearerAuth bool // if true, only accept cookie (no Authorization: Bearer) — reduces token leakage risk
+
 	// R2 / S3
 	R2AccountID       string
 	R2AccessKeyID     string
@@ -75,8 +78,9 @@ func Load() (*Config, error) {
 		DatabaseURL:           requireEnv("DATABASE_URL"),
 		RedisURL:              getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:             requireEnv("JWT_SECRET"),
-		JWTExpirySecs:         getEnvOrDefaultInt("JWT_EXPIRY_SECS", 30*24*3600), // 30 days
-		SessionTokenTTL:       getEnvOrDefaultInt("SESSION_TOKEN_TTL", 30*24*3600),
+		JWTExpirySecs:         resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
+		SessionTokenTTL:       resolveSessionTTL(),
+		DisableBearerAuth:     getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "true" || getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "1",
 		R2AccountID:           getEnvOrDefault("R2_ACCOUNT_ID", ""),
 		R2AccessKeyID:         requireEnv("R2_ACCESS_KEY_ID"),
 		R2SecretAccessKey:     requireEnv("R2_SECRET_ACCESS_KEY"),
@@ -192,4 +196,20 @@ func getEnvOrDefaultInt(name string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+// resolveSessionTTL returns session TTL in seconds for both Redis and JWT expiry.
+// Order: SESSION_TTL_DAYS > SESSION_TOKEN_TTL > JWT_EXPIRY_SECS > 30 days.
+// Use SESSION_TTL_DAYS=7 for shorter sessions (audit recommendation).
+func resolveSessionTTL() int {
+	if days := getEnvOrDefaultInt("SESSION_TTL_DAYS", 0); days > 0 {
+		return days * 24 * 3600
+	}
+	if v := getEnvOrDefaultInt("SESSION_TOKEN_TTL", 0); v > 0 {
+		return v
+	}
+	if v := getEnvOrDefaultInt("JWT_EXPIRY_SECS", 0); v > 0 {
+		return v
+	}
+	return 30 * 24 * 3600
 }

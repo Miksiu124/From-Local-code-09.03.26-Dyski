@@ -150,8 +150,8 @@ export async function getUserAccessibleModelIds(userId: string): Promise<string[
   });
 
   return accessRecords
-    .filter((a) => a.modelId !== null)
-    .map((a) => a.modelId as string);
+    .filter((a: { modelId: string | null }) => a.modelId !== null)
+    .map((a: { modelId: string | null }) => a.modelId as string);
 }
 
 /**

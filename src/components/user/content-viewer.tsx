@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -32,13 +32,16 @@ export function ContentViewer({
   const [isFavorited, setIsFavorited] = useState(false);
   const [toggling, setToggling] = useState(false);
 
+
   const [backHref, setBackHref] = useState(`/models/${modelSlug}`);
   useEffect(() => {
     const filter = sessionStorage.getItem(`filter_model_${modelSlug}`);
     const sort = sessionStorage.getItem(`sort_model_${modelSlug}`);
     const params = new URLSearchParams();
-    if (filter && filter !== "ALL") params.set("filter", filter);
-    if (sort && sort !== "newest") params.set("sort", sort);
+    const validFilters = ["ALL", "VIDEO", "PHOTO", "FAVORITES"];
+    const validSorts = ["newest", "oldest", "longest", "shortest"];
+    if (filter && filter !== "ALL" && validFilters.includes(filter)) params.set("filter", filter);
+    if (sort && sort !== "newest" && validSorts.includes(sort)) params.set("sort", sort);
     const qs = params.toString();
     setBackHref(`/models/${modelSlug}${qs ? `?${qs}` : ""}`);
   }, [modelSlug]);
@@ -48,9 +51,12 @@ export function ContentViewer({
     const savedY = sessionStorage.getItem(`scroll_model_${modelSlug}`);
     router.push(backHref);
     if (savedY) {
-      requestAnimationFrame(() => {
-        setTimeout(() => window.scrollTo(0, parseInt(savedY, 10)), 50);
-      });
+      const y = parseInt(savedY, 10);
+      if (!Number.isNaN(y) && y >= 0) {
+        requestAnimationFrame(() => {
+          setTimeout(() => window.scrollTo({ top: y, behavior: "instant" }), 50);
+        });
+      }
     }
   }, [backHref, modelSlug, router]);
 
@@ -103,6 +109,20 @@ export function ContentViewer({
   const goToNext = useCallback(() => {
     if (nextItemId) router.push(`/content/${modelSlug}/${nextItemId}`);
   }, [nextItemId, modelSlug, router]);
+
+  // ── Mobile swipe navigation ──────────────────────────────────
+  const touchStartXRef = useRef<number | null>(null);
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  }, []);
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartXRef.current;
+    touchStartXRef.current = null;
+    const THRESHOLD = 50;
+    if (dx < -THRESHOLD) goToNext();
+    else if (dx > THRESHOLD) goToPrev();
+  }, [goToNext, goToPrev]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -191,7 +211,11 @@ export function ContentViewer({
         </div>
       </div>
 
-      <div className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center">
+      <div
+        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {contentType === "VIDEO" ? (
           <div className="w-full max-w-6xl">
             <VideoPlayer contentItemId={contentItemId} />
@@ -208,9 +232,10 @@ export function ContentViewer({
       </div>
 
       <p className="text-center text-[10px] sm:text-xs text-muted-foreground/50 mt-3">
-        {contentType === "VIDEO"
-          ? t("shiftArrowsToNavigate")
-          : t("arrowsToNavigate")}
+        <span className="hidden sm:inline">
+          {contentType === "VIDEO" ? t("shiftArrowsToNavigate") : t("arrowsToNavigate")}
+        </span>
+        <span className="sm:hidden">Swipe left / right to navigate</span>
       </p>
     </motion.div>
   );
