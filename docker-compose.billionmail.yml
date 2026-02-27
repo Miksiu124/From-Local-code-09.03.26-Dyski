@@ -1,12 +1,22 @@
-# Override: użyj z docker compose -f docker-compose.yml -f docker-compose.billionmail.yml up -d
-# Łączy ContentVault API z siecią BillionMail (SMTP_HOST=postfix)
-# Wymaga: BillionMail uruchomiony, sieć billionmail_billionmail-network istnieje
+# Override: docker compose -f docker-compose.yml -f docker-compose.billionmail.yml up -d
+# Łączy ContentVault API z BillionMail Postfix (SMTP) zamiast boky/postfix.
+# Wymaga: BillionMail uruchomiony w osobnym katalogu, sieć billionmail_billionmail-network istnieje.
+# Dokumentacja: docs/BILLIONMAIL_SETUP.md
 
 services:
   api:
+    environment:
+      - SMTP_HOST=postfix
+      - SMTP_PORT=587
+      - SMTP_USER=
+      - SMTP_PASSWORD=
+      # Użyj content-redis (unikamy konfliktu z BillionMail redis przy resolve "redis")
+      - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}content-redis:6379
     networks:
       - internal
       - billionmail
+    # Nie używamy content-smtp (boky/postfix) — wyłączyć depend na smtp jest skomplikowane,
+    # więc smtp się uruchomi, ale API wysyła przez BillionMail (SMTP_HOST=postfix nadpisuje .env)
 
 networks:
   billionmail:

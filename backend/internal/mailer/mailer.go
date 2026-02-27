@@ -1,12 +1,15 @@
 package mailer
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"content-platform-backend/internal/config"
 )
@@ -37,11 +40,11 @@ func (m *Mailer) needsAuth() bool {
 	return m.user != "" && m.password != ""
 }
 
-// isLocalRelay returns true when connecting to internal Docker relay (smtp, localhost)
-// which often has self-signed certs not matching the hostname.
+// isLocalRelay returns true when connecting to internal Docker relay (smtp, postfix, localhost)
+// which often has self-signed certs not matching the hostname. Includes BillionMail's postfix.
 func (m *Mailer) isLocalRelay() bool {
 	h := strings.ToLower(m.host)
-	return h == "smtp" || h == "localhost" || h == "127.0.0.1" || strings.HasPrefix(h, "mail.")
+	return h == "smtp" || h == "postfix" || h == "localhost" || h == "127.0.0.1" || strings.HasPrefix(h, "mail.")
 }
 
 func (m *Mailer) sendViaStartTLS(addr string, auth smtp.Auth, to string, msg []byte) error {
@@ -85,6 +88,21 @@ func (m *Mailer) sendViaStartTLS(addr string, auth smtp.Auth, to string, msg []b
 	return w.Close()
 }
 
+func (m *Mailer) messageIDDomain() string {
+	if idx := strings.LastIndex(m.from, "@"); idx >= 0 && idx+1 < len(m.from) {
+		return m.from[idx+1:]
+	}
+	return "localhost"
+}
+
+func (m *Mailer) generateMessageID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d@%s", time.Now().UnixNano(), m.messageIDDomain())
+	}
+	return fmt.Sprintf("%d.%s@%s", time.Now().UnixNano(), hex.EncodeToString(b), m.messageIDDomain())
+}
+
 func (m *Mailer) Send(to, subject, htmlBody string) error {
 	if !m.IsConfigured() {
 		log.Printf("[Mailer] SMTP not configured, skipping email to %s", to)
@@ -95,6 +113,8 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 		"From":         m.from,
 		"To":           to,
 		"Subject":      subject,
+		"Message-ID":   "<" + m.generateMessageID() + ">",
+		"Date":         time.Now().Format(time.RFC1123Z),
 		"MIME-Version": "1.0",
 		"Content-Type": "text/html; charset=UTF-8",
 	}

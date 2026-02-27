@@ -68,10 +68,12 @@ export function ModelsGrid({
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState(() => {
+    if (typeof window === "undefined") return "";
     const v = sessionStorage.getItem("models_search");
     return v != null ? String(v).slice(0, 500) : "";
   });
   const [selectedCountry, setSelectedCountry] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
     const v = sessionStorage.getItem("models_country");
     return v && v.length <= 64 ? v : null;
   });
@@ -83,29 +85,34 @@ export function ModelsGrid({
 
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const [filteredMode, setFilteredMode] = useState(
-    () => !!(sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country"))
-  );
-  const [showPurchasedOnly, setShowPurchasedOnly] = useState(
-    () => sessionStorage.getItem("models_purchased_only") === "1"
-  );
+  const [filteredMode, setFilteredMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !!(sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country"));
+  });
+  const [showPurchasedOnly, setShowPurchasedOnly] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("models_purchased_only") === "1";
+  });
 
   // Persist folder search state (same logic as filter/sort in model folders)
   useEffect(() => {
-    sessionStorage.setItem("models_search", search.slice(0, 500));
+    if (typeof window !== "undefined") sessionStorage.setItem("models_search", search.slice(0, 500));
   }, [search]);
   useEffect(() => {
-    if (selectedCountry) sessionStorage.setItem("models_country", selectedCountry);
-    else sessionStorage.removeItem("models_country");
+    if (typeof window !== "undefined") {
+      if (selectedCountry) sessionStorage.setItem("models_country", selectedCountry);
+      else sessionStorage.removeItem("models_country");
+    }
   }, [selectedCountry]);
   useEffect(() => {
-    sessionStorage.setItem("models_purchased_only", showPurchasedOnly ? "1" : "0");
+    if (typeof window !== "undefined") sessionStorage.setItem("models_purchased_only", showPurchasedOnly ? "1" : "0");
   }, [showPurchasedOnly]);
 
   // Fix #1: Scroll Restoration — restore scroll before first paint (useLayoutEffect)
   // Same as folder exit: instant, no visible jump from top
   const savedScrollTargetRef = useRef<number | null>(null);
   useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
     const saved = sessionStorage.getItem("models_scroll_y");
     if (saved) {
       sessionStorage.removeItem("models_scroll_y");

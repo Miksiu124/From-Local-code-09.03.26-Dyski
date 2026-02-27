@@ -1,127 +1,115 @@
-# Audyt bezpieczeństwa — ContentVault
+# Audyt bezpieczeństwa – ContentVault VPS
 
-**Data:** 2026-02-26  
-**Ostatnia aktualizacja:** 2026-02-27 (audyt po nowych funkcjach)  
-**Zakres:** Backend (Go), Frontend (Next.js), Nginx, Docker, konfiguracja
+Ostatni przegląd: 2025-02-27
 
 ---
 
-## Audyt 2026-02-27 — nowe funkcje
+## 🛡️ Ukrywanie IP originu (anti-DDoS)
 
-### Znalezione i naprawione luki
+**Cel:** Cały ruch ma iść przez Cloudflare. Origin IP nie może być wykrywalny (DNS, SPF, repo).
 
-| # | Problem | Ryzyko | Status |
-|---|---------|--------|--------|
-| 1 | **UploadProof – brak walidacji purchaseID** | Path traversal w R2 przy złym ID (np. `../`) | ✅ NAPRAWIONE: `IsValidUUID(purchaseID)` |
-| 2 | **Thumbnail – brak sanitizacji filename** | Path traversal przez param `:filename` w URL | ✅ NAPRAWIONE: `sanitizeFilename(rawFilename)` |
-| 3 | **video-player.tsx – brak cleanup error listener** | Memory leak w gałęzi native HLS (Safari) | ✅ NAPRAWIONE: `removeEventListener` w cleanup |
+### Nginx (już zrobione)
+- `server_tokens off`
+- **Default server** (`server_name _`): `ssl_reject_handshake on` + `return 444` – zapytania po IP kończą się bez odpowiedzi (brak handshake SSL, brak wycieku)
+- Blokada na poziomie TLS – atakujący nie uzyska sensownej odpowiedzi
 
-### Sprawdzone obszary – OK
+### DNS – Cloudflare (sprawdź ręcznie)
+- **A/AAAA** dla `dyskiof.net`, `www.dyskiof.net` → **Proxied (pomarańczowa chmurka)**. Jeśli DNS-only – `dig dyskiof.net` ujawni IP!
+- Żadna subdomena nie może mieć DNS-only wskazującego na origin IP
 
-- **EventSource/SSE** – admin-payments-list, notification-bell, credit-purchase-flow: wszystkie mają `return () => es.close()` w useEffect
-- **setInterval/setTimeout** – modele-grid, header, payment-countdown: cleanup z `clearInterval`/`clearTimeout`
-- **addEventListener** – content-viewer, model-detail, header, notification-bell: wszystkie mają `removeEventListener` w return
-- **Rate limit** – in-memory fallback z eviction (50k max), access cache z eviction (10k max)
-- **dangerouslySetInnerHTML** – tylko JSON.stringify danych statycznych (schema.org)
-- **path-guard** – walidacja R2 paths (Next.js), sanitizeFilename w backendzie (Playlist, Segment)
-- **SQL** – parametryzowane zapytania (Prisma, pgx)
+### SPF – krytyczne
+- SPF w TXT dla `dyskiof.net` **nie może** zawierać `ip4:XXX.XXX.XXX.XXX` (IP twojego VPS) – to publiczny wyciek.
+- Używaj Resend: `v=spf1 include:amazonses.com -all` (bez ip4)
+- Sprawdź: `dig TXT dyskiof.net` – nie powinno być tam IP VPS
 
----
+### Repo
+- Skrypty deploy: `VPS_HOST` wymagane w env, brak domyślnego IP
+- README: brak hosta/IP
 
-## 1. Pozytywne praktyki (już wdrożone)
-
-| Obszar | Status | Szczegóły |
-|--------|--------|-----------|
-| **Hasła** | ✅ | bcrypt (cost 12), min 8 znaków, wymagania (wielka/mała/cyfra) |
-| **Sesje JWT** | ✅ | HttpOnly cookie, SameSite=Lax, Secure w produkcji |
-| **Sesje Redis** | ✅ | Weryfikacja tokena w Redis przy każdym request |
-| **Ban użytkownika** | ✅ | Sprawdzanie `is_banned` w middleware auth |
-| **CSRF** | ✅ | Sprawdzanie Origin/Referer dla POST (oprócz /api/auth/*) |
-| **Rate limiting** | ✅ | Next.js middleware (120/min), Go (register, login, forgot-password) |
-| **SQL** | ✅ | Parametryzowane zapytania (pgx), brak string concat do SQL |
-| **HLS token** | ✅ | HMAC-SHA256, expiracja, walidacja ścieżki segmentu |
-| **Upload plików** | ✅ | `http.DetectContentType`, whitelist `image/*`, limit rozmiaru |
-| **Nginx** | ✅ | security headers, `server_tokens off`, `ssl_reject_handshake on` dla IP |
-| **Secrets** | ✅ | .env w .gitignore, brak hardcodowanych kluczy |
-| **Error handling** | ✅ | 500 nie ujawnia wewnętrznych błędów |
-| **Admin routes** | ✅ | `RequireAdmin` middleware (role + IsAdmin email) |
+### MX
+- Jeśli MX wskazuje na hosta na twoim VPS – `dig MX dyskiof.net` może ujawnić IP. Używaj zewnętrznego dostawcy (Resend, Google Workspace itd.) lub subdomeny z Proxied.
 
 ---
 
-## 2. Ustalenia wymagające uwagi
+## ✅ Co jest w porządku
 
-### 2.1 Średni priorytet
+### Aplikacja i Docker
+- **CORS** – dozwolone tylko `FrontendURL` z configu (+ localhost w dev)
+- **Usługi wewnętrzne** – API, frontend, Postgres, Redis na `127.0.0.1`; dostęp tylko przez nginx
+- **Secrets** – `.env` w `.gitignore`, nie powinien być commitowany
+- **Nginx** – `ssl_reject_handshake on` dla zapytań po IP (brak odpowiedzi); Cloudflare Origin Pulls `optional`
+- **Nagłówki bezpieczeństwa** – CSP, X-Frame-Options, HSTS, Referrer-Policy
+- **TLS** – tylko TLS 1.2/1.3, sensowne cipher suites
 
-| # | Problem | Ryzyko | Zalecenie |
-|---|---------|--------|-----------|
-| 1 | **Auth routes bez Origin check** | Trudniejszy atak CSRF na login/register (niskie P, bo POST z JSON) | Rozważyć CSRF token dla /api/auth/register, /api/auth/login |
-| 2 | **JWT fallback na Bearer** | Token w headeru może wyciec przez Referer / logi serwera proxy | ✅ **OPCJA:** `DISABLE_BEARER_AUTH=true` — tylko cookie |
-| 3 | **UpdateSettings – dowolne klucze** | Admin może nadpisać np. `discord_webhook_url` | ✅ **NAPRAWIONE:** Whitelist: blik_enabled, max_pending_*, crypto_wallets, paypal_address, revolut_address, discord_* |
-| 4 | **`dangerouslySetInnerHTML`** | Potencjalne XSS, jeśli dane dynamiczne | Obecnie tylko `JSON.stringify` – OK. Upewnij się, że nigdzie nie wstrzykujesz user input |
-| 5 | **`requireEnv` zwraca ""** | ~~Aplikacja może startować bez JWT_SECRET / R2~~ | ✅ **NAPRAWIONE:** `Config.Validate()` przy starcie, min 32 znaki na sekrety |
-| 6 | **Redis bez hasła** | Nieautoryzowany dostęp do Redis z sieci wewnętrznej | ✅ **NAPRAWIONE:** `REDIS_PASSWORD` w .env → auto konfiguracja redis + REDIS_URL |
-
-### 2.2 Niski priorytet
-
-| # | Problem | Zalecenie |
-|---|---------|-----------|
-| 7 | **CSP `unsafe-inline`** | Zmniejsza ochronę przed XSS | Stopniowe usuwanie inline styles/scripts |
-| 8 | **Session TTL 30 dni** | Długie sesje po kradzieży cookie | Skrócić np. do 7 dni, lub dodać „Remember me” |
-| 9 | **Postgres `sslmode=disable`** | Dane DB w tranzycie bez TLS | Dokumentacja: `.env.production.example` — dla zewn. DB użyj `?sslmode=require` |
+### DNS/Email
+- SPF, DKIM, DMARC dla domeny (dyskiof.net)
+- Port 25 zablokowany na GCP – wysyłka przez Resend relay
 
 ---
 
-## 3. Brak wykrytych krytycznych luk
+## ⚠️ Zalecenia / ryzyka
 
-- Brak SQL injection (parametryzowane zapytania)
-- Brak path traversal w uploadach (modelID z DB → folder_name)
-- Brak otwartych redirectów
-- Brak ujawniania stack trace w odpowiedziach
+### 1. **BillionMail – porty panelu (8443, 8880) otwarte na 0.0.0.0**
+
+Porty panelu webowego BillionMail są dostępne publicznie. Ryzyko: brute force, próby logowania.
+
+**Rekomendacja:** Ograniczenie dostępu w GCP Firewall do zaufanych IP (np. Twój domowy IP):
+
+- W Google Cloud Console → VPC → Firewall
+- Dla reguł dotyczących portów 8443, 8880 zmień `Source IP ranges` z `0.0.0.0/0` na np. `TWOJ_IP/32`
+
+### 2. **BillionMail – IMAP/POP (110, 143, 993, 995), SMTP (25, 465, 587) na 0.0.0.0**
+
+Porty pocztowe są nasłuchiwane. Jeśli korzystasz tylko z webmaila i relayu – IMAP/POP mogą nie być potrzebne publicznie.
+
+**Rekomendacja:** W GCP Firewall zostaw otwarte tylko porty faktycznie używane (np. 25, 587 jeśli używasz relay). IMAP/POP można ograniczyć do prywatnych sieci lub wyłączyć, jeśli nie używasz.
+
+### 3. **Dane wrażliwe w repozytorium**
+
+Skrypty deploy wymagają `VPS_HOST` w env (bez domyślnego IP). README nie ujawnia hosta.
+
+### 4. **test-contacts.csv**
+
+`docs/email-templates/test-contacts.csv` zawiera `dyskiof@proton.me`. Jeśli ten plik trafi do publicznego repo – adres email jest widoczny.
+
+**Rekomendacja:** Użyj placeholderów w przykładowym pliku (`test@example.com`) lub dodaj `test-contacts.csv` do `.gitignore`, jeśli ma dane osobowe.
+
+### 5. **NPM vulnerabilities w frontend**
+
+Build zgłaszał: *"5 vulnerabilities (1 moderate, 3 high, 1 critical)"*.
+
+**Rekomendacja:**
+
+```bash
+cd frontend && npm audit
+npm audit fix
+```
+
+### 6. **Deploy – .env nie powinien być w archiwum**
+
+Przy deployu tar/scp `.env` mógł być dołączony. Na produkcji `.env` musi być zarządzany tylko na serwerze i nigdy nie nadpisywany z lokalnego środowiska.
+
+**Rekomendacja:** Skrypt deployu (tar/rsync) powinien wykluczać `.env` z syncu.
 
 ---
 
-## 4. Rekomendacje wdrożeniowe
+## Porty nasłuchujące na VPS (stan z audytu)
 
-### Krótkoterminowe (1–2 dni) — WYKONANE ✅
-
-1. **Walidacja sekretów przy starcie** – `config.Validate()` sprawdza JWT_SECRET, STREAMING_TOKEN_SECRET, R2*, min 32 znaki.
-2. **Whitelist UpdateSettings** – `allowedSettingsKeys` w `admin/handler.go`.
-
-### Średnioterminowe (1–2 tygodnie) — CZĘŚCIOWO ✅
-
-3. **Redis auth** – ✅ `REDIS_PASSWORD` w .env → docker-compose auto-config.
-4. **Postgres SSL** – ✅ `.env.production.example` z komentarzem; dla zewn. DB: `?sslmode=require` w `DATABASE_URL`.
-5. **CSRF token** – rozważyć dla formularzy rejestracji/logowania (np. Double Submit Cookie).
-6. **SESSION_TTL_DAYS=7** – opcjonalnie: krótsze sesje (domyślnie 30 dni).
-7. **DISABLE_BEARER_AUTH=true** – opcjonalnie: tylko cookie, bez Authorization: Bearer.
-
-### Długoterminowe
-
-8. **Audyt zależności** – `go mod` i `npm audit` co kilka miesięcy.
-9. **Monitoring błędów** – Sentry / podobne do logowania 500 i podejrzanych requestów.
+| Port   | Serwis        | Adres    | Uwagi                                   |
+|--------|---------------|----------|-----------------------------------------|
+| 22     | SSH           | 0.0.0.0  | Wymagany – zalecane: klucze SSH, wyłączenie hasła |
+| 80, 443| Nginx         | 0.0.0.0  | Wymagane                                |
+| 25     | Postfix       | 0.0.0.0  | Zablokowany na GCP; Resend relay        |
+| 465, 587| SMTP         | 0.0.0.0  | BillionMail                             |
+| 110, 143, 993, 995 | Dovecot | 0.0.0.0 | POP/IMAP BillionMail      |
+| 8443, 8880 | Panel BillionMail | 0.0.0.0 | **Ryzyko** – ograniczyć IP             |
+| 3000, 5432, 6379 | App | 127.0.0.1 | Tylko localhost – OK          |
 
 ---
 
-## 5. Przegląd plików krytycznych
+## Checklist przed publikacją / udostępnieniem repo
 
-| Plik | Uwagi |
-|------|--------|
-| `backend/internal/auth/handler.go` | Cookie: HttpOnly, SameSite, Secure |
-| `backend/internal/middleware/auth.go` | JWT + Redis session + ban check |
-| `backend/internal/middleware/admin.go` | Role + IsAdmin |
-| `backend/internal/config/config.go` | `requireEnv` – brak walidacji „non-empty” |
-| `src/middleware.ts` | CSRF (Origin) + rate limit |
-| `nginx/nginx.conf.production` | CSP, HSTS, X-Frame-Options, ssl_reject |
-
----
-
-## 6. Checklist przed produkcją
-
-- [ ] Wszystkie sekrety wygenerowane (`openssl rand -hex 32`)
-- [ ] `ADMIN_EMAILS` ustawione na prawdziwe adresy
-- [ ] `FRONTEND_URL` = https://domena
-- [ ] `NEXT_PUBLIC_APP_URL` = https://domena
-- [ ] Redis z hasłem (produkcja)
-- [ ] Postgres `sslmode=require` (produkcja)
-- [ ] Sprawdzenie `npm audit` i `go mod tidy`
-- [ ] Weryfikacja SSL (np. SSLLabs A+)
+- [ ] Ograniczyć porty 8443, 8880 w GCP Firewall do zaufanych IP
+- [ ] Sprawdzić `npm audit` w frontend
+- [ ] Usunąć/zastąpić prawdziwe dane z `test-contacts.csv`
+- [ ] Upewnić się, że deploy nie synchronizuje `.env` z lokalnego na serwer
