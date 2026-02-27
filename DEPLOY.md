@@ -1,8 +1,8 @@
-# 🚀 VPS Deployment Guide — Content Platform
+# 🚀 VPS Deployment Guide — ContentVault
 
-> **Last updated:** 2026-02-22  
-> **Stack:** Next.js 15 · Go 1.24 · PostgreSQL 16 · Redis 7 · Nginx · Docker Compose  
-> **Estimated deployment time:** 30–60 minutes
+> **Last updated:** 2026-02-26  
+> **Stack:** Next.js 16 · Go 1.24 · PostgreSQL 16 · Redis 7 · Nginx · Docker Compose  
+> **Ścieżka na VPS:** `/opt/contentvault` · **Deploy:** `./scripts/deploy-vps.sh --build`
 
 ---
 
@@ -67,9 +67,10 @@
 
 The current `.env` contains development credentials that must **never** be used in production:
 
-- [ ] Generate a new **JWT_SECRET** (64+ random chars): `openssl rand -hex 64`
-- [ ] Generate a new **STREAMING_TOKEN_SECRET** (64+ random chars): `openssl rand -hex 64`
+- [ ] Generate a new **JWT_SECRET** (min 32 chars): `openssl rand -hex 32`
+- [ ] Generate a new **STREAMING_TOKEN_SECRET** (min 32 chars): `openssl rand -hex 32`
 - [ ] Generate a strong **POSTGRES_PASSWORD**: `openssl rand -base64 32`
+- [ ] Set **REDIS_PASSWORD** for production (optional locally): `openssl rand -hex 32`
 - [ ] Rotate your **Cloudflare R2 API keys** in the Cloudflare dashboard
 - [ ] Update **ADMIN_EMAILS** to your real admin email(s)
 
@@ -192,7 +193,7 @@ sudo systemctl status certbot.timer
 > # Edit crontab
 > sudo crontab -e
 > # Add this line (restarts nginx after certbot renewal, twice daily):
-> 0 0,12 * * * certbot renew --quiet && docker compose -f /opt/platform/docker-compose.yml restart nginx
+> 0 0,12 * * * certbot renew --quiet && docker compose -f /opt/contentvault/docker-compose.yml restart nginx
 > ```
 
 ---
@@ -203,19 +204,19 @@ sudo systemctl status certbot.timer
 
 ```bash
 # Create app directory
-sudo mkdir -p /opt/platform
-sudo chown deploy:deploy /opt/platform
+sudo mkdir -p /opt/contentvault
+sudo chown deploy:deploy /opt/contentvault
 
 # Clone your repository
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /opt/platform
-cd /opt/platform
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /opt/contentvault
+cd /opt/contentvault
 ```
 
 ### 5.2 Create the Production `.env` File
 
 ```bash
 # Create the .env file (NEVER commit this file)
-nano /opt/platform/.env
+nano /opt/contentvault/.env
 ```
 
 Paste and fill in the following — replace every `CHANGE_ME` value:
@@ -287,7 +288,7 @@ openssl rand -base64 32
 ### 5.3 Secure the `.env` File
 
 ```bash
-chmod 600 /opt/platform/.env
+chmod 600 /opt/contentvault/.env
 ```
 
 ---
@@ -297,13 +298,13 @@ chmod 600 /opt/platform/.env
 Edit the nginx config and replace `yourdomain.com` with your actual domain:
 
 ```bash
-sed -i 's/yourdomain.com/YOUR_ACTUAL_DOMAIN/g' /opt/platform/nginx/nginx.conf
+sed -i 's/yourdomain.com/YOUR_ACTUAL_DOMAIN/g' /opt/contentvault/nginx/nginx.conf
 ```
 
 **Verify the changes:**
 
 ```bash
-grep "server_name\|ssl_certificate" /opt/platform/nginx/nginx.conf
+grep "server_name\|ssl_certificate" /opt/contentvault/nginx/nginx.conf
 ```
 
 ---
@@ -313,7 +314,7 @@ grep "server_name\|ssl_certificate" /opt/platform/nginx/nginx.conf
 ### 7.1 Build and Start All Services
 
 ```bash
-cd /opt/platform
+cd /opt/contentvault
 
 # Build all images
 docker compose build --no-cache
@@ -394,14 +395,14 @@ curl -s -o /dev/null -w "%{http_code}" https://yourdomain.com
 ### 9.1 Database Backup Script
 
 ```bash
-cat > /opt/platform/scripts/backup.sh << 'EOF'
+cat > /opt/contentvault/scripts/backup.sh << 'EOF'
 #!/bin/bash
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="/opt/backups"
 mkdir -p "$BACKUP_DIR"
 
 # Dump PostgreSQL
-docker compose -f /opt/platform/docker-compose.yml exec -T postgres \
+docker compose -f /opt/contentvault/docker-compose.yml exec -T postgres \
   pg_dump -U platform content_platform | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
 
 # Keep only last 30 days
@@ -410,7 +411,7 @@ find "$BACKUP_DIR" -name "db_*.sql.gz" -mtime +30 -delete
 echo "Backup complete: db_$DATE.sql.gz"
 EOF
 
-chmod +x /opt/platform/scripts/backup.sh
+chmod +x /opt/contentvault/scripts/backup.sh
 ```
 
 ### 9.2 Schedule Daily Backups
@@ -419,7 +420,7 @@ chmod +x /opt/platform/scripts/backup.sh
 # Add to crontab
 crontab -e
 # Add:
-0 3 * * * /opt/platform/scripts/backup.sh >> /var/log/platform-backup.log 2>&1
+0 3 * * * /opt/contentvault/scripts/backup.sh >> /var/log/platform-backup.log 2>&1
 ```
 
 ### 9.3 Restore from Backup
@@ -427,7 +428,7 @@ crontab -e
 ```bash
 # Restore a specific backup
 gunzip -c /opt/backups/db_YYYYMMDD_HHMMSS.sql.gz | \
-  docker compose -f /opt/platform/docker-compose.yml exec -T postgres \
+  docker compose -f /opt/contentvault/docker-compose.yml exec -T postgres \
   psql -U platform content_platform
 ```
 
@@ -487,7 +488,7 @@ Then reload: `sudo systemctl restart docker`
 ## 11. Updating the Application
 
 ```bash
-cd /opt/platform
+cd /opt/contentvault
 
 # Pull latest code
 git pull origin main
@@ -522,8 +523,8 @@ docker compose logs --tail=50 api
 
 ### Recommended Additions (Post-Launch)
 
-- [ ] **Redis authentication:** Add `requirepass STRONG_PASSWORD` to Redis command in `docker-compose.yml`, and update `REDIS_URL=redis://:STRONG_PASSWORD@redis:6379`
-- [ ] **Database SSL:** Once on VPS, change `?sslmode=disable` to `?sslmode=require` in `DATABASE_URL`
+- [ ] **Redis authentication:** Set `REDIS_PASSWORD` in `.env` — docker-compose auto-configures Redis and `REDIS_URL`
+- [ ] **Database SSL:** On VPS with external Postgres, use `?sslmode=require` in `DATABASE_URL`
 - [ ] **SSH Key Auth Only:** Disable password SSH login: `PasswordAuthentication no` in `/etc/ssh/sshd_config`
 - [ ] **Automatic OS Updates:** `sudo apt-get install unattended-upgrades && sudo dpkg-reconfigure --priority=low unattended-upgrades`
 - [ ] **Container image scanning:** Run `docker scout quickview` periodically
@@ -546,4 +547,4 @@ docker compose logs --tail=50 api
 
 ---
 
-*Generated by Antigravity AI · 2026-02-22*
+> **Szybki deploy:** Zobacz [REPO_STRUCTURE.md](REPO_STRUCTURE.md) i `./scripts/deploy-vps.sh --build`

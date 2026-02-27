@@ -21,6 +21,17 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// allowedSettingsKeys — whitelist for UpdateSettings (security: prevent arbitrary key injection)
+var allowedSettingsKeys = map[string]bool{
+	"blik_enabled":               true,
+	"max_pending_credit_purchases": true,
+	"crypto_wallets":              true,
+	"paypal_address":             true,
+	"revolut_address":            true,
+	"discord_webhook_url":         true,
+	"discord_ping_role_id":        true,
+}
+
 type Handler struct {
 	db             *pgxpool.Pool
 	r2             *content.R2Client
@@ -554,7 +565,11 @@ func (h *Handler) UpdateUser(c echo.Context) error {
 	}
 
 	if req.Name != nil {
-		_, _ = h.db.Exec(ctx, `UPDATE users SET name = $1 WHERE id = $2`, *req.Name, userID)
+		trimmed := strings.TrimSpace(*req.Name)
+		if len(trimmed) > 64 {
+			return common.BadRequest(c, "Name must be at most 64 characters")
+		}
+		_, _ = h.db.Exec(ctx, `UPDATE users SET name = $1 WHERE id = $2`, trimmed, userID)
 	}
 	if req.Role != nil && (*req.Role == "USER" || *req.Role == "ADMIN") {
 		_, _ = h.db.Exec(ctx, `UPDATE users SET role = $1::user_role WHERE id = $2`, *req.Role, userID)
@@ -915,6 +930,11 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 	var errCount int
 	for _, entry := range entries {
 		if entry.Key == "" {
+			continue
+		}
+		if !allowedSettingsKeys[entry.Key] && !strings.HasPrefix(entry.Key, "discord_") {
+			log.Printf("[UpdateSettings] Rejected unknown key: %s", entry.Key)
+			errCount++
 			continue
 		}
 		valJSON, err := json.Marshal(entry.Value)

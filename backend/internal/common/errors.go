@@ -25,7 +25,7 @@ func Unauthorized(c echo.Context) error {
 }
 
 func BadRequest(c echo.Context, msg string) error {
-	return c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg})
+	return c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg, Message: msg})
 }
 
 func NotFound(c echo.Context, msg string) error {

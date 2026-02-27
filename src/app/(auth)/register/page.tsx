@@ -115,6 +115,7 @@ export default function RegisterPage() {
                     placeholder="Your name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    maxLength={64}
                     className="pl-11"
                     required
                   />

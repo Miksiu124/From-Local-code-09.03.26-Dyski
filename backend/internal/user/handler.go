@@ -91,8 +91,8 @@ func (h *Handler) UpdateProfile(c echo.Context) error {
 	}
 
 	trimmed := strings.TrimSpace(*req.Name)
-	if len(trimmed) < 1 || len(trimmed) > 50 {
-		return common.BadRequest(c, "Name must be between 1 and 50 characters")
+	if len(trimmed) < 1 || len(trimmed) > 64 {
+		return common.BadRequest(c, "Name must be between 1 and 64 characters")
 	}
 
 	_, err := h.db.Exec(ctx, `

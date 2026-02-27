@@ -15,12 +15,12 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
       - PORT=8080
     expose:
       - "8080"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8080"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 15s
@@ -109,14 +109,17 @@ services:
     image: redis:7-alpine
     container_name: content-redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command: >
       redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1000 --appendonly yes
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "sh", "-c", "redis-cli $${REDIS_PASSWORD:+-a \"$$REDIS_PASSWORD\"} ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -139,7 +142,9 @@ services:
     restart: unless-stopped
     environment:
       - ALLOWED_SENDER_DOMAINS=${SMTP_ALLOWED_DOMAINS:-yourdomain.com}
-      - RELAYHOST=${SMTP_RELAYHOST:-}
+      - RELAYHOST=${SMTP_RELAYHOST:-[smtp.resend.com]:587}
+      - RELAYHOST_USERNAME=${SMTP_RELAY_USERNAME:-resend}
+      - RELAYHOST_PASSWORD=${SMTP_RELAY_PASSWORD:-}
       - TZ=${TZ:-UTC}
     expose:
       - "587"

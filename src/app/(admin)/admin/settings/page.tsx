@@ -15,7 +15,7 @@ interface SettingItem {
 }
 
 const BOOLEAN_KEYS = ["blik_enabled"];
-const FEATURED_KEYS = ["blik_enabled", "discord_webhook_url", "paypal_address", "revolut_address"];
+const FEATURED_KEYS = ["blik_enabled", "discord_webhook_url", "discord_ping_role_id", "paypal_address", "revolut_address"];
 const HIDDEN_KEYS = ["blik_enabled"];
 
 export default function AdminSettingsPage() {
@@ -147,6 +147,7 @@ export default function AdminSettingsPage() {
   }
 
   const discordSetting = settings.find((s) => s.key === "discord_webhook_url");
+  const discordPingRoleSetting = settings.find((s) => s.key === "discord_ping_role_id");
   const paypalSetting = settings.find((s) => s.key === "paypal_address");
   const revolutSetting = settings.find((s) => s.key === "revolut_address");
   const otherSettings = settings.filter((s) => !FEATURED_KEYS.includes(s.key) && !HIDDEN_KEYS.includes(s.key));
@@ -166,7 +167,7 @@ export default function AdminSettingsPage() {
       )}
 
       {/* Discord Webhook Card */}
-      {discordSetting && (
+      {(discordSetting || discordPingRoleSetting) && (
         <Card className="mb-6 border-2 border-indigo-500/20">
           <CardContent className="p-6">
             <div className="flex items-center gap-4 mb-4">
@@ -176,16 +177,44 @@ export default function AdminSettingsPage() {
               <div>
                 <h3 className="text-lg font-semibold">Discord Webhook</h3>
                 <p className="text-sm text-muted-foreground">
-                  Receive payment notifications on your Discord server.
+                  Receive payment notifications on your Discord server. Role ID = @mention przy embedzie powiadomień.
                 </p>
               </div>
             </div>
-            <Input
-              value={String(discordSetting.value || "")}
-              onChange={(e) => updateSetting("discord_webhook_url", e.target.value)}
-              placeholder="https://discord.com/api/webhooks/..."
-              className="font-mono text-sm"
-            />
+            <div className="space-y-4">
+              {discordSetting && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Webhook URL
+                  </label>
+                  <Input
+                    value={String(discordSetting.value || "")}
+                    onChange={(e) => updateSetting("discord_webhook_url", e.target.value)}
+                    placeholder="https://discord.com/api/webhooks/..."
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  Role ID (ping przy embedzie)
+                </label>
+                <Input
+                  value={String(discordPingRoleSetting?.value ?? "")}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const existing = settings.find((s) => s.key === "discord_ping_role_id");
+                    if (existing) {
+                      updateSetting("discord_ping_role_id", val);
+                    } else {
+                      setSettings((prev) => [...prev, { key: "discord_ping_role_id", value: val, description: null }]);
+                    }
+                  }}
+                  placeholder="1476402661698834502"
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

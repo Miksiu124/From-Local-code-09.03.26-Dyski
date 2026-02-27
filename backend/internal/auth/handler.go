@@ -68,6 +68,9 @@ func (h *Handler) Register(c echo.Context) error {
 	req.Name = strings.TrimSpace(req.Name)
 
 	// Validate
+	if len(req.Name) > 64 {
+		return common.BadRequest(c, "Name must be at most 64 characters")
+	}
 	if !emailRegex.MatchString(req.Email) || len(req.Email) > 255 {
 		return common.BadRequest(c, "Invalid email address")
 	}

@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
         setSent(true);
       } else {
         const data = await res.json();
-        setError(data.message || t("resetFailed"));
+        setError(data.message || data.error || t("resetFailed"));
       }
     } catch {
       setError(t("resetFailed"));

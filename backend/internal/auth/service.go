@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
@@ -195,7 +197,14 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 			// Create new user
 			var namePtr *string
 			if displayName != "" {
-				namePtr = &displayName
+				truncated := displayName
+				if utf8.RuneCountInString(displayName) > 64 {
+					truncated = string([]rune(displayName)[:64])
+				}
+				truncated = strings.TrimSpace(truncated)
+				if truncated != "" {
+					namePtr = &truncated
+				}
 			}
 			var avatarURL *string
 			if avatar != "" {

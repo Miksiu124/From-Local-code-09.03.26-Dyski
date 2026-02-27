@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -118,7 +119,40 @@ func Load() (*Config, error) {
 		}
 	}
 
-	return cfg, nil
+	return cfg, cfg.Validate()
+}
+
+// Validate checks that critical secrets are set. Returns error if any required field is empty.
+func (c *Config) Validate() error {
+	var missing []string
+	if c.DatabaseURL == "" {
+		missing = append(missing, "DATABASE_URL")
+	}
+	if c.JWTSecret == "" {
+		missing = append(missing, "JWT_SECRET")
+	}
+	if c.StreamingTokenSecret == "" {
+		missing = append(missing, "STREAMING_TOKEN_SECRET")
+	}
+	if c.R2AccessKeyID == "" {
+		missing = append(missing, "R2_ACCESS_KEY_ID")
+	}
+	if c.R2SecretAccessKey == "" {
+		missing = append(missing, "R2_SECRET_ACCESS_KEY")
+	}
+	if c.R2BucketName == "" {
+		missing = append(missing, "R2_BUCKET_NAME")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+	if len(c.JWTSecret) < 32 {
+		return errors.New("JWT_SECRET must be at least 32 characters")
+	}
+	if len(c.StreamingTokenSecret) < 32 {
+		return errors.New("STREAMING_TOKEN_SECRET must be at least 32 characters")
+	}
+	return nil
 }
 
 func (c *Config) IsProduction() bool {

@@ -324,7 +324,7 @@ export default function DashboardPage() {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              maxLength={50}
+              maxLength={64}
               placeholder="Your display name"
               className="flex-1 bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all"
             />

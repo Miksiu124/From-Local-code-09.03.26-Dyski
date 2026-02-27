@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/smtp"
 	"strings"
 
@@ -36,6 +37,54 @@ func (m *Mailer) needsAuth() bool {
 	return m.user != "" && m.password != ""
 }
 
+// isLocalRelay returns true when connecting to internal Docker relay (smtp, localhost)
+// which often has self-signed certs not matching the hostname.
+func (m *Mailer) isLocalRelay() bool {
+	h := strings.ToLower(m.host)
+	return h == "smtp" || h == "localhost" || h == "127.0.0.1" || strings.HasPrefix(h, "mail.")
+}
+
+func (m *Mailer) sendViaStartTLS(addr string, auth smtp.Auth, to string, msg []byte) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, m.host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	tlsConfig := &tls.Config{
+		ServerName:         m.host,
+		InsecureSkipVerify: m.isLocalRelay(),
+	}
+	if err = client.StartTLS(tlsConfig); err != nil {
+		return err
+	}
+	if auth != nil {
+		if err = client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err = client.Mail(m.from); err != nil {
+		return err
+	}
+	if err = client.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = w.Write(msg); err != nil {
+		return err
+	}
+	return w.Close()
+}
+
 func (m *Mailer) Send(to, subject, htmlBody string) error {
 	if !m.IsConfigured() {
 		log.Printf("[Mailer] SMTP not configured, skipping email to %s", to)
@@ -64,20 +113,26 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 		auth = smtp.PlainAuth("", m.user, m.password, m.host)
 	}
 
-	// Port 25: plain SMTP (typical for local/Docker BillionMail relay)
+	// Port 25: plain SMTP (typical for local/Docker relay)
 	if m.port == 25 {
 		return smtp.SendMail(addr, auth, m.from, []string{to}, []byte(msg.String()))
 	}
 
+	// Port 587: STARTTLS. For local relay (smtp, localhost), skip cert verification.
+	if m.port == 587 && m.isLocalRelay() {
+		return m.sendViaStartTLS(addr, auth, to, []byte(msg.String()))
+	}
+
 	// Port 465: implicit TLS
 	tlsConfig := &tls.Config{
-		ServerName: m.host,
+		ServerName:         m.host,
+		InsecureSkipVerify: m.isLocalRelay(),
 	}
 
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
 		// Fallback to STARTTLS (port 587 or misconfigured 465)
-		return smtp.SendMail(addr, auth, m.from, []string{to}, []byte(msg.String()))
+		return m.sendViaStartTLS(addr, auth, to, []byte(msg.String()))
 	}
 	defer conn.Close()
 

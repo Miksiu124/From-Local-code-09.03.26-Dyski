@@ -2,6 +2,8 @@
 
 A full-stack premium content platform with credit-based payments, HLS video streaming, admin panel, and real-time payment notifications. Built with **Next.js 16**, **Go (Echo)**, **PostgreSQL**, **Redis**, and **Cloudflare R2**.
 
+> **Nowosc:** Zobacz [REPO_STRUCTURE.md](REPO_STRUCTURE.md) — co jest czym, jak deployowac na VPS.
+
 ---
 
 ## Tech Stack
@@ -218,6 +220,19 @@ This creates:
 
 ---
 
+## Deploy na VPS
+
+Repozytorium zawiera skrypty deployu. Zobacz **[REPO_STRUCTURE.md](REPO_STRUCTURE.md)** — pełny opis struktury i deployu.
+
+```bash
+# Szybki deploy (rsync + docker compose na VPS)
+./scripts/deploy-vps.sh --build
+```
+
+VPS: `marek@136.114.88.152`, ścieżka `/opt/contentvault`. Szczegóły w `REPO_STRUCTURE.md` i `DEPLOY.md`.
+
+---
+
 ## R2 Bucket Structure
 
 The platform expects content in your R2 bucket organized like this:
@@ -320,6 +335,23 @@ npm run db:push        # Push schema to database
 npm run db:migrate     # Run migrations
 npm run db:seed        # Seed default data
 npm run db:studio      # Open Prisma Studio GUI
+```
+
+---
+
+## Tests
+
+Tests run automatically on push and pull requests via GitHub Actions.
+
+```bash
+# Backend (Go)
+cd backend && go test -v ./...
+
+# Frontend (Vitest)
+npm run test
+
+# Lint
+npm run lint
 ```
 
 ---
