@@ -42,11 +42,20 @@ type RegisterRequest struct {
 }
 
 var (
-	emailRegex     = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-	upperRegex     = regexp.MustCompile(`[A-Z]`)
-	lowerRegex     = regexp.MustCompile(`[a-z]`)
-	digitRegex     = regexp.MustCompile(`[0-9]`)
+	emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+	upperRegex = regexp.MustCompile(`[A-Z]`)
+	lowerRegex = regexp.MustCompile(`[a-z]`)
+	digitRegex = regexp.MustCompile(`[0-9]`)
 )
+
+// retryAfterSeconds returns seconds until ResetAt (ms), min 1.
+func retryAfterSeconds(resetAtMs int64) int {
+	secs := int((resetAtMs - time.Now().UnixMilli()) / 1000)
+	if secs < 1 {
+		return 1
+	}
+	return secs
+}
 
 func (h *Handler) Register(c echo.Context) error {
 	// Rate limit by IP
@@ -56,7 +65,8 @@ func (h *Handler) Register(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
-		return common.BadRequest(c, "Too many registration attempts. Please try again later.")
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many registration attempts. Please try again later.")
 	}
 
 	var req RegisterRequest
@@ -96,7 +106,8 @@ func (h *Handler) Register(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
-		return common.BadRequest(c, "Too many registration attempts. Please try again later.")
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many registration attempts. Please try again later.")
 	}
 
 	// Check if email exists
@@ -146,7 +157,8 @@ func (h *Handler) Login(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
-		return common.BadRequest(c, "Too many login attempts. Please try again later.")
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many login attempts. Please try again later.")
 	}
 
 	token, user, err := h.service.Login(c.Request().Context(), req.Email, req.Password)
@@ -239,7 +251,8 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
-		return common.BadRequest(c, "Too many requests. Please try again later.")
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many requests. Please try again later.")
 	}
 
 	var req struct {

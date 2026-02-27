@@ -1,0 +1,33 @@
+# DAST — OWASP ZAP baseline scan (run manually or weekly)
+# Manual: provide target_url. Scheduled: set repo variable DAST_TARGET_URL.
+
+name: DAST (OWASP ZAP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "URL to scan (e.g. https://staging.example.com)"
+        required: true
+        type: string
+  schedule:
+    # Weekly on Monday 02:00 UTC
+    - cron: "0 2 * * 1"
+
+jobs:
+  zap-scan:
+    name: ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || vars.DAST_TARGET_URL != ''
+    env:
+      TARGET_URL: ${{ github.event.inputs.target_url || vars.DAST_TARGET_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          target: ${{ env.TARGET_URL }}
+          fail_action: false
+          allow_issue_writing: false

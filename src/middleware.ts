@@ -70,9 +70,11 @@ export async function middleware(request: NextRequest) {
 
   if (!result.allowed) {
     console.warn(`[Middleware] RATE LIMIT: Path=${pathname}, IP=${ip}, Remaining=0`);
+    const retryAfterSecs = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
     return new NextResponse("Too Many Requests", {
       status: 429,
       headers: {
+        "Retry-After": retryAfterSecs.toString(),
         "X-RateLimit-Limit": result.limit.toString(),
         "X-RateLimit-Remaining": "0",
         "X-RateLimit-Reset": result.resetAt.toString(),
