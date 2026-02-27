@@ -199,8 +199,8 @@ func getEnvOrDefaultInt(name string, defaultVal int) int {
 }
 
 // resolveSessionTTL returns session TTL in seconds for both Redis and JWT expiry.
-// Order: SESSION_TTL_DAYS > SESSION_TOKEN_TTL > JWT_EXPIRY_SECS > 30 days.
-// Use SESSION_TTL_DAYS=7 for shorter sessions (audit recommendation).
+// Order: SESSION_TTL_DAYS > SESSION_TOKEN_TTL > JWT_EXPIRY_SECS > 7 days (default).
+// Default 7 days per security audit recommendation; use SESSION_TOKEN_TTL for longer.
 func resolveSessionTTL() int {
 	if days := getEnvOrDefaultInt("SESSION_TTL_DAYS", 0); days > 0 {
 		return days * 24 * 3600
@@ -211,5 +211,5 @@ func resolveSessionTTL() int {
 	if v := getEnvOrDefaultInt("JWT_EXPIRY_SECS", 0); v > 0 {
 		return v
 	}
-	return 30 * 24 * 3600
+	return 7 * 24 * 3600
 }

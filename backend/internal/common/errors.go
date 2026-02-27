@@ -3,6 +3,7 @@ package common
 import (
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 )
@@ -38,6 +39,20 @@ func Forbidden(c echo.Context) error {
 
 func TooManyRequests(c echo.Context) error {
 	return c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: "Too Many Requests"})
+}
+
+// RateLimited returns 429 with Retry-After header (RFC 7231).
+func RateLimited(c echo.Context, retryAfterSeconds int, message string) error {
+	return RateLimitedJSON(c, retryAfterSeconds, "RATE_LIMITED", message)
+}
+
+// RateLimitedJSON returns 429 with Retry-After and custom error code.
+func RateLimitedJSON(c echo.Context, retryAfterSeconds int, errorCode, message string) error {
+	if retryAfterSeconds < 1 {
+		retryAfterSeconds = 1
+	}
+	c.Response().Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
+	return c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: errorCode, Message: message})
 }
 
 func InternalError(c echo.Context) error {
