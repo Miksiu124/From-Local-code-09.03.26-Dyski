@@ -10,7 +10,7 @@ import { db } from "./db";
 export const getSettings = cache(async () => {
   const settings = await db.setting.findMany();
   return Object.fromEntries(
-    settings.map((s) => [s.key, s.value])
+    settings.map((s: { key: string; value: unknown }) => [s.key, s.value])
   ) as Record<string, unknown>;
 });
 

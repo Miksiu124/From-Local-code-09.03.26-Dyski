@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"content-platform-backend/internal/admin"
@@ -16,6 +17,7 @@ import (
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
+	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/jobs"
 	"content-platform-backend/internal/models"
@@ -61,6 +63,7 @@ func main() {
 	e.Use(echomw.Logger())
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
+	e.Use(echomw.BodyLimit("2M"))
 
 	// Custom HTTP Error Handler to ensure all errors are JSON
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
@@ -97,7 +100,7 @@ func main() {
 	contentService := content.NewService(pgPool, r2Client, cfg)
 
 	// ── Auth middleware ──────────────────────────────────────────────────
-	authMW := middleware.NewAuthMiddleware(cfg, redisClient)
+	authMW := middleware.NewAuthMiddleware(cfg, redisClient, pgPool)
 	adminMW := middleware.NewAdminMiddleware(cfg)
 
     // ── Jobs ─────────────────────────────────────────────────────────────
@@ -132,13 +135,20 @@ func main() {
 	// ── Routes ───────────────────────────────────────────────────────────
 	api := e.Group("/api")
 
+	// Mailer
+	mailService := mailer.New(cfg)
+
 	// Auth routes (public)
-	authHandler := auth.NewHandler(authService, cfg, rateLimiter)
+	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient)
 	authGroup := api.Group("/auth")
 	authGroup.POST("/register", authHandler.Register)
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.POST("/logout", authHandler.Logout)
 	authGroup.GET("/me", authHandler.Me, authMW.Authenticate)
+	authGroup.POST("/forgot-password", authHandler.ForgotPassword)
+	authGroup.POST("/reset-password", authHandler.ResetPassword)
+	authGroup.GET("/discord", authHandler.DiscordRedirect)
+	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
 
 	// Models (public)
 	modelsHandler := models.NewHandler(pgPool)
@@ -169,10 +179,10 @@ func main() {
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
 
 	// Credits (requires auth)
-	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg)
+	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg, r2Client)
 	creditsGroup := api.Group("/credits", authMW.Authenticate)
 	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase)
-	creditsGroup.POST("/purchase/:id/proof", creditsHandler.UploadProof)
+	creditsGroup.POST("/purchase/:id/proof", creditsHandler.UploadProof, echomw.BodyLimit("12M"))
 	creditsGroup.GET("/purchase/:id/status", creditsHandler.GetPurchaseStatus)
 	creditsGroup.GET("/purchase/:id/stream", creditsHandler.StreamPurchaseStatus)
 	creditsGroup.POST("/purchase/:id/txid", creditsHandler.SubmitTxId)
@@ -185,7 +195,7 @@ func main() {
 	api.GET("/credits/purchase/:id/blik", creditsHandler.BlikWebSocket, authMW.Authenticate)
 
 	// Purchases (requires auth)
-	purchasesHandler := purchases.NewHandler(pgPool, cfg)
+	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient)
 	api.POST("/purchases", purchasesHandler.Create, authMW.Authenticate)
     api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
 
@@ -197,7 +207,7 @@ func main() {
 	favGroup.POST("/check", favoritesHandler.BatchCheck)
 
 	// Notifications (requires auth)
-	notifHandler := notifications.NewHandler(pgPool)
+	notifHandler := notifications.NewHandler(pgPool, redisClient)
 	notifGroup := api.Group("/notifications", authMW.Authenticate)
 	notifGroup.GET("", notifHandler.List)
 	notifGroup.PATCH("", notifHandler.MarkAllRead)
@@ -205,6 +215,12 @@ func main() {
 	// User (requires auth)
 	userHandler := user.NewHandler(pgPool)
 	api.GET("/user/balance", userHandler.GetBalance, authMW.Authenticate)
+	api.GET("/user/profile", userHandler.GetProfile, authMW.Authenticate)
+	api.PATCH("/user/profile", userHandler.UpdateProfile, authMW.Authenticate)
+	api.PATCH("/user/email", userHandler.UpdateEmail, authMW.Authenticate)
+	api.PATCH("/user/password", userHandler.UpdatePassword, authMW.Authenticate)
+	api.PATCH("/user/autoplay", userHandler.UpdateAutoplay, authMW.Authenticate)
+	api.GET("/user/preferences", userHandler.GetPreferences, authMW.Authenticate)
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
@@ -233,7 +249,7 @@ func main() {
 	adminGroup.PUT("/settings", adminHandler.UpdateSettings)
 	adminGroup.POST("/r2/sync", adminHandler.SyncR2)
 	adminGroup.POST("/r2/import", adminHandler.ImportR2)
-	adminGroup.POST("/r2/avatars", adminHandler.UploadAvatar)
+	adminGroup.POST("/r2/avatars", adminHandler.UploadAvatar, echomw.BodyLimit("6M"))
 	adminGroup.GET("/analytics", adminHandler.GetAnalytics)
 
 	// ── Health check ─────────────────────────────────────────────────────
@@ -251,7 +267,7 @@ func main() {
 	}()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutting down server...")

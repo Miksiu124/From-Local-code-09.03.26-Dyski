@@ -64,18 +64,26 @@ func (h *Handler) Toggle(c echo.Context) error {
 	return common.Success(c, map[string]bool{"favorited": true})
 }
 
-// List returns user's favorites with pagination
+// List returns user's favorites with pagination.
+// Optional query params: modelSlug (filter by model folder), sort (newest|oldest|longest|shortest).
 func (h *Handler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
 
 	cursor := c.QueryParam("cursor")
 	limitStr := c.QueryParam("limit")
+	modelSlug := c.QueryParam("modelSlug")
+	sort := c.QueryParam("sort")
+
 	limit := 24
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l >= 1 && l <= 100 {
 			limit = l
 		}
+	}
+
+	if sort == "" {
+		sort = "newest"
 	}
 
 	query := `
@@ -89,13 +97,39 @@ func (h *Handler) List(c echo.Context) error {
 	args := []interface{}{userID}
 	argIdx := 2
 
+	if modelSlug != "" {
+		query += ` AND m.folder_name = $` + strconv.Itoa(argIdx)
+		args = append(args, modelSlug)
+		argIdx++
+	}
+
 	if cursor != "" {
-		query += ` AND (f.created_at, f.id) < ((SELECT created_at FROM favorites WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		switch sort {
+		case "oldest":
+			query += ` AND (f.created_at, f.id) > ((SELECT created_at FROM favorites WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		case "longest":
+			query += ` AND (COALESCE(ci.duration, 0), f.id) < (SELECT COALESCE(ci2.duration, 0), f2.id FROM content_items ci2 JOIN favorites f2 ON f2.content_item_id = ci2.id WHERE f2.id = $` + strconv.Itoa(argIdx) + `)`
+		case "shortest":
+			query += ` AND (COALESCE(ci.duration, 0), f.id) > (SELECT COALESCE(ci2.duration, 0), f2.id FROM content_items ci2 JOIN favorites f2 ON f2.content_item_id = ci2.id WHERE f2.id = $` + strconv.Itoa(argIdx) + `)`
+		default:
+			query += ` AND (f.created_at, f.id) < ((SELECT created_at FROM favorites WHERE id = $` + strconv.Itoa(argIdx) + `), $` + strconv.Itoa(argIdx) + `)`
+		}
 		args = append(args, cursor)
 		argIdx++
 	}
 
-	query += ` ORDER BY f.created_at DESC, f.id DESC LIMIT $` + strconv.Itoa(argIdx)
+	switch sort {
+	case "oldest":
+		query += ` ORDER BY f.created_at ASC, f.id ASC`
+	case "longest":
+		query += ` ORDER BY COALESCE(ci.duration, 0) DESC, f.id DESC`
+	case "shortest":
+		query += ` ORDER BY COALESCE(ci.duration, 0) ASC, f.id ASC`
+	default:
+		query += ` ORDER BY f.created_at DESC, f.id DESC`
+	}
+
+	query += ` LIMIT $` + strconv.Itoa(argIdx)
 	args = append(args, limit+1)
 
 	rows, err := h.db.Query(ctx, query, args...)
@@ -136,9 +170,15 @@ func (h *Handler) List(c echo.Context) error {
 		nextCursor = &items[len(items)-1].ID
 	}
 
-	// Get total count
+	// Get total count (respect modelSlug when filtering)
 	var totalCount int
-	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM favorites WHERE user_id = $1`, userID).Scan(&totalCount)
+	countQuery := `SELECT COUNT(*) FROM favorites f JOIN content_items ci ON ci.id = f.content_item_id JOIN models m ON m.id = ci.model_id WHERE f.user_id = $1`
+	countArgs := []interface{}{userID}
+	if modelSlug != "" {
+		countQuery += ` AND m.folder_name = $2`
+		countArgs = append(countArgs, modelSlug)
+	}
+	_ = h.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount)
 
 	if items == nil {
 		items = []FavItem{}

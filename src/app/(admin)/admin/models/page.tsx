@@ -208,8 +208,8 @@ export default function AdminModelsPage() {
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
       ) : (
-        <div className="rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-xl border border-border overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted">
               <tr>
                 <th className="p-3 text-left">

@@ -54,7 +54,14 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [proofUploading, setProofUploading] = useState(false);
   const [proofUploaded, setProofUploaded] = useState(false);
+  const [blikExpired, setBlikExpired] = useState(false);
+  const [blikSubmitCount, setBlikSubmitCount] = useState(0);
+  const [blikCooldown, setBlikCooldown] = useState(0);
   const proofInputRef = useRef<HTMLInputElement>(null);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const BLIK_MAX_RETRIES = 5;
+  const BLIK_COOLDOWN_SECONDS = 20;
 
   // SSE for real-time payment status, with polling fallback
   useEffect(() => {
@@ -64,35 +71,10 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
     let eventSource: EventSource | null = null;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-    // Try SSE first
-    try {
-      eventSource = new EventSource(`/api/credits/purchase/${paymentResult.id}/stream`, { withCredentials: true });
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.status && data.status !== "PENDING") {
-            setPaymentStatus(data.status);
-            eventSource?.close();
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      };
-
-      eventSource.onerror = () => {
-        // SSE failed, fall back to polling
-        eventSource?.close();
-        eventSource = null;
-        startPolling();
-      };
-    } catch {
-      // SSE not supported, fall back to polling
-      startPolling();
-    }
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
     function startPolling() {
-      if (pollInterval) return; // Already polling
+      if (pollInterval) return;
 
       const poll = async () => {
         try {
@@ -110,7 +92,33 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
       };
 
       poll();
-      pollInterval = setInterval(poll, 5000);
+      pollInterval = setInterval(poll, isMobile ? 3000 : 5000);
+    }
+
+    if (isMobile) {
+      startPolling();
+    } else {
+      try {
+        eventSource = new EventSource(`/api/credits/purchase/${paymentResult.id}/stream`, { withCredentials: true });
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.status && data.status !== "PENDING") {
+              setPaymentStatus(data.status);
+              eventSource?.close();
+            }
+          } catch {}
+        };
+
+        eventSource.onerror = () => {
+          eventSource?.close();
+          eventSource = null;
+          startPolling();
+        };
+      } catch {
+        startPolling();
+      }
     }
 
     return () => {
@@ -166,7 +174,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
       const data = await res.json();
 
       if (!res.ok) {
-        const errorMessage = data.message || data.error || "Payment failed";
+        const errorMessage = data.message || data.error || t("paymentFailed");
         setError(errorMessage);
         return;
       }
@@ -174,7 +182,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
       setPaymentResult(data);
       setStep("waiting");
     } catch {
-      setError("Failed to create purchase. Please try again.");
+      setError(t("createPurchaseFailed"));
     } finally {
       setLoading(false);
     }
@@ -225,17 +233,44 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
 
       setProofUploaded(true);
     } catch {
-      setError("Failed to upload payment proof. Please try again.");
+      setError(t("uploadProofFailed"));
     } finally {
       setProofUploading(false);
     }
   };
 
+  useEffect(() => {
+    return () => {
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+    };
+  }, []);
+
+  const startBlikCooldown = () => {
+    setBlikCooldown(BLIK_COOLDOWN_SECONDS);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setBlikCooldown((prev) => {
+        if (prev <= 1) {
+          if (cooldownRef.current) clearInterval(cooldownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   const handleBlikExpiredNewCode = async () => {
     if (!paymentResult || !blikCode.trim() || blikCode.trim().length < 6) {
-      setError("Enter a valid 6-digit BLIK code");
+      setError(t("enterValidBlikCode"));
       return;
     }
+
+    if (blikSubmitCount >= BLIK_MAX_RETRIES) {
+      setError(t("blikMaxRetriesReached"));
+      return;
+    }
+
+    if (blikCooldown > 0) return;
 
     setLoading(true);
     setError("");
@@ -251,18 +286,21 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
       const data = await res.json();
 
       if (!res.ok) {
-        const errorMessage = data.message || data.error || "Failed to update BLIK code";
+        const errorMessage = data.message || data.error || t("updateBlikFailed");
         setError(errorMessage);
         return;
       }
 
-      // Update the expiration time in the result
       setPaymentResult((prev) =>
         prev ? { ...prev, blikCode: blikCode.trim(), expirationTime: data.expirationTime } : prev
       );
       setBlikCode("");
+      setBlikExpired(false);
+      setPaymentStatus(null);
+      setBlikSubmitCount((prev) => prev + 1);
+      startBlikCooldown();
     } catch {
-      setError("Failed to update BLIK code. Please try again.");
+      setError(t("updateBlikFailed"));
     } finally {
       setLoading(false);
     }
@@ -357,7 +395,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                 animate={{ opacity: 1, height: "auto" }}
                 className="mt-4"
               >
-                <p className="text-sm font-medium mb-2">Select cryptocurrency:</p>
+                <p className="text-sm font-medium mb-2">{t("selectCryptocurrency")}</p>
                 <div className="grid grid-cols-2 gap-2">
                   {cryptos.map((crypto) => (
                     <button
@@ -379,14 +417,14 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
 
             <div className="flex gap-3 mt-6">
               <Button variant="outline" onClick={() => setStep("select-package")} className="flex-1">
-                <ArrowLeft className="h-4 w-4 mr-2" /> Back
+                <ArrowLeft className="h-4 w-4 mr-2" /> {t("back")}
               </Button>
               <Button
                 className="flex-1"
                 disabled={!selectedMethod || loading}
                 onClick={handleMethodNext}
               >
-                {loading ? "..." : "Continue"} <ArrowRight className="h-4 w-4 ml-2" />
+                {loading ? "..." : t("continue")} <ArrowRight className="h-4 w-4 ml-2" />
               </Button>
             </div>
           </motion.div>
@@ -408,10 +446,12 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   placeholder="123456"
                   value={blikCode}
                   onChange={(e) => {
-                    // Only allow digits, max 6
                     const val = e.target.value.replace(/\D/g, "").slice(0, 6);
                     setBlikCode(val);
                   }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
                   className="text-center text-3xl font-mono tracking-[0.5em] h-16"
                   maxLength={6}
                 />
@@ -456,16 +496,16 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   >
                     <CheckCircle className="h-16 w-16 text-green-500 mx-auto" />
                   </motion.div>
-                  <h3 className="text-xl font-bold text-green-500">Payment Approved!</h3>
+                  <h3 className="text-xl font-bold text-green-500">{t("paymentApprovedTitle")}</h3>
                   <p className="text-muted-foreground">
-                    {paymentResult.credits} credits have been added to your balance.
+                    {t("creditsAdded", { credits: paymentResult.credits })}
                   </p>
                   <div className="flex gap-3 pt-4">
                     <Button
                       className="flex-1"
                       onClick={() => router.push("/")}
                     >
-                      Browse Models
+                      {t("browseModels")}
                     </Button>
                     <Button
                       variant="outline"
@@ -481,7 +521,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                         setError("");
                       }}
                     >
-                      Buy More Credits
+                      {t("buyMoreCredits")}
                     </Button>
                   </div>
                 </CardContent>
@@ -499,9 +539,9 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   >
                     <XCircle className="h-16 w-16 text-destructive mx-auto" />
                   </motion.div>
-                  <h3 className="text-xl font-bold text-destructive">Payment Rejected</h3>
+                  <h3 className="text-xl font-bold text-destructive">{t("paymentRejectedTitle")}</h3>
                   <p className="text-muted-foreground">
-                    Your payment was not approved. Please try again or contact support.
+                    {t("paymentRejectedMessage")}
                   </p>
                   <Button
                     className="w-full mt-4"
@@ -516,7 +556,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                       setError("");
                     }}
                   >
-                    Try Again
+                    {t("tryAgain")}
                   </Button>
                 </CardContent>
               </Card>
@@ -536,9 +576,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   <PaymentCountdown
                     expirationTime={paymentResult.expirationTime}
                     isBlik={paymentResult.paymentMethod === "BLIK"}
-                    onBlikExpired={() => {
-                      // Show new BLIK code input
-                    }}
+                    onBlikExpired={(expired) => setBlikExpired(expired)}
                   />
 
                   {/* Transaction code */}
@@ -558,29 +596,46 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   )}
 
                   {/* BLIK expired: enter new code */}
-                  {paymentResult.paymentMethod === "BLIK" && (
-                    <div className="space-y-3 border-t border-border pt-4">
-                      <p className="text-sm font-medium">{t("blikExpiredNewCode")}</p>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="123456"
-                          value={blikCode}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, "").slice(0, 6);
-                            setBlikCode(val);
-                          }}
-                          className="flex-1 text-center font-mono text-lg"
-                          maxLength={6}
-                        />
-                        <Button
-                          onClick={handleBlikExpiredNewCode}
-                          disabled={blikCode.length < 6 || loading}
-                          size="sm"
-                        >
-                          {t("submitNewBlik")}
-                        </Button>
-                      </div>
-                    </div>
+                  {paymentResult.paymentMethod === "BLIK" && blikExpired && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="space-y-3 border-t border-border pt-4"
+                    >
+                      {blikSubmitCount >= BLIK_MAX_RETRIES ? (
+                        <p className="text-sm text-destructive font-medium">{t("blikMaxRetriesReached")}</p>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium">{t("blikExpiredNewCode")}</p>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="123456"
+                              value={blikCode}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                                setBlikCode(val);
+                              }}
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              className="flex-1 text-center font-mono text-lg"
+                              maxLength={6}
+                            />
+                            <Button
+                              onClick={handleBlikExpiredNewCode}
+                              disabled={blikCode.length < 6 || loading || blikCooldown > 0}
+                              size="sm"
+                            >
+                              {blikCooldown > 0 ? `${blikCooldown}s` : t("submitNewBlik")}
+                            </Button>
+                          </div>
+                          {blikSubmitCount > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              {t("blikRetriesRemaining", { count: BLIK_MAX_RETRIES - blikSubmitCount })}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </motion.div>
                   )}
 
                   {/* Crypto wallet */}
@@ -650,7 +705,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
 
                   {/* Amount */}
                   <div className="flex justify-between text-sm border-t border-border pt-4">
-                    <span className="text-muted-foreground">Amount</span>
+                    <span className="text-muted-foreground">{t("amount")}</span>
                     <span className="font-semibold">{formatPrice(paymentResult.amount)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -675,13 +730,12 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                     {proofUploaded ? (
                       <div className="inline-flex items-center gap-2 text-green-600 text-sm font-medium">
                         <FileCheck className="h-4 w-4" />
-                        Proof uploaded successfully
+                        {t("proofUploadedSuccess")}
                       </div>
                     ) : (
                       <Button
                         variant="outline"
-                        size="sm"
-                        className="gap-2"
+                        className="gap-2 min-h-[44px]"
                         disabled={proofUploading}
                         onClick={() => proofInputRef.current?.click()}
                       >
@@ -690,7 +744,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                         ) : (
                           <Upload className="h-4 w-4" />
                         )}
-                        {proofUploading ? "Uploading..." : t("uploadProof")}
+                        {proofUploading ? t("uploading") : t("uploadProof")}
                       </Button>
                     )}
                     <p className="text-xs text-muted-foreground">
@@ -712,7 +766,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                       setError("");
                     }}
                   >
-                    New Purchase
+                    {t("newPurchase")}
                   </Button>
                 </CardContent>
               </Card>

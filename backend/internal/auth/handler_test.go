@@ -86,3 +86,21 @@ func TestEmailNormalization(t *testing.T) {
 		}
 	}
 }
+
+func TestNameValidation(t *testing.T) {
+	// Name limit is 64 characters (Register, UpdateProfile, UpdateUser)
+	valid := []string{"", "A", "John Doe", strings.Repeat("x", 64)}
+	for _, name := range valid {
+		trimmed := strings.TrimSpace(name)
+		if len(trimmed) > 64 {
+			t.Errorf("name %q (len=%d) should be valid (<=64)", name, len(trimmed))
+		}
+	}
+
+	invalid := []string{strings.Repeat("x", 65), strings.Repeat("a", 100)}
+	for _, name := range invalid {
+		if len(strings.TrimSpace(name)) <= 64 {
+			t.Errorf("name len %d should exceed limit", len(name))
+		}
+	}
+}

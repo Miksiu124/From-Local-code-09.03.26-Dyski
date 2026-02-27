@@ -2,6 +2,8 @@
 
 A full-stack premium content platform with credit-based payments, HLS video streaming, admin panel, and real-time payment notifications. Built with **Next.js 16**, **Go (Echo)**, **PostgreSQL**, **Redis**, and **Cloudflare R2**.
 
+> **Nowosc:** Zobacz [REPO_STRUCTURE.md](REPO_STRUCTURE.md) — co jest czym, jak deployowac na VPS.
+
 ---
 
 ## Tech Stack
@@ -14,6 +16,7 @@ A full-stack premium content platform with credit-based payments, HLS video stre
 | Cache / PubSub | Redis 7 |
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
+| SMTP | Postfix relay (boky/postfix, self-hosted) |
 | Proxy | Nginx (reverse proxy, rate limiting, WAF) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
@@ -158,6 +161,13 @@ ADMIN_EMAILS=your_email@example.com
 # BLIK
 BLIK_EXPIRATION_MINUTES=2
 
+# SMTP (self-hosted Postfix relay, no external provider needed)
+SMTP_HOST=smtp
+SMTP_PORT=587
+SMTP_FROM=noreply@yourdomain.com
+SMTP_HOSTNAME=mail.yourdomain.com
+SMTP_ALLOWED_DOMAINS=yourdomain.com
+
 # Frontend (used by docker-compose)
 NEXT_PUBLIC_APP_URL=http://localhost
 ```
@@ -168,15 +178,16 @@ NEXT_PUBLIC_APP_URL=http://localhost
 docker compose up -d --build
 ```
 
-This starts 5 containers:
+This starts 6 containers:
 
 | Service | Port | Description |
 |---|---|---|
-| nginx | **80** | Reverse proxy (main entry point) |
-| frontend | 3000 | Next.js SSR |
-| api | 8080 | Go API |
+| nginx | **80, 443** | Reverse proxy (main entry point) |
+| frontend | 3000 (localhost only) | Next.js SSR |
+| api | 8080 (localhost only) | Go API |
 | postgres | 5432 (localhost only) | Database |
 | redis | 6379 (localhost only) | Cache and PubSub |
+| smtp | 587 (internal only) | Postfix mail relay ([boky/postfix](https://github.com/bokysan/docker-postfix)) |
 
 ### 4. Seed the database
 
@@ -206,6 +217,19 @@ This creates:
 | `http://localhost/login` | Login page |
 | `http://localhost/register` | Registration |
 | `http://localhost/admin` | Admin panel |
+
+---
+
+## Deploy na VPS
+
+Repozytorium zawiera skrypty deployu. Zobacz **[REPO_STRUCTURE.md](REPO_STRUCTURE.md)** — pełny opis struktury i deployu.
+
+```bash
+# Szybki deploy (rsync + docker compose na VPS)
+./scripts/deploy-vps.sh --build
+```
+
+VPS: `marek@136.114.88.152`, ścieżka `/opt/contentvault`. Szczegóły w `REPO_STRUCTURE.md` i `DEPLOY.md`.
 
 ---
 
@@ -270,6 +294,14 @@ All payment methods support:
 | `STREAMING_TOKEN_TTL` | No | HLS token TTL in seconds (default: 21600) |
 | `ADMIN_EMAILS` | Yes | Comma-separated admin emails |
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
+| `SMTP_HOST` | No | SMTP server hostname (default: `smtp`) |
+| `SMTP_PORT` | No | SMTP port (default: `587`) |
+| `SMTP_USER` | No | SMTP username (empty for local Postfix relay) |
+| `SMTP_PASSWORD` | No | SMTP password (empty for local Postfix relay) |
+| `SMTP_FROM` | No | Sender address (default: `noreply@contentvault.io`) |
+| `SMTP_HOSTNAME` | No | Mail server hostname for DNS records |
+| `SMTP_ALLOWED_DOMAINS` | No | Domains allowed to send mail |
+| `NGINX_CONFIG` | No | Path to nginx config (default: `./nginx/nginx.conf`) |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |
 
@@ -303,6 +335,23 @@ npm run db:push        # Push schema to database
 npm run db:migrate     # Run migrations
 npm run db:seed        # Seed default data
 npm run db:studio      # Open Prisma Studio GUI
+```
+
+---
+
+## Tests
+
+Tests run automatically on push and pull requests via GitHub Actions.
+
+```bash
+# Backend (Go)
+cd backend && go test -v ./...
+
+# Frontend (Vitest)
+npm run test
+
+# Lint
+npm run lint
 ```
 
 ---

@@ -1,0 +1,14 @@
+# Override: użyj z docker compose -f docker-compose.yml -f docker-compose.billionmail.yml up -d
+# Łączy ContentVault API z siecią BillionMail (SMTP_HOST=postfix)
+# Wymaga: BillionMail uruchomiony, sieć billionmail_billionmail-network istnieje
+
+services:
+  api:
+    networks:
+      - internal
+      - billionmail
+
+networks:
+  billionmail:
+    external: true
+    name: billionmail_billionmail-network

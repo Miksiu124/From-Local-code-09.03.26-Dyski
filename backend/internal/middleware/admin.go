@@ -22,7 +22,7 @@ func (am *AdminMiddleware) RequireAdmin(next echo.HandlerFunc) echo.HandlerFunc 
 		email := GetUserEmail(c)
 
 		if role != "ADMIN" && !am.cfg.IsAdmin(email) {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
 		}
 		return next(c)
 	}

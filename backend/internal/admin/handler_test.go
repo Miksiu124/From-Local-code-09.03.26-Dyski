@@ -59,6 +59,31 @@ func TestSortDirection(t *testing.T) {
 	}
 }
 
+func TestAllowedSettingsKeys(t *testing.T) {
+	allowed := []string{
+		"blik_enabled", "max_pending_credit_purchases", "crypto_wallets",
+		"paypal_address", "revolut_address", "discord_webhook_url", "discord_ping_role_id",
+	}
+	for _, k := range allowed {
+		if !allowedSettingsKeys[k] {
+			t.Errorf("key %q should be allowed", k)
+		}
+	}
+
+	// Keys that must be rejected (not in whitelist, no discord_ prefix)
+	rejected := []string{"random_key", "evil_injection", "admin_override", "internal_secret"}
+	for _, k := range rejected {
+		if allowedSettingsKeys[k] {
+			t.Errorf("key %q should not be in whitelist", k)
+		}
+	}
+
+	// discord_ prefix allows future keys
+	if !allowedSettingsKeys["discord_webhook_url"] {
+		t.Error("discord_webhook_url must be allowed")
+	}
+}
+
 func TestAvatarContentTypeValidation(t *testing.T) {
 	valid := []string{
 		"image/jpeg",

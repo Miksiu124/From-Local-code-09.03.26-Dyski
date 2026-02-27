@@ -9,13 +9,13 @@ import {
   LogOut,
   LayoutDashboard,
   ShieldCheck,
-  Bell,
   Heart,
   Menu,
   X,
   ChevronDown,
   ShoppingCart,
 } from "lucide-react";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
@@ -59,8 +59,15 @@ export function Header() {
     };
     fetchUser();
 
-    // Listen for auth changes from login/register pages
-    const handleAuthChange = () => fetchUser();
+    const handleAuthChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setUser(detail);
+        setLoading(false);
+      } else {
+        fetchUser();
+      }
+    };
     window.addEventListener("auth-change", handleAuthChange);
     return () => window.removeEventListener("auth-change", handleAuthChange);
   }, []);
@@ -154,13 +161,7 @@ export function Header() {
           )}
 
           {/* Notifications */}
-          {user && (
-            <Link href="/dashboard?tab=notifications">
-              <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl">
-                <Bell className="h-4 w-4" />
-              </Button>
-            </Link>
-          )}
+          {user && <NotificationBell />}
 
           {/* Language Switcher */}
           <LanguageSwitcher />

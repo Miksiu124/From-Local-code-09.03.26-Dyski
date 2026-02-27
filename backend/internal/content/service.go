@@ -54,11 +54,15 @@ func (s *Service) SyncModels(ctx context.Context) ([]string, error) {
 		synced = append(synced, folderName)
 	}
 
-	// Deactivate models not found in R2
+	// Deactivate models not found in R2 that haven't been synced recently.
+	// Only deactivate if last_synced_at is older than 1 hour to avoid
+	// flapping during transient R2 listing issues.
 	if len(synced) > 0 {
 		_, err = s.db.Exec(ctx, `
 			UPDATE models SET is_active = false 
 			WHERE folder_name NOT IN (SELECT unnest($1::text[]))
+			AND is_active = true
+			AND (last_synced_at IS NULL OR last_synced_at < now() - interval '1 hour')
 		`, synced)
 		if err != nil {
 			log.Printf("[Sync] Failed to deactivate missing models: %v", err)
@@ -86,7 +90,20 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 
 	var imported int
 	log.Printf("[Sync] Scanning %d objects for model %s (Prefix: %s)", len(objects), folderName, prefix)
-	
+
+	// Pre-load existing unique_ids for this model to detect true duplicates
+	existingIDs := make(map[string]bool)
+	existRows, _ := s.db.Query(ctx, `SELECT unique_id FROM content_items WHERE model_id = $1`, modelID)
+	if existRows != nil {
+		for existRows.Next() {
+			var uid string
+			if existRows.Scan(&uid) == nil {
+				existingIDs[uid] = true
+			}
+		}
+		existRows.Close()
+	}
+
 	// Track unique IDs to avoid duplicate imports for different resolutions
 	processedVideos := make(map[string]bool)
 
@@ -114,12 +131,11 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 
 			hlsFolder := strings.Join(parts[:len(parts)-1], "/")
 
-			// Upsert video – preserve admin-set is_active (do NOT force true)
-			_, err := s.db.Exec(ctx, `
-				INSERT INTO content_items (model_id, unique_id, content_type, hls_master_path, hls_folder_path, is_active)
-				VALUES ($1, $2, 'VIDEO', $3, $4, true)
-				ON CONFLICT (unique_id) DO UPDATE SET hls_master_path = $3, hls_folder_path = $4
-			`, modelID, uniqueID, key, hlsFolder)
+		_, err := s.db.Exec(ctx, `
+			INSERT INTO content_items (model_id, unique_id, content_type, hls_master_path, hls_folder_path, is_active, is_hidden)
+			VALUES ($1, $2, 'VIDEO', $3, $4, true, false)
+			ON CONFLICT (unique_id) DO UPDATE SET hls_master_path = $3, hls_folder_path = $4
+		`, modelID, uniqueID, key, hlsFolder)
 
 			if err == nil {
 				if !processedVideos[uniqueID] {
@@ -148,18 +164,35 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 			// Prevent collision with video IDs or other models
 			fullUniqueID := folderName + "-" + uniqueID
 
-			// Upsert photo – preserve admin-set is_active (do NOT force true)
-			_, err := s.db.Exec(ctx, `
-				INSERT INTO content_items (model_id, unique_id, content_type, thumbnail_path, is_active)
-				VALUES ($1, $2, 'PHOTO', $3, true)
-				ON CONFLICT (unique_id) DO UPDATE SET thumbnail_path = $3
-			`, modelID, fullUniqueID, key)
+		_, err := s.db.Exec(ctx, `
+			INSERT INTO content_items (model_id, unique_id, content_type, thumbnail_path, is_active, is_hidden)
+			VALUES ($1, $2, 'PHOTO', $3, true, false)
+			ON CONFLICT (unique_id) DO UPDATE SET thumbnail_path = $3
+		`, modelID, fullUniqueID, key)
 			
 			if err == nil {
 				imported++
 			}
 		}
 	}
+
+	// Cleanup: remove duplicate content items for this model.
+	// Keep the newest entry (by created_at) for each hls_folder_path (videos)
+	// and each thumbnail_path (photos).
+	_, _ = s.db.Exec(ctx, `
+		DELETE FROM content_items ci
+		WHERE ci.model_id = $1
+		AND ci.content_type = 'VIDEO'
+		AND ci.hls_folder_path IS NOT NULL
+		AND EXISTS (
+			SELECT 1 FROM content_items ci2
+			WHERE ci2.model_id = ci.model_id
+			AND ci2.hls_folder_path = ci.hls_folder_path
+			AND ci2.content_type = 'VIDEO'
+			AND ci2.id != ci.id
+			AND ci2.created_at > ci.created_at
+		)
+	`, modelID)
 
 	return imported, len(objects), nil
 }

@@ -11,6 +11,7 @@ import (
 	"content-platform-backend/internal/config"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 )
@@ -33,10 +34,11 @@ type Claims struct {
 type AuthMiddleware struct {
 	cfg   *config.Config
 	redis *redis.Client
+	db    *pgxpool.Pool
 }
 
-func NewAuthMiddleware(cfg *config.Config, redis *redis.Client) *AuthMiddleware {
-	return &AuthMiddleware{cfg: cfg, redis: redis}
+func NewAuthMiddleware(cfg *config.Config, redis *redis.Client, db *pgxpool.Pool) *AuthMiddleware {
+	return &AuthMiddleware{cfg: cfg, redis: redis, db: db}
 }
 
 // Authenticate requires a valid JWT and active session
@@ -54,6 +56,15 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 			return c.JSON(http.StatusUnauthorized, map[string]string{
 				"error": "Session expired or logged in on another device",
 			})
+		}
+
+		// Check if user is banned
+		var isBanned bool
+		if banErr := am.db.QueryRow(context.Background(),
+			`SELECT COALESCE(is_banned, false) FROM users WHERE id = $1`, claims.UserID,
+		).Scan(&isBanned); banErr == nil && isBanned {
+			am.redis.Del(context.Background(), sessionKey)
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "Account suspended"})
 		}
 
 		// Set context values
@@ -92,8 +103,8 @@ func (am *AuthMiddleware) extractAndValidateToken(c echo.Context) (*Claims, erro
 		tokenStr = cookie.Value
 	}
 
-	// 2. Fall back to Authorization header
-	if tokenStr == "" {
+	// 2. Fall back to Authorization header (unless DISABLE_BEARER_AUTH=true for security)
+	if tokenStr == "" && !am.cfg.DisableBearerAuth {
 		authHeader := c.Request().Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			tokenStr = strings.TrimPrefix(authHeader, "Bearer ")

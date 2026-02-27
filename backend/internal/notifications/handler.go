@@ -1,19 +1,25 @@
 package notifications
 
 import (
+	"fmt"
+	"net/http"
+	"time"
+
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/middleware"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 )
 
 type Handler struct {
-	db *pgxpool.Pool
+	db    *pgxpool.Pool
+	redis *redis.Client
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, redisClient *redis.Client) *Handler {
+	return &Handler{db: db, redis: redisClient}
 }
 
 // List returns user's notifications
@@ -73,4 +79,39 @@ func (h *Handler) MarkAllRead(c echo.Context) error {
 	}
 
 	return common.Success(c, map[string]bool{"success": true})
+}
+
+// Stream sends SSE events when new notifications arrive for the user.
+func (h *Handler) Stream(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().Header().Set("X-Accel-Buffering", "no")
+	c.Response().WriteHeader(http.StatusOK)
+	c.Response().Flush()
+
+	pubsub := h.redis.Subscribe(ctx, fmt.Sprintf("notifications:%s", userID))
+	defer pubsub.Close()
+	redisCh := pubsub.Channel()
+
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case msg := <-redisCh:
+			fmt.Fprintf(c.Response().Writer, "data: %s\n\n", msg.Payload)
+			c.Response().Flush()
+
+		case <-keepalive.C:
+			fmt.Fprint(c.Response().Writer, ": keepalive\n\n")
+			c.Response().Flush()
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }

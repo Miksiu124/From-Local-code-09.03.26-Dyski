@@ -448,6 +448,8 @@ func (h *Handler) GetPublicSettings(c echo.Context) error {
 		"bundle_credit_cost_14d",
 		"bundle_credit_cost_30d",
 		"blik_enabled",
+		"paypal_address",
+		"revolut_address",
 	}
 
 	result := map[string]interface{}{

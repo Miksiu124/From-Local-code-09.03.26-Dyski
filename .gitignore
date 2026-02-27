@@ -34,6 +34,13 @@ yarn-error.log*
 **/.env
 **/.env.*
 !**/.env.example
+!**/.env.production.example
+
+# IDE
+.idea/
+*.iml
+.cursor/
+.vscode/
 
 # vercel
 .vercel
