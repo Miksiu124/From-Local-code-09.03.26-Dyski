@@ -154,7 +154,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	}
 
 	if pendingCount >= maxPending {
-		return common.JSONError(c, http.StatusTooManyRequests, "RATE_LIMITED",
+		return common.RateLimitedJSON(c, 120, "RATE_LIMITED",
 			"You already have too many pending purchases. Please wait for them to be processed.")
 	}
 
@@ -668,11 +668,12 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 	}
 
 	if currentRetryCount >= maxBlikRetries {
-		return common.JSONError(c, http.StatusTooManyRequests, "BLIK_MAX_RETRIES", "Maximum BLIK code attempts reached")
+		return common.RateLimitedJSON(c, 900, "BLIK_MAX_RETRIES", "Maximum BLIK code attempts reached")
 	}
 
-	if time.Since(lastUpdated) < time.Duration(blikCooldownSeconds)*time.Second {
-		return common.JSONError(c, http.StatusTooManyRequests, "BLIK_COOLDOWN", "Please wait before submitting a new BLIK code")
+	cooldownRemaining := int((time.Duration(blikCooldownSeconds)*time.Second - time.Since(lastUpdated)).Seconds())
+	if cooldownRemaining > 0 {
+		return common.RateLimitedJSON(c, cooldownRemaining, "BLIK_COOLDOWN", "Please wait before submitting a new BLIK code")
 	}
 
 	var expirationTime string

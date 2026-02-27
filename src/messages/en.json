@@ -295,5 +295,11 @@
     "yourBalance": "Your balance: {balance} Credits",
     "confirm": "Confirm Purchase",
     "cancel": "Cancel"
+  },
+  "cookieBanner": {
+    "title": "Cookie consent",
+    "message": "We use cookies for authentication and preferences. By continuing, you agree to our use of cookies.",
+    "learnMore": "Privacy policy",
+    "accept": "Accept"
   }
 }

@@ -74,22 +74,14 @@ Skrypty deploy wymagają `VPS_HOST` w env (bez domyślnego IP). README nie ujawn
 
 **Rekomendacja:** Użyj placeholderów w przykładowym pliku (`test@example.com`) lub dodaj `test-contacts.csv` do `.gitignore`, jeśli ma dane osobowe.
 
-### 5. **NPM vulnerabilities w frontend**
+### 5. **NPM vulnerabilities w frontend** — WYKONANE
 
-Build zgłaszał: *"5 vulnerabilities (1 moderate, 3 high, 1 critical)"*.
+Wykonano `npm audit fix` i upgrade @aws-sdk/client-s3 do latest. Zostały 19 low-severity vulns.
+Dodano Dependabot (`.github/dependabot.yml`) i `npm audit --audit-level=high` w CI.
 
-**Rekomendacja:**
+### 6. **Deploy – .env nie powinien być w archiwum** — WYKONANE
 
-```bash
-cd frontend && npm audit
-npm audit fix
-```
-
-### 6. **Deploy – .env nie powinien być w archiwum**
-
-Przy deployu tar/scp `.env` mógł być dołączony. Na produkcji `.env` musi być zarządzany tylko na serwerze i nigdy nie nadpisywany z lokalnego środowiska.
-
-**Rekomendacja:** Skrypt deployu (tar/rsync) powinien wykluczać `.env` z syncu.
+Skrypt deployu (deploy-vps.sh) wyklucza `.env`. Dodano `.env` do `.dockerignore`, by uniknąć włączenia do obrazu Docker.
 
 ---
 
@@ -110,6 +102,16 @@ Przy deployu tar/scp `.env` mógł być dołączony. Na produkcji `.env` musi by
 ## Checklist przed publikacją / udostępnieniem repo
 
 - [ ] Ograniczyć porty 8443, 8880 w GCP Firewall do zaufanych IP
-- [ ] Sprawdzić `npm audit` w frontend
+- [x] Sprawdzić `npm audit` w frontend — w CI, Dependabot dodany
 - [ ] Usunąć/zastąpić prawdziwe dane z `test-contacts.csv`
-- [ ] Upewnić się, że deploy nie synchronizuje `.env` z lokalnego na serwer
+- [x] Upewnić się, że deploy nie synchronizuje `.env` z lokalnego na serwer
+
+## Zmiany z audytu bezpieczeństwa (2025-02-27)
+
+- **JWT/session TTL:** domyślny skrócony z 30 do 7 dni
+- **Retry-After:** dodany do odpowiedzi 429 (middleware, auth, credits)
+- **CSP:** dodano object-src, base-uri, form-action
+- **CodeQL SAST:** workflow `.github/workflows/codeql.yml`
+- **DAST (OWASP ZAP):** workflow `.github/workflows/dast.yml`
+- **RLS:** migracja 20260227120000_enable_rls na tabelach multitenant
+- **Cookie banner:** komponent do zgody ePrivacy/GDPR

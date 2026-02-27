@@ -4,6 +4,7 @@ import { getLocale, getMessages } from "next-intl/server";
 import { Providers } from "@/components/providers";
 import { Header } from "@/components/layout/header";
 import { ConditionalFooter } from "@/components/layout/conditional-footer";
+import { CookieBanner } from "@/components/cookie-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
 import "./globals.css";
 
@@ -102,6 +103,7 @@ export default async function RootLayout({
               <ErrorBoundary>{children}</ErrorBoundary>
             </main>
             <ConditionalFooter />
+            <CookieBanner />
           </div>
         </Providers>
       </body>
