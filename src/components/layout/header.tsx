@@ -40,6 +40,7 @@ export function Header() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const rightSideRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -149,7 +150,7 @@ export function Header() {
         </nav>
 
         {/* Right side */}
-        <div className="flex items-center gap-2">
+        <div ref={rightSideRef} className="flex items-center gap-2 relative">
           {/* Credit Balance */}
           {user && (
             <Link href="/purchase" className="hidden sm:flex">
@@ -161,7 +162,7 @@ export function Header() {
           )}
 
           {/* Notifications */}
-          {user && <NotificationBell />}
+          {user && <NotificationBell dropdownAnchorRef={rightSideRef} />}
 
           {/* Language Switcher */}
           <LanguageSwitcher />

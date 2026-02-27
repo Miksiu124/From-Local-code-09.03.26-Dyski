@@ -14,7 +14,11 @@ interface Notification {
   createdAt: string;
 }
 
-export function NotificationBell() {
+interface NotificationBellProps {
+  dropdownAnchorRef?: React.RefObject<HTMLDivElement | null>; // deprecated, kept for backwards compat
+}
+
+export function NotificationBell({ dropdownAnchorRef }: NotificationBellProps = {}) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,7 +73,8 @@ export function NotificationBell() {
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (ref.current && !ref.current.contains(target)) {
         setOpen(false);
       }
     }
@@ -117,13 +122,13 @@ export function NotificationBell() {
 
       <AnimatePresence>
         {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.96 }}
-            transition={{ type: "spring", damping: 25, stiffness: 400 }}
-            className="absolute right-0 mt-2 w-80 sm:w-96 max-h-[28rem] rounded-xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden z-50"
-          >
+            <motion.div
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.96 }}
+              transition={{ type: "spring", damping: 25, stiffness: 400 }}
+              className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-2rem))] sm:w-96 max-h-[28rem] rounded-xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden z-[100]"
+            >
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
               <h3 className="text-sm font-semibold">Notifications</h3>
               {unreadCount > 0 && (
@@ -162,7 +167,7 @@ export function NotificationBell() {
                       )}
                       <div className={cn("flex-1 min-w-0", n.isRead && "ml-4")}>
                         <p className="text-sm font-medium truncate">{n.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 break-words line-clamp-4">{n.message}</p>
                         <p className="text-[10px] text-muted-foreground/50 mt-1">{formatDate(n.createdAt)}</p>
                       </div>
                     </div>
