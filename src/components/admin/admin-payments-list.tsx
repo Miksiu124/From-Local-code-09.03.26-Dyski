@@ -51,6 +51,7 @@ interface PurchaseItem {
 interface Props {
   purchases: PurchaseItem[];
   initialBlikEnabled: boolean;
+  highlightId?: string;
 }
 
 function methodIcon(method: string) {
@@ -91,7 +92,7 @@ function timeLeft(expirationTime: string, now: number): string {
   return `${formatDuration(diffMs)} left`;
 }
 
-export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
+export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }: Props) {
   const t = useTranslations("admin");
   const router = useRouter();
   const [items, setItems] = useState<PurchaseItem[]>(purchases);
@@ -102,10 +103,56 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
   const [blikSaving, setBlikSaving] = useState(false);
   const [now, setNow] = useState(Date.now());
   const eventSourceRef = useRef<EventSource | null>(null);
+  const highlightHandled = useRef(false);
 
   useEffect(() => {
     setItems(purchases);
   }, [purchases]);
+
+  useEffect(() => {
+    if (!highlightId || highlightHandled.current) return;
+    highlightHandled.current = true;
+
+    const match = items.find((p) => p.id === highlightId);
+    if (match) {
+      setSelectedPurchase(match);
+      setNotes(match.adminNotes || "");
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/credits/purchases?status=ALL`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const found = (data.purchases ?? []).find((p: any) => p.id === highlightId);
+        if (found) {
+          const item: PurchaseItem = {
+            id: found.id,
+            userEmail: found.user?.email ?? "—",
+            userName: found.user?.name ?? null,
+            packageName: found.creditPackage?.name ?? "—",
+            credits: found.credits ?? 0,
+            amount: found.amount ?? 0,
+            paymentMethod: found.paymentMethod ?? "",
+            transactionCode: found.transactionCode ?? "",
+            blikCode: found.blikCode ?? null,
+            cryptoCurrency: found.cryptoCurrency ?? null,
+            txId: found.txId ?? null,
+            status: found.status ?? "",
+            paymentProofUrl: found.paymentProofUrl ?? null,
+            adminNotes: found.adminNotes ?? null,
+            expirationTime: found.expirationTime ?? "",
+            createdAt: found.createdAt ?? "",
+          };
+          setSelectedPurchase(item);
+          setNotes(item.adminNotes || "");
+        }
+      } catch {
+        // silently ignore
+      }
+    })();
+  }, [highlightId, items]);
 
   // Tick every second so time displays stay accurate
   useEffect(() => {
@@ -306,7 +353,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
               type="button"
               onClick={toggleBlik}
               disabled={blikSaving}
-              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors cursor-pointer disabled:opacity-50 ${
+              className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full px-1 transition-colors cursor-pointer disabled:opacity-50 ${
                 blikEnabled ? "bg-green-500" : "bg-red-500/70"
               }`}
             >
@@ -314,8 +361,8 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled }: Props) {
                 <Loader2 className="h-5 w-5 text-white animate-spin mx-auto" />
               ) : (
                 <span
-                  className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                    blikEnabled ? "translate-x-7" : "translate-x-1"
+                  className={`inline-block h-6 w-6 shrink-0 transform rounded-full bg-white shadow transition-transform ${
+                    blikEnabled ? "translate-x-6" : "translate-x-0"
                   }`}
                 />
               )}

@@ -1,37 +1,47 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { getTimeRemaining } from "@/lib/utils";
 
 interface PaymentCountdownProps {
   expirationTime: string;
   isBlik?: boolean;
-  onBlikExpired?: () => void;
+  onBlikExpired?: (expired: boolean) => void;
 }
 
 export function PaymentCountdown({ expirationTime, isBlik, onBlikExpired }: PaymentCountdownProps) {
   const [time, setTime] = useState(getTimeRemaining(new Date(expirationTime)));
   const initialTotalRef = useRef<number | null>(null);
+  const firedRef = useRef(false);
+
+  const notifyExpired = useCallback((expired: boolean) => {
+    onBlikExpired?.(expired);
+  }, [onBlikExpired]);
 
   useEffect(() => {
-    // Recalculate on expirationTime change (e.g. new BLIK code)
     initialTotalRef.current = new Date(expirationTime).getTime() - Date.now();
-    setTime(getTimeRemaining(new Date(expirationTime)));
-  }, [expirationTime]);
+    const newTime = getTimeRemaining(new Date(expirationTime));
+    setTime(newTime);
+    firedRef.current = false;
+    if (!newTime.expired) {
+      notifyExpired(false);
+    }
+  }, [expirationTime, notifyExpired]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const newTime = getTimeRemaining(new Date(expirationTime));
       setTime(newTime);
 
-      if (newTime.expired && isBlik && onBlikExpired) {
-        onBlikExpired();
+      if (newTime.expired && isBlik && !firedRef.current) {
+        firedRef.current = true;
+        notifyExpired(true);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [expirationTime, isBlik, onBlikExpired]);
+  }, [expirationTime, isBlik, notifyExpired]);
 
   const initialTotal = initialTotalRef.current || 1;
   const progress = Math.max(0, Math.min(1, time.total / Math.max(initialTotal, 1)));
@@ -40,7 +50,7 @@ export function PaymentCountdown({ expirationTime, isBlik, onBlikExpired }: Paym
     return (
       <div className="text-center p-4 rounded-xl bg-destructive/10 border border-destructive/20">
         <p className="text-destructive font-semibold">
-          {isBlik ? "BLIK code expired - enter a new code below" : "Expired"}
+          {isBlik ? "BLIK code expired — enter a new code below" : "Expired"}
         </p>
       </div>
     );

@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
@@ -34,6 +36,8 @@ type UserRow struct {
 	Role          string
 	CreditBalance int
 	AvatarURL     *string
+	Autoplay      bool
+	IsBanned      bool
 }
 
 // Register creates a new user with hashed password
@@ -63,9 +67,9 @@ func (s *Service) Register(ctx context.Context, name, email, password string) er
 func (s *Service) Login(ctx context.Context, email, password string) (string, *UserRow, error) {
 	var user UserRow
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password, name, role, credit_balance, avatar_url
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
 		FROM users WHERE email = $1
-	`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL)
+	`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
 
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid credentials")
@@ -77,6 +81,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, *U
 
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.Password), []byte(password)); err != nil {
 		return "", nil, fmt.Errorf("invalid credentials")
+	}
+
+	if user.IsBanned {
+		return "", nil, fmt.Errorf("account suspended")
 	}
 
 	// Update last login
@@ -114,9 +122,9 @@ func (s *Service) Logout(ctx context.Context, userID string) error {
 func (s *Service) GetUser(ctx context.Context, userID string) (*UserRow, error) {
 	var user UserRow
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password, name, role, credit_balance, avatar_url
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
 		FROM users WHERE id = $1
-	`, userID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL)
+	`, userID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
 
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
@@ -151,4 +159,123 @@ func generateSessionID() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// CreatePasswordResetToken generates a reset token and stores it in Redis (1 hour TTL)
+func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) (string, error) {
+	var userID string
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&userID)
+	if err != nil {
+		return "", nil // User not found, but don't reveal this
+	}
+
+	token := generateSessionID()
+	key := fmt.Sprintf("password-reset:%s", token)
+	s.redis.Set(ctx, key, userID, 1*time.Hour)
+
+	return token, nil
+}
+
+// FindOrCreateDiscordUser links a Discord account to an existing user or creates a new one
+func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar string) (string, *UserRow, error) {
+	var user UserRow
+
+	// Try to find existing user by discord_id
+	err := s.db.QueryRow(ctx, `
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+		FROM users WHERE discord_id = $1
+	`, discordID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
+
+	if err != nil {
+		// Try by email
+		err = s.db.QueryRow(ctx, `
+			SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+			FROM users WHERE email = $1
+		`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
+
+		if err != nil {
+			// Create new user
+			var namePtr *string
+			if displayName != "" {
+				truncated := displayName
+				if utf8.RuneCountInString(displayName) > 64 {
+					truncated = string([]rune(displayName)[:64])
+				}
+				truncated = strings.TrimSpace(truncated)
+				if truncated != "" {
+					namePtr = &truncated
+				}
+			}
+			var avatarURL *string
+			if avatar != "" {
+				url := fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", discordID, avatar)
+				avatarURL = &url
+			}
+
+			err = s.db.QueryRow(ctx, `
+				INSERT INTO users (email, name, role, credit_balance, discord_id, avatar_url)
+				VALUES ($1, $2, 'USER', 0, $3, $4)
+				RETURNING id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+			`, email, namePtr, discordID, avatarURL).Scan(
+				&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned,
+			)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to create discord user: %w", err)
+			}
+		} else {
+			// Link discord_id to existing user
+			_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1 WHERE id = $2`, discordID, user.ID)
+		}
+	}
+
+	if user.IsBanned {
+		return "", nil, fmt.Errorf("account suspended")
+	}
+
+	// Update last login
+	_, _ = s.db.Exec(ctx, `UPDATE users SET last_login_at = now() WHERE id = $1`, user.ID)
+
+	role := user.Role
+	if s.cfg.IsAdmin(user.Email) {
+		role = "ADMIN"
+	}
+
+	sessionID := generateSessionID()
+	token, err := s.generateJWT(user.ID, user.Email, role, sessionID)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	sessionKey := fmt.Sprintf("session:%s", user.ID)
+	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
+
+	return token, &user, nil
+}
+
+// ResetPassword validates the token and updates the password
+func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	key := fmt.Sprintf("password-reset:%s", token)
+	userID, err := s.redis.Get(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf("invalid or expired token")
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	_, err = s.db.Exec(ctx, `UPDATE users SET password = $1 WHERE id = $2`, string(hashedPassword), userID)
+	if err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	// Invalidate the token
+	s.redis.Del(ctx, key)
+
+	// Invalidate all sessions for this user
+	sessionKey := fmt.Sprintf("session:%s", userID)
+	s.redis.Del(ctx, sessionKey)
+
+	return nil
 }

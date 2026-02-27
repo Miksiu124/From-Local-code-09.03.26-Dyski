@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { logger } from "@/lib/logger";
+import { formatPrice } from "@/lib/utils";
 
 interface Analytics {
   users: { total: number; new7d: number; new30d: number };
@@ -83,6 +84,8 @@ export default function AdminAnalyticsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [topSortKey, setTopSortKey] = useState<TopSortKey>("purchaseCount");
   const [topSortDir, setTopSortDir] = useState<SortDir>("desc");
+  const [topPage, setTopPage] = useState(0);
+  const TOP_PAGE_SIZE = 20;
 
   const fetchAnalytics = async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -117,15 +120,7 @@ export default function AdminAnalyticsPage() {
     return <div className="py-20 text-center text-muted-foreground">Failed to load analytics.</div>;
   }
 
-  const fmtCurrency = (n: number) => {
-    const locale = typeof document !== "undefined"
-      ? document.cookie.match(/(?:^|;\s*)locale=([^;]*)/)?.[1] || document.documentElement.lang || "en"
-      : "en";
-    if (locale === "pl") {
-      return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(n);
-    }
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
-  };
+  const fmtCurrency = (n: number) => formatPrice(n);
 
   const handleTopSort = (key: TopSortKey) => {
     if (topSortKey === key) {
@@ -269,16 +264,43 @@ export default function AdminAnalyticsPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.topSellers.map((ts, i) => (
-                  <tr key={ts.modelId} className="border-b border-border/50">
-                    <td className="py-2.5 pr-4 text-muted-foreground">{i + 1}</td>
-                    <td className="py-2.5 pr-4 font-medium">{ts.modelName}</td>
-                    <td className="py-2.5 pr-4 text-right">{ts.purchaseCount}</td>
-                    <td className="py-2.5 text-right">{ts.creditsEarned}</td>
-                  </tr>
-                ))}
+                {data.topSellers
+                  .slice(topPage * TOP_PAGE_SIZE, (topPage + 1) * TOP_PAGE_SIZE)
+                  .map((ts, i) => (
+                    <tr key={ts.modelId} className="border-b border-border/50">
+                      <td className="py-2.5 pr-4 text-muted-foreground">{topPage * TOP_PAGE_SIZE + i + 1}</td>
+                      <td className="py-2.5 pr-4 font-medium">{ts.modelName}</td>
+                      <td className="py-2.5 pr-4 text-right">{ts.purchaseCount}</td>
+                      <td className="py-2.5 text-right">{ts.creditsEarned}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
+            {data.topSellers.length > TOP_PAGE_SIZE && (
+              <div className="flex items-center justify-between pt-3 border-t border-border mt-2">
+                <span className="text-xs text-muted-foreground">
+                  {topPage * TOP_PAGE_SIZE + 1}-{Math.min((topPage + 1) * TOP_PAGE_SIZE, data.topSellers.length)} of {data.topSellers.length}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={topPage === 0}
+                    onClick={() => setTopPage((p) => p - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={(topPage + 1) * TOP_PAGE_SIZE >= data.topSellers.length}
+                    onClick={() => setTopPage((p) => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -2,9 +2,16 @@ package common
 
 import (
 	"net/http"
+	"regexp"
 
 	"github.com/labstack/echo/v4"
 )
+
+var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func IsValidUUID(s string) bool {
+	return uuidRegex.MatchString(s)
+}
 
 // ── Standard error response ─────────────────────────────────────────────────
 
@@ -18,7 +25,7 @@ func Unauthorized(c echo.Context) error {
 }
 
 func BadRequest(c echo.Context, msg string) error {
-	return c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg})
+	return c.JSON(http.StatusBadRequest, ErrorResponse{Error: msg, Message: msg})
 }
 
 func NotFound(c echo.Context, msg string) error {

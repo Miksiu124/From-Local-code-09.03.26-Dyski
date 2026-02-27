@@ -96,6 +96,7 @@ model User {
   avatarUrl       String?  @map("avatar_url")
   creditBalance   Int      @default(0) @map("credit_balance")
   isBanned        Boolean  @default(false) @map("is_banned")
+  autoplay        Boolean  @default(false)
   lastLoginAt     DateTime? @map("last_login_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")

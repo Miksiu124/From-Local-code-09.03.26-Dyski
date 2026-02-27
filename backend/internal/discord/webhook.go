@@ -6,33 +6,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Notifier struct {
-	db         *pgxpool.Pool
-	httpClient *http.Client
+	db          *pgxpool.Pool
+	httpClient  *http.Client
+	frontendURL string
 }
 
-func NewNotifier(db *pgxpool.Pool) *Notifier {
+func NewNotifier(db *pgxpool.Pool, frontendURL string) *Notifier {
 	return &Notifier{
-		db:         db,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		db:          db,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
+		frontendURL: strings.TrimSuffix(frontendURL, "/"),
 	}
 }
 
 type Embed struct {
-	Title       string    `json:"title"`
-	Description string    `json:"description,omitempty"`
-	Color       int       `json:"color"`
-	Fields      []Field   `json:"fields,omitempty"`
-	Timestamp   string    `json:"timestamp,omitempty"`
-	Footer      *Footer   `json:"footer,omitempty"`
-	Thumbnail   *Image    `json:"thumbnail,omitempty"`
-	Author      *Author   `json:"author,omitempty"`
+	Title       string  `json:"title"`
+	URL         string  `json:"url,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Color       int     `json:"color"`
+	Fields      []Field `json:"fields,omitempty"`
+	Timestamp   string  `json:"timestamp,omitempty"`
+	Footer      *Footer `json:"footer,omitempty"`
+	Thumbnail   *Image  `json:"thumbnail,omitempty"`
+	Author      *Author `json:"author,omitempty"`
 }
 
 type Image struct {
@@ -59,7 +64,28 @@ type WebhookPayload struct {
 	Embeds  []Embed `json:"embeds"`
 }
 
-const pingRoleID = "1474146840923607072"
+func (n *Notifier) paymentURL(purchaseID string) string {
+	return n.frontendURL + "/admin/payments?id=" + purchaseID
+}
+
+func (n *Notifier) getPingRoleID(ctx context.Context) string {
+	var raw interface{}
+	err := n.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'discord_ping_role_id'`).Scan(&raw)
+	if err != nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return v
+	default:
+		b, _ := json.Marshal(v)
+		s := string(b)
+		if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+			s = s[1 : len(s)-1]
+		}
+		return s
+	}
+}
 
 func (n *Notifier) getWebhookURL(ctx context.Context) string {
 	var raw interface{}
@@ -117,6 +143,8 @@ func (n *Notifier) send(payload WebhookPayload) {
 	}
 }
 
+// ─── Data ────────────────────────────────────────────────────────────────────
+
 type PurchaseInfo struct {
 	PurchaseID      string
 	UserEmail       string
@@ -124,163 +152,237 @@ type PurchaseInfo struct {
 	PackageName     string
 	Credits         int
 	Amount          float64
+	Currency        string
 	PaymentMethod   string
 	TransactionCode string
 	BlikCode        string
 	CryptoCurrency  string
 	TxID            string
 	Status          string
+
+	UserCreatedAt   time.Time
+	UserCountry     string
+	PaymentAttempts int
+	UserAgent       string
 }
 
+// ─── Colors ──────────────────────────────────────────────────────────────────
+
 const (
-	ColorGreen  = 0x22C55E
-	ColorRed    = 0xEF4444
-	ColorYellow = 0xEAB308
-	ColorBlue   = 0x3B82F6
-	ColorGray   = 0x6B7280
+	ColorEmerald = 0x2ECC71
+	ColorRed     = 0xFF0000
+	ColorGreen   = 0x2ECC71
+	ColorYellow  = 0xEAB308
+	ColorBlue    = 0x3B82F6
+	ColorGray    = 0x6B7280
 )
 
+// ─── Notification Methods ────────────────────────────────────────────────────
+
 func (n *Notifier) NotifyNewPurchase(ctx context.Context, info PurchaseInfo) {
-	description := fmt.Sprintf(
-		"**%s** just initiated a new payment.\n\n"+
-			">>> "+
-			"**Package:** %s\n"+
-			"**Amount:** `$%.2f`\n"+
-			"**Credits:** `%d`\n"+
-			"**Method:** %s\n"+
-			"**Code:** `%s`",
-		formatUser(info),
-		info.PackageName,
-		info.Amount,
-		info.Credits,
-		formatMethodEmoji(info),
-		formatCode(info),
-	)
+	riskEmail := IsRiskEmail(info.UserEmail)
+	roleID := n.getPingRoleID(ctx)
+
+	color := ColorEmerald
+	if riskEmail {
+		color = ColorRed
+	}
+
+	fields := []Field{
+		{Name: "\U0001F464 User", Value: fmt.Sprintf("`%s`", displayName(info)), Inline: true},
+		{Name: "\U0001F4E7 Email", Value: fmt.Sprintf("`%s`", info.UserEmail), Inline: true},
+		{Name: "\U0001F4B0 Amount", Value: fmt.Sprintf("`%.2f %s`", info.Amount, currencyLabel(info)), Inline: true},
+		{Name: "\U0001F48E Credits", Value: fmt.Sprintf("`%d`", info.Credits), Inline: true},
+		{Name: "\U0001F4B3 Method", Value: formatMethodEmoji(info), Inline: true},
+	}
+
+	if info.PaymentMethod == "BLIK" && info.BlikCode != "" {
+		fields = append(fields, Field{Name: "\U0001F522 BLIK Code", Value: fmt.Sprintf("`%s`", info.BlikCode), Inline: true})
+	}
+
+	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
 		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
-		Title:     "\U0001F4B3  New Payment Created",
-		Description: description,
-		Color:     ColorYellow,
+		Title:     fmt.Sprintf("\U0001F4B0 New Payment: %s", info.PackageName),
+		URL:       n.paymentURL(info.PurchaseID),
+		Color:     color,
+		Fields:    fields,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Footer:    &Footer{Text: fmt.Sprintf("Purchase ID: %s", info.PurchaseID)},
+		Footer:    &Footer{Text: fmt.Sprintf("ID: %s | Platform: %s", info.PurchaseID, parseOSInfo(info.UserAgent))},
+	}
+
+	var content string
+	if roleID != "" {
+		content = fmt.Sprintf("<@&%s>", roleID)
 	}
 
 	go n.send(WebhookPayload{
-		Content: fmt.Sprintf("<@&%s>", pingRoleID),
+		Content: content,
 		Embeds:  []Embed{embed},
 	})
 }
 
 func (n *Notifier) NotifyPurchaseApproved(ctx context.Context, info PurchaseInfo) {
-	description := fmt.Sprintf(
-		"Payment from **%s** has been **approved**.\n\n"+
-			">>> "+
-			"**Package:** %s\n"+
-			"**Amount:** `$%.2f`\n"+
-			"**Credits:** `%d`\n"+
-			"**Method:** %s",
-		formatUser(info),
-		info.PackageName,
-		info.Amount,
-		info.Credits,
-		formatMethodEmoji(info),
-	)
+	riskEmail := IsRiskEmail(info.UserEmail)
+	roleID := n.getPingRoleID(ctx)
+
+	fields := []Field{
+		{Name: "\U0001F464 User", Value: fmt.Sprintf("`%s`", displayName(info)), Inline: true},
+		{Name: "\U0001F4E7 Email", Value: fmt.Sprintf("`%s`", info.UserEmail), Inline: true},
+		{Name: "\U0001F4B0 Amount", Value: fmt.Sprintf("`%.2f %s`", info.Amount, currencyLabel(info)), Inline: true},
+		{Name: "\U0001F48E Credits", Value: fmt.Sprintf("`%d`", info.Credits), Inline: true},
+		{Name: "\U0001F4B3 Method", Value: formatMethodEmoji(info), Inline: true},
+	}
+
+	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
 		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
-		Title:     "\u2705  Payment Approved",
-		Description: description,
+		Title:     fmt.Sprintf("\u2705 Payment Approved: %s", info.PackageName),
+		URL:       n.paymentURL(info.PurchaseID),
 		Color:     ColorGreen,
+		Fields:    fields,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Footer:    &Footer{Text: fmt.Sprintf("Purchase ID: %s", info.PurchaseID)},
+		Footer:    &Footer{Text: fmt.Sprintf("ID: %s | Platform: %s", info.PurchaseID, parseOSInfo(info.UserAgent))},
+	}
+
+	var pingContent string
+	if roleID != "" {
+		pingContent = fmt.Sprintf("<@&%s>", roleID)
 	}
 
 	go n.send(WebhookPayload{
-		Content: fmt.Sprintf("<@&%s>", pingRoleID),
+		Content: pingContent,
 		Embeds:  []Embed{embed},
 	})
 }
 
 func (n *Notifier) NotifyPurchaseRejected(ctx context.Context, info PurchaseInfo, reason string) {
+	riskEmail := IsRiskEmail(info.UserEmail)
+	roleID := n.getPingRoleID(ctx)
+
 	reasonText := "_No reason provided_"
 	if reason != "" {
 		reasonText = reason
 	}
 
-	description := fmt.Sprintf(
-		"Payment from **%s** has been **rejected**.\n\n"+
-			">>> "+
-			"**Package:** %s\n"+
-			"**Amount:** `$%.2f`\n"+
-			"**Credits:** `%d`\n"+
-			"**Method:** %s\n\n"+
-			"\u274C **Reason:** %s",
-		formatUser(info),
-		info.PackageName,
-		info.Amount,
-		info.Credits,
-		formatMethodEmoji(info),
-		reasonText,
-	)
+	fields := []Field{
+		{Name: "\U0001F464 User", Value: fmt.Sprintf("`%s`", displayName(info)), Inline: true},
+		{Name: "\U0001F4E7 Email", Value: fmt.Sprintf("`%s`", info.UserEmail), Inline: true},
+		{Name: "\U0001F4B0 Amount", Value: fmt.Sprintf("`%.2f %s`", info.Amount, currencyLabel(info)), Inline: true},
+		{Name: "\U0001F48E Credits", Value: fmt.Sprintf("`%d`", info.Credits), Inline: true},
+		{Name: "\U0001F4B3 Method", Value: formatMethodEmoji(info), Inline: true},
+		{Name: "\u274C Reason", Value: reasonText, Inline: false},
+	}
+
+	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
 		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
-		Title:     "\u274C  Payment Rejected",
-		Description: description,
+		Title:     fmt.Sprintf("\u274C Payment Rejected: %s", info.PackageName),
+		URL:       n.paymentURL(info.PurchaseID),
 		Color:     ColorRed,
+		Fields:    fields,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Footer:    &Footer{Text: fmt.Sprintf("Purchase ID: %s", info.PurchaseID)},
+		Footer:    &Footer{Text: fmt.Sprintf("ID: %s | Platform: %s", info.PurchaseID, parseOSInfo(info.UserAgent))},
+	}
+
+	var pingContent string
+	if roleID != "" {
+		pingContent = fmt.Sprintf("<@&%s>", roleID)
 	}
 
 	go n.send(WebhookPayload{
-		Content: fmt.Sprintf("<@&%s>", pingRoleID),
+		Content: pingContent,
 		Embeds:  []Embed{embed},
 	})
 }
 
 func (n *Notifier) NotifyBlikCodeUpdated(ctx context.Context, info PurchaseInfo) {
-	description := fmt.Sprintf(
-		"**%s** sent a new BLIK code (previous one expired).\n\n"+
-			">>> "+
-			"**New Code:** `%s`\n"+
-			"**Package:** %s\n"+
-			"**Amount:** `$%.2f`\n"+
-			"**Credits:** `%d`",
-		formatUser(info),
-		info.BlikCode,
-		info.PackageName,
-		info.Amount,
-		info.Credits,
-	)
+	riskEmail := IsRiskEmail(info.UserEmail)
+	roleID := n.getPingRoleID(ctx)
+
+	color := ColorBlue
+	if riskEmail {
+		color = ColorRed
+	}
+
+	fields := []Field{
+		{Name: "\U0001F464 User", Value: fmt.Sprintf("`%s`", displayName(info)), Inline: true},
+		{Name: "\U0001F4E7 Email", Value: fmt.Sprintf("`%s`", info.UserEmail), Inline: true},
+		{Name: "\U0001F522 New BLIK Code", Value: fmt.Sprintf("`%s`", info.BlikCode), Inline: true},
+		{Name: "\U0001F4B0 Amount", Value: fmt.Sprintf("`%.2f %s`", info.Amount, currencyLabel(info)), Inline: true},
+		{Name: "\U0001F48E Credits", Value: fmt.Sprintf("`%d`", info.Credits), Inline: true},
+		{Name: "\U0001F4E6 Package", Value: info.PackageName, Inline: true},
+	}
+
+	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
-		Author:      &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
-		Title:       "\U0001F504  BLIK Code Updated",
-		Description: description,
-		Color:       ColorBlue,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-		Footer:      &Footer{Text: fmt.Sprintf("Purchase ID: %s", info.PurchaseID)},
+		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Title:     fmt.Sprintf("\U0001F504 BLIK Code Updated: %s", info.PackageName),
+		URL:       n.paymentURL(info.PurchaseID),
+		Color:     color,
+		Fields:    fields,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Footer:    &Footer{Text: fmt.Sprintf("ID: %s | Platform: %s", info.PurchaseID, parseOSInfo(info.UserAgent))},
+	}
+
+	var pingContent string
+	if roleID != "" {
+		pingContent = fmt.Sprintf("<@&%s>", roleID)
 	}
 
 	go n.send(WebhookPayload{
-		Content: fmt.Sprintf("<@&%s>", pingRoleID),
+		Content: pingContent,
 		Embeds:  []Embed{embed},
 	})
 }
 
-func formatUser(info PurchaseInfo) string {
-	if info.UserName != "" {
-		return fmt.Sprintf("%s (%s)", info.UserName, info.UserEmail)
+// ─── Shared Helpers ──────────────────────────────────────────────────────────
+
+// insightFields returns the "Admin Insights" field block appended to every embed.
+func insightFields(info PurchaseInfo, riskEmail bool) []Field {
+	fields := []Field{
+		{Name: "\u200B", Value: "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\U0001F4CA **Admin Insights**", Inline: false},
+		{Name: "\U0001F4C5 Account Age", Value: formatAccountAge(info.UserCreatedAt), Inline: true},
+		{Name: "\U0001F30D Location", Value: formatCountry(info.UserCountry), Inline: true},
+		{Name: "\U0001F504 Payment Attempts", Value: fmt.Sprintf("Attempt **#%d**", info.PaymentAttempts+1), Inline: true},
 	}
-	return info.UserEmail
+
+	if riskEmail {
+		fields = append(fields, Field{
+			Name:   "\u26A0\uFE0F Fraud Alert",
+			Value:  "**\u26A0\uFE0F WARNING: Disposable/Risk Email Detected!**",
+			Inline: false,
+		})
+	} else {
+		fields = append(fields, Field{
+			Name:   "\U0001F6E1\uFE0F Risk Assessment",
+			Value:  "\u2705 Clean",
+			Inline: true,
+		})
+	}
+
+	return fields
 }
 
-func formatMethod(info PurchaseInfo) string {
-	if info.PaymentMethod == "CRYPTO" && info.CryptoCurrency != "" {
-		return fmt.Sprintf("%s (%s)", info.PaymentMethod, info.CryptoCurrency)
+func displayName(info PurchaseInfo) string {
+	if info.UserName != "" {
+		return info.UserName
 	}
-	return info.PaymentMethod
+	if info.UserEmail != "" {
+		return info.UserEmail
+	}
+	return "Unknown"
+}
+
+func currencyLabel(info PurchaseInfo) string {
+	if info.Currency != "" {
+		return info.Currency
+	}
+	return "PLN"
 }
 
 func formatMethodEmoji(info PurchaseInfo) string {
@@ -313,4 +415,72 @@ func formatCode(info PurchaseInfo) string {
 		return info.TxID
 	}
 	return info.TransactionCode
+}
+
+func formatAccountAge(createdAt time.Time) string {
+	if createdAt.IsZero() {
+		return "_Unknown_"
+	}
+
+	dur := time.Since(createdAt)
+	days := int(math.Floor(dur.Hours() / 24))
+
+	var age string
+	switch {
+	case days < 1:
+		age = "today"
+	case days == 1:
+		age = "1 day ago"
+	case days < 30:
+		age = fmt.Sprintf("%d days ago", days)
+	case days < 365:
+		months := days / 30
+		if months == 1 {
+			age = "1 month ago"
+		} else {
+			age = fmt.Sprintf("%d months ago", months)
+		}
+	default:
+		years := days / 365
+		if years == 1 {
+			age = "1 year ago"
+		} else {
+			age = fmt.Sprintf("%d years ago", years)
+		}
+	}
+
+	return fmt.Sprintf("Created: `%s`\n(%s)", createdAt.Format("2006-01-02"), age)
+}
+
+func formatCountry(country string) string {
+	if country == "" {
+		return "_Unknown_ \U0001F6A9"
+	}
+	return fmt.Sprintf("%s \U0001F6A9", country)
+}
+
+func parseOSInfo(userAgent string) string {
+	if userAgent == "" {
+		return "Admin Action"
+	}
+	ua := strings.ToLower(userAgent)
+
+	switch {
+	case strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad"):
+		return "iOS"
+	case strings.Contains(ua, "android"):
+		return "Android"
+	case strings.Contains(ua, "macintosh") || strings.Contains(ua, "mac os"):
+		return "macOS"
+	case strings.Contains(ua, "windows nt 10"):
+		return "Windows 10/11"
+	case strings.Contains(ua, "windows"):
+		return "Windows"
+	case strings.Contains(ua, "linux"):
+		return "Linux"
+	case strings.Contains(ua, "cros"):
+		return "ChromeOS"
+	default:
+		return "Unknown"
+	}
 }

@@ -7,11 +7,14 @@ import (
 
 func TestGenerateTransactionCode_Format(t *testing.T) {
 	code := generateTransactionCode()
-	if len(code) != 16 { // 8 bytes = 16 hex chars
-		t.Errorf("transaction code length = %d, want 16", len(code))
+	if len(code) != 6 {
+		t.Errorf("transaction code length = %d, want 6", len(code))
 	}
-	if code != strings.ToUpper(code) {
-		t.Errorf("transaction code should be uppercase: %s", code)
+	allowed := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	for _, ch := range code {
+		if !strings.ContainsRune(allowed, ch) {
+			t.Errorf("transaction code contains invalid char %q: %s", ch, code)
+		}
 	}
 }
 
