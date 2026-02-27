@@ -21,7 +21,7 @@
     "@sentry/nextjs": "^10.38.0",
     "@swc/helpers": "^0.5.19",
     "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.36.2",
+    "@upstash/redis": "^1.36.3",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
