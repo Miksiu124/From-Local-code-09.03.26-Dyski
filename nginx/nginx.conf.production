@@ -26,7 +26,7 @@ http {
     # --- HTTP -> HTTPS REDIRECT ---
     server {
         listen 80;
-        server_name dyskiofleaks.com www.dyskiofleaks.com;
+        server_name dyskiof.net www.dyskiof.net;
         location / {
             return 301 https://$host$request_uri;
         }
@@ -36,15 +36,15 @@ http {
     server {
         listen 443 ssl;
         http2 on;
-        server_name dyskiofleaks.com www.dyskiofleaks.com;
+        server_name dyskiof.net www.dyskiof.net;
 
         # Certyfikaty SSL (Let's Encrypt)
         ssl_certificate     /etc/nginx/certs/fullchain.pem;
         ssl_certificate_key /etc/nginx/certs/privkey.pem;
         
-        # Cloudflare Authenticated Origin Pulls
+        # Cloudflare Authenticated Origin Pulls (optional = nie blokuje, gdy CF bez certu)
         ssl_client_certificate /etc/nginx/certs/security/cloudflare-origin.crt;
-        ssl_verify_client on;
+        ssl_verify_client optional;
 
         # --- NAGŁÓWKI BEZPIECZEŃSTWA (MAX SCORE VERSION) ---
         add_header X-Content-Type-Options "nosniff" always;
@@ -75,6 +75,10 @@ http {
             proxy_set_header Connection "upgrade";
             proxy_read_timeout 86400s;
             proxy_send_timeout 86400s;
+
+            # HLS streaming — wyłącz buffering dla płynnego odtwarzania
+            proxy_buffering off;
+            proxy_request_buffering off;
 
             proxy_hide_header X-Frame-Options;
             proxy_hide_header Content-Security-Policy;

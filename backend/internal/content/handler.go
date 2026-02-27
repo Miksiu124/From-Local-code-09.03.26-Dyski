@@ -20,6 +20,31 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// streamingBaseURL returns the base URL for HLS segment links (e.g. https://dyskiof.net/api).
+// Uses FRONTEND_URL from config if it looks like a real public URL; otherwise derives from
+// the request (Host + X-Forwarded-Proto) so streaming works behind nginx/Cloudflare even
+// when .env has localhost/frontend.
+func streamingBaseURL(c echo.Context, cfg *config.Config) string {
+	frontend := strings.TrimRight(cfg.FrontendURL, "/")
+	// Prefer config if it's a real public URL (https and not localhost/internal)
+	if strings.HasPrefix(frontend, "https://") && !strings.Contains(frontend, "localhost") && !strings.Contains(frontend, "frontend:") {
+		return frontend + "/api"
+	}
+	// Derive from request — works when behind nginx/Cloudflare
+	scheme := "https"
+	if proto := c.Request().Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	host := c.Request().Host
+	if host == "" {
+		host = c.Request().Header.Get("X-Forwarded-Host")
+	}
+	if host == "" {
+		host = "dyskiof.net" // fallback for production
+	}
+	return scheme + "://" + host + "/api"
+}
+
 // sanitizeFilename rejects path traversal and returns only the base filename.
 func sanitizeFilename(name string) (string, error) {
 	if strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
@@ -267,7 +292,7 @@ func (h *Handler) Playlist(c echo.Context) error {
 		playlistContent = string(playlistBytes)
 	}
 
-	baseURL := strings.TrimSuffix(fmt.Sprintf("%s/api", h.cfg.FrontendURL), "/")
+	baseURL := streamingBaseURL(c, h.cfg)
 	rewritten := RewritePlaylist(
 		playlistContent,
 		baseURL,

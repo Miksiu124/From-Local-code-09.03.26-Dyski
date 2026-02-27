@@ -16,7 +16,7 @@ A full-stack premium content platform with credit-based payments, HLS video stre
 | Cache / PubSub | Redis 7 |
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
-| SMTP | Postfix relay (boky/postfix, self-hosted) |
+| SMTP | Postfix relay (boky/postfix) lub BillionMail (patrz `docs/BILLIONMAIL_SETUP.md`) |
 | Proxy | Nginx (reverse proxy, rate limiting, WAF) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
@@ -229,7 +229,7 @@ Repozytorium zawiera skrypty deployu. Zobacz **[REPO_STRUCTURE.md](REPO_STRUCTUR
 ./scripts/deploy-vps.sh --build
 ```
 
-VPS: `marek@136.114.88.152`, ścieżka `/opt/contentvault`. Szczegóły w `REPO_STRUCTURE.md` i `DEPLOY.md`.
+VPS: ustaw `VPS_HOST`, `VPS_USER` w env. Szczegóły w `REPO_STRUCTURE.md`, `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
 
 ---
 

@@ -224,7 +224,7 @@ func main() {
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
-	adminHandler := admin.NewHandler(pgPool, r2Client, cfg, redisClient, contentService)
+	adminHandler := admin.NewHandler(pgPool, r2Client, cfg, redisClient, contentService, mailService)
 
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)
 	adminGroup.GET("/credits/purchases/stream", adminHandler.StreamPendingPurchases)

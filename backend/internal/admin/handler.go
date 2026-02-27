@@ -15,6 +15,7 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/discord"
+	"content-platform-backend/internal/mailer"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -39,10 +40,11 @@ type Handler struct {
 	redis          *redis.Client
 	contentService *content.Service
 	discord        *discord.Notifier
+	mailer         *mailer.Mailer
 }
 
-func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, cfg *config.Config, redisClient *redis.Client, contentService *content.Service) *Handler {
-	return &Handler{db: db, r2: r2, cfg: cfg, redis: redisClient, contentService: contentService, discord: discord.NewNotifier(db, cfg.FrontendURL)}
+func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, cfg *config.Config, redisClient *redis.Client, contentService *content.Service, m *mailer.Mailer) *Handler {
+	return &Handler{db: db, r2: r2, cfg: cfg, redis: redisClient, contentService: contentService, discord: discord.NewNotifier(db, cfg.FrontendURL), mailer: m}
 }
 
 // ═══ Credit Purchases ════════════════════════════════════════════════════════
@@ -165,11 +167,15 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	}
 	defer tx.Rollback(ctx)
 
-	var userID, status string
+	var userID, userEmail, status string
 	var credits int
+	var amount float64
 	err = tx.QueryRow(ctx, `
-		SELECT user_id, credits, status FROM credit_purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&userID, &credits, &status)
+		SELECT cp.user_id, cp.credits, cp.amount, u.email, cp.status
+		FROM credit_purchases cp
+		JOIN users u ON u.id = cp.user_id
+		WHERE cp.id = $1 FOR UPDATE
+	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status)
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
@@ -216,6 +222,15 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
 	info.Status = "APPROVED"
 	h.discord.NotifyPurchaseApproved(ctx, info)
+
+	// Payment confirmation email
+	if h.mailer != nil && h.mailer.IsConfigured() && userEmail != "" {
+		go func() {
+			if err := h.mailer.SendPaymentConfirmation(userEmail, credits, amount); err != nil {
+				log.Printf("[ApprovePurchase] Failed to send payment confirmation to %s: %v", userEmail, err)
+			}
+		}()
+	}
 
 	return common.Success(c, map[string]bool{"success": true})
 }

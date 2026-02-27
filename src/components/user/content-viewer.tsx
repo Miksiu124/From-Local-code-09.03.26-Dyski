@@ -35,6 +35,7 @@ export function ContentViewer({
 
   const [backHref, setBackHref] = useState(`/models/${modelSlug}`);
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const filter = sessionStorage.getItem(`filter_model_${modelSlug}`);
     const sort = sessionStorage.getItem(`sort_model_${modelSlug}`);
     const params = new URLSearchParams();
@@ -48,7 +49,7 @@ export function ContentViewer({
 
   const handleBack = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    const savedY = sessionStorage.getItem(`scroll_model_${modelSlug}`);
+    const savedY = typeof window !== "undefined" ? sessionStorage.getItem(`scroll_model_${modelSlug}`) : null;
     router.push(backHref);
     if (savedY) {
       const y = parseInt(savedY, 10);
