@@ -1,24 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 
 const CONSENT_KEY = "cookie_consent";
 
+const CONSENT_EVENT = "cookie-consent-update";
+
+function getSnapshot() {
+  return typeof window !== "undefined" ? !localStorage.getItem(CONSENT_KEY) : false;
+}
+
+function subscribe(onStoreChange: () => void) {
+  const handler = () => onStoreChange();
+  window.addEventListener(CONSENT_EVENT, handler);
+  return () => window.removeEventListener(CONSENT_EVENT, handler);
+}
+
 export function CookieBanner() {
   const t = useTranslations("cookieBanner");
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem(CONSENT_KEY);
-    if (!stored) setVisible(true);
-  }, []);
+  const visible = useSyncExternalStore(subscribe, getSnapshot, () => false);
 
   const accept = () => {
     localStorage.setItem(CONSENT_KEY, "accepted");
-    setVisible(false);
+    window.dispatchEvent(new Event(CONSENT_EVENT));
   };
 
   if (!visible) return null;
