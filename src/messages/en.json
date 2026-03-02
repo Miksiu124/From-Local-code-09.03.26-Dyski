@@ -70,6 +70,7 @@
     "allCountries": "All Countries",
     "noModels": "No models available",
     "items": "items",
+    "videosPhotosCount": "{videoCount} videos • {imageCount} photos",
     "days": "Days",
     "credits": "Credits",
     "bestValue": "BEST VALUE",

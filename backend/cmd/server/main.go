@@ -17,6 +17,7 @@ import (
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
+	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/jobs"
@@ -159,6 +160,8 @@ func main() {
 	api.GET("/models/:modelId/access", modelsHandler.CheckAccess, authMW.OptionalAuth)
 
 	// Meta & Helpers
+	geoHandler := geo.NewHandler()
+	api.GET("/geo/country", geoHandler.GetUserCountry)
 	api.GET("/countries", modelsHandler.ListCountries)
 	api.GET("/settings/public", modelsHandler.GetPublicSettings)
 	api.GET("/user/access", modelsHandler.GetUserAccess, authMW.OptionalAuth)
@@ -210,6 +213,7 @@ func main() {
 	notifHandler := notifications.NewHandler(pgPool, redisClient)
 	notifGroup := api.Group("/notifications", authMW.Authenticate)
 	notifGroup.GET("", notifHandler.List)
+	notifGroup.GET("/stream", notifHandler.Stream)
 	notifGroup.PATCH("", notifHandler.MarkAllRead)
 
 	// User (requires auth)

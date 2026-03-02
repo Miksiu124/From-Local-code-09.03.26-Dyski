@@ -36,6 +36,7 @@ type Config struct {
 	R2SecretAccessKey  string
 	R2BucketName      string
 	R2Endpoint        string
+	R2PublicURL       string // Optional: if set, redirect avatar/header to CDN instead of proxying
 
 	// R2 Proof bucket (optional, falls back to main)
 	R2ProofAccessKeyID    string
@@ -86,6 +87,7 @@ func Load() (*Config, error) {
 		R2SecretAccessKey:     requireEnv("R2_SECRET_ACCESS_KEY"),
 		R2BucketName:          requireEnv("R2_BUCKET_NAME"),
 		R2Endpoint:            getEnvOrDefault("R2_ENDPOINT", ""),
+		R2PublicURL:           getEnvOrDefault("R2_PUBLIC_URL", ""),
 		R2ProofAccessKeyID:    getEnvOrDefault("R2_PROOF_ACCESS_KEY_ID", ""),
 		R2ProofSecretAccessKey: getEnvOrDefault("R2_PROOF_SECRET_ACCESS_KEY", ""),
 		R2ProofBucketName:     getEnvOrDefault("R2_PROOF_BUCKET_NAME", ""),

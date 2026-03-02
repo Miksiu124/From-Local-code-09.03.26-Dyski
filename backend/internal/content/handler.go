@@ -428,10 +428,16 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 	})
 }
 
-// ModelAvatar proxies model avatar images from R2
+// ModelAvatar proxies model avatar images from R2, or redirects to CDN if R2PublicURL is set
 func (h *Handler) ModelAvatar(c echo.Context) error {
-	ctx := c.Request().Context()
 	slug := c.Param("slug")
+
+	if base := strings.TrimRight(h.cfg.R2PublicURL, "/"); base != "" {
+		cdnURL := base + "/avatars/" + slug + "_avatar.webp"
+		return c.Redirect(http.StatusFound, cdnURL)
+	}
+
+	ctx := c.Request().Context()
 
 	// 1. Get avatar path from models table
 	var avatarPath *string
@@ -482,10 +488,16 @@ func (h *Handler) ModelAvatar(c echo.Context) error {
 	return nil
 }
 
-// ModelHeader proxies model header images from R2
+// ModelHeader proxies model header images from R2, or redirects to CDN if R2PublicURL is set
 func (h *Handler) ModelHeader(c echo.Context) error {
-	ctx := c.Request().Context()
 	slug := c.Param("slug")
+
+	if base := strings.TrimRight(h.cfg.R2PublicURL, "/"); base != "" {
+		cdnURL := base + "/avatars/" + slug + "_header.webp"
+		return c.Redirect(http.StatusFound, cdnURL)
+	}
+
+	ctx := c.Request().Context()
 
 	// New convention: avatars/[slug]_header.webp
 	targets := []string{

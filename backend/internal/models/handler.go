@@ -40,6 +40,8 @@ func (h *Handler) List(c echo.Context) error {
 		SELECT m.id, m.name, m.folder_name, m.description, m.country_id, m.is_active, m.is_featured,
 			   c.name AS country_name, c.flag_emoji,
 			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false) AS content_count,
+			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false AND ci.content_type = 'VIDEO') AS video_count,
+			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false AND ci.content_type = 'PHOTO') AS image_count,
 			   (SELECT ci.id FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false ORDER BY ci.created_at ASC LIMIT 1) AS first_content_item_id
 		FROM models m
 		LEFT JOIN countries c ON c.id = m.country_id
@@ -94,6 +96,8 @@ func (h *Handler) List(c echo.Context) error {
 		CountryName        *string `json:"countryName"`
 		CountryFlag        *string `json:"countryFlag"`
 		ContentCount       int     `json:"contentCount"`
+		VideoCount         int     `json:"videoCount"`
+		ImageCount         int     `json:"imageCount"`
 		FirstContentItemID *string `json:"firstContentItemId"`
 	}
 
@@ -101,7 +105,7 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var m ModelItem
 		if err := rows.Scan(&m.ID, &m.Name, &m.FolderName, &m.Description, &m.CountryID, &m.IsActive, &m.IsFeatured,
-			&m.CountryName, &m.CountryFlag, &m.ContentCount, &m.FirstContentItemID); err != nil {
+			&m.CountryName, &m.CountryFlag, &m.ContentCount, &m.VideoCount, &m.ImageCount, &m.FirstContentItemID); err != nil {
 			continue
 		}
 		items = append(items, m)
