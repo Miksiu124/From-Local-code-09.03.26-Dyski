@@ -21,6 +21,7 @@
 # misc
 .DS_Store
 *.pem
+*.tar
 
 # debug
 npm-debug.log*
@@ -36,6 +37,7 @@ yarn-error.log*
 !**/.env.example
 !**/.env.production.example
 !**/.env.deploy.example
+cloudflare.env
 
 # IDE
 .idea/

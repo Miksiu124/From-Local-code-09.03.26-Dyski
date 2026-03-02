@@ -11,6 +11,8 @@ type Model = {
   countryName: string | null;
   countryFlag: string | null;
   contentCount: number;
+  videoCount?: number;
+  imageCount?: number;
   firstContentItemId: string | null;
 };
 
@@ -102,6 +104,8 @@ export default async function HomePage() {
           countryName: m.countryName,
           countryFlag: m.countryFlag,
           contentCount: m.contentCount,
+          videoCount: m.videoCount,
+          imageCount: m.imageCount,
           isActive: m.isActive,
           firstContentItemId: m.firstContentItemId,
         }))}
@@ -114,6 +118,8 @@ export default async function HomePage() {
           countryName: m.countryName,
           countryFlag: m.countryFlag,
           contentCount: m.contentCount,
+          videoCount: m.videoCount,
+          imageCount: m.imageCount,
           isActive: m.isActive,
           firstContentItemId: m.firstContentItemId,
         }))}

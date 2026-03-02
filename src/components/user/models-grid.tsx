@@ -21,6 +21,8 @@ interface ModelItem {
   countryName: string | null;
   countryFlag: string | null;
   contentCount: number;
+  videoCount?: number;
+  imageCount?: number;
   isActive: boolean;
   firstContentItemId: string | null;
 }
@@ -355,7 +357,11 @@ export function ModelsGrid({
                     {heroModel.description || t("exclusiveContent", { name: heroModel.name })}
                   </p>
                   <div className="flex items-center gap-4 text-xs sm:text-sm text-white/70">
-                    <span>{heroModel.contentCount} {t("items")}</span>
+                    <span>
+                      {heroModel.videoCount != null && heroModel.imageCount != null && (heroModel.videoCount > 0 || heroModel.imageCount > 0)
+                        ? t("videosPhotosCount", { videoCount: heroModel.videoCount, imageCount: heroModel.imageCount })
+                        : `${heroModel.contentCount} ${t("items")}`}
+                    </span>
                     <span className="text-white/30">|</span>
                     <span>{heroModel.countryName} {heroModel.countryFlag}</span>
                   </div>
@@ -399,7 +405,11 @@ export function ModelsGrid({
                     </div>
                     <div className="flex-1 p-4 flex flex-col justify-center">
                       <h4 className="text-sm lg:text-base font-bold text-white group-hover:text-primary transition-colors truncate">{model.name}</h4>
-                      <span className="text-xs text-muted-foreground mt-0.5">{model.contentCount} {t("items")}</span>
+                      <span className="text-xs text-muted-foreground mt-0.5">
+                        {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                          ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                          : `${model.contentCount} ${t("items")}`}
+                      </span>
                     </div>
                   </div>
                 </Link>
@@ -482,7 +492,7 @@ export function ModelsGrid({
             >
               {t("all")}
             </button>
-            {isAuthenticated && userAccessModelIds !== "all" && userAccessModelIds.length > 0 && (
+            {isAuthenticated && (
               <button
                 onClick={() => {
                   setShowPurchasedOnly(!showPurchasedOnly);
@@ -596,7 +606,9 @@ export function ModelsGrid({
                       <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[10px] sm:text-xs font-medium text-white/50">
-                          {model.contentCount} {t("items")}
+                          {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                            ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                            : `${model.contentCount} ${t("items")}`}
                         </span>
                         {!hasAccess(model.id) && cost7d > 0 && (
                           <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">

@@ -1,6 +1,6 @@
 #!/bin/bash
-# ContentVault — Pełna fresh instalacja z repo (nukuje kod i bazę)
-# ZACHOWUJE: .env (klucze), dane użytkownika dominikql.smurf@gmail.com
+# ContentVault - Pelna fresh instalacja z repo (nukuje kod i baze)
+# ZACHOWUJE: .env (klucze), dane uzytkownika dominikql.smurf@gmail.com
 #
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-fresh-install.sh
 # Albo zdalnie: ssh user@VPS_IP 'cd /opt/contentvault && bash scripts/vps-fresh-install.sh'
@@ -12,6 +12,7 @@ set -e
 
 PROTECTED_EMAIL="${PROTECTED_EMAIL:-dominikql.smurf@gmail.com}"
 REPO_URL="${REPO_URL:-https://github.com/Miksiu124/ContentManager.git}"
+# Jezeli fetch przez HTTPS nie dziala, uzyj: REPO_URL=git@github.com:Miksiu124/ContentManager.git
 REPO_BRANCH="${REPO_BRANCH:-main}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,19 +23,20 @@ DUMP_FILE="$BACKUP_DIR/pre_nuke.dump"
 cd "$REPO_ROOT"
 
 echo "=========================================="
-echo "ContentVault — FRESH INSTALL"
+echo "ContentVault - FRESH INSTALL"
 echo "=========================================="
-echo "Chroniony użytkownik: $PROTECTED_EMAIL"
+echo "Chroniony uzytkownik: $PROTECTED_EMAIL"
 echo "Repo: $REPO_URL ($REPO_BRANCH)"
 echo ""
 
-# Załaduj .env
+# Zaladuj .env (strip CR for Windows-edited files)
 if [[ -f .env ]]; then
+  sed -i 's/\r$//' .env 2>/dev/null || true
   set -a
   source .env
   set +a
 else
-  echo "Błąd: Brak pliku .env"
+  echo "Blad: Brak pliku .env"
   exit 1
 fi
 
@@ -48,12 +50,12 @@ echo "[2/9] Dump bazy PostgreSQL..."
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres pg_dump -U platform content_platform -Fc > "$DUMP_FILE"
 echo "   Zapisano: $(du -h "$DUMP_FILE" | cut -f1)"
 
-# 3. Zatrzymaj i usuń wszystko
-echo "[3/9] Zatrzymuję kontenery i usuwam wolumeny..."
+# 3. Zatrzymaj i usun wszystko
+echo "[3/9] Zatrzymuje kontenery i usuwam wolumeny..."
 docker compose down -v
 
-# 4. Pobierz świeży kod z repo
-echo "[4/9] Pobieram świeży kod z repo..."
+# 4. Pobierz swiezey kod z repo
+echo "[4/9] Pobieram swiezey kod z repo..."
 if [[ -d .git ]]; then
   git remote set-url origin "$REPO_URL" 2>/dev/null || true
   git fetch origin "$REPO_BRANCH" --force 2>/dev/null || git fetch origin --force
@@ -68,12 +70,12 @@ else
   cd "$DIRNAME"
 fi
 
-# 5. Przywróć .env
+# 5. Przywroc .env
 echo "[5/9] Przywracam .env..."
 cp "$BACKUP_DIR/.env.backup" .env
 
 # 6. Build i start
-echo "[6/9] Buduję i uruchamiam..."
+echo "[6/9] Buduje i uruchamiam..."
 docker compose build --no-cache
 docker compose up -d
 
@@ -88,16 +90,16 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-# 8. Seed
+# 8. Seed (kraje, ustawienia, admin, pakiety)
 echo "[8/9] Uruchamiam seed..."
 (docker compose exec -T api ./server -seed 2>/dev/null) || \
 (docker compose run --rm -e DATABASE_URL="postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable" frontend npx tsx prisma/seed.ts 2>/dev/null) || \
-echo "   Uruchom recznie seed (prisma/seed.ts)"
+echo "   Uruchom recznie: docker compose run --rm -e DATABASE_URL=postgresql://platform:PASS@postgres:5432/content_platform frontend npx tsx prisma/seed.ts"
 
-# 9. Przywróć dane chronionego użytkownika
+# 9. Przywroc dane chronionego uzytkownika
 echo "[9/9] Przywracam dane $PROTECTED_EMAIL..."
 
-# Wgraj dump do kontenera i przywróć do bazy tymczasowej
+# Wgraj dump do kontenera i przywroc do bazy tymczasowej
 docker cp "$DUMP_FILE" $(docker compose ps -q postgres):/tmp/restore.dump
 
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres sh -c "
@@ -105,10 +107,10 @@ docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres sh -c "
   pg_restore -U platform -d backup_restore --no-owner --no-acl /tmp/restore.dump 2>/dev/null || true
 "
 
-# Eksport do plików na hoście, potem import (unikamy problemów z pipe)
+# Eksport do plikow na hosta, potem import (unikamy problemow z pipe)
 pc() { docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -U platform "$@"; }
 
-# User — eksport do pliku (bez psql footera)
+# User - eksport do pliku (bez psql footera)
 pc -d backup_restore -t -A -c "
   COPY (SELECT id,email,password,name,discord_id,role,avatar_url,credit_balance,last_login_at,created_at,updated_at
         FROM users WHERE email='$PROTECTED_EMAIL') TO STDOUT WITH CSV
@@ -118,7 +120,7 @@ if [[ -s "$BACKUP_DIR/user.csv" ]]; then
   docker compose exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -U platform -d content_platform -c "
     COPY users(id,email,password,name,discord_id,role,avatar_url,credit_balance,last_login_at,created_at,updated_at)
     FROM STDIN WITH CSV
-  " < "$BACKUP_DIR/user.csv" 2>/dev/null && echo "   ✓ User (hasło, kredyty)"
+  " < "$BACKUP_DIR/user.csv" 2>/dev/null && echo "   [OK] User (haslo, kredyty)"
 else
   echo "   (User $PROTECTED_EMAIL nie znaleziony w backupie)"
 fi
@@ -133,7 +135,7 @@ if [[ -s "$BACKUP_DIR/accounts.csv" ]]; then
   docker compose exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -U platform -d content_platform -c "
     COPY accounts(id,user_id,type,provider,provider_account_id,refresh_token,access_token,expires_at,token_type,scope,id_token,session_state)
     FROM STDIN WITH CSV
-  " < "$BACKUP_DIR/accounts.csv" 2>/dev/null && echo "   ✓ Accounts"
+  " < "$BACKUP_DIR/accounts.csv" 2>/dev/null && echo "   [OK] Accounts"
 fi
 
 # Cleanup
@@ -142,12 +144,12 @@ docker compose exec -T postgres rm -f /tmp/restore.dump 2>/dev/null
 
 echo ""
 echo "=========================================="
-echo "GOTOWE. Fresh instalacja zakończona."
+echo "GOTOWE. Fresh instalacja zakonczona."
 echo "=========================================="
-echo "Użytkownik $PROTECTED_EMAIL: hasło i kredyty zachowane."
-echo "Uwaga: Dostępy do modeli (user_access) wymagają modeli w bazie."
-echo "       Jeśli modele są synchronizowane z R2 — uruchom sync po odświeżeniu."
+echo "Uzytkownik $PROTECTED_EMAIL: haslo i kredyty zachowane."
+echo "Uwaga: Dostepy do modeli (user_access) wymagaja modeli w bazie."
+echo "       Jesli modele sa synchronizowane z R2 - uruchom sync po odswiezeniu."
 echo ""
-echo "Sprawdź: docker compose ps"
-echo "Usuń backup: rm -rf $BACKUP_DIR"
+echo "Sprawdz: docker compose ps"
+echo "Usun backup: rm -rf $BACKUP_DIR"
 echo ""
