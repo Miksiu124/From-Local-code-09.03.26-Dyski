@@ -60,3 +60,7 @@ uploads/
 
 # ad-hoc query files
 query.sql
+
+# logs
+dump.log
+temp-docker-stats.log

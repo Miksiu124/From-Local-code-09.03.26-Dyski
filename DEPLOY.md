@@ -547,4 +547,4 @@ docker compose logs --tail=50 api
 
 ---
 
-> **Szybki deploy:** Zobacz [REPO_STRUCTURE.md](REPO_STRUCTURE.md) i `./scripts/deploy-vps.sh --build`
+> **Szybki deploy:** Zobacz [README.md](README.md) i `./scripts/deploy-vps.sh --build`
