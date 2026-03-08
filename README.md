@@ -1,8 +1,10 @@
-# ContentVault - Premium Content Platform
+# Działająca strona na VPS — Dyskiof.net
 
-A full-stack premium content platform with credit-based payments, HLS video streaming, admin panel, and real-time payment notifications. Built with **Next.js 16**, **Go (Echo)**, **PostgreSQL**, **Redis**, and **Cloudflare R2**.
+> **Dyskiof.net** — pełnoprawna platforma premium content działająca na VPS. Kredyty, HLS streaming, panel admina, płatności (BLIK, Crypto, PayPal, Revolut). Zbudowana w **Next.js 16**, **Go (Echo)**, **PostgreSQL**, **Redis** i **Cloudflare R2**.
 
-> **Nowosc:** Zobacz [REPO_STRUCTURE.md](REPO_STRUCTURE.md) — co jest czym, jak deployowac na VPS.
+[![Dyskiof.net](https://img.shields.io/badge/Dyskiof.net-VPS%20Ready-success)](https://dyskiof.net)
+
+> **Deploy:** Zobacz [DEPLOY.md](DEPLOY.md) — pełna instrukcja wdrożenia na VPS. Szybki deploy: `./scripts/deploy-vps.sh --build`
 
 ---
 
@@ -31,7 +33,7 @@ A full-stack premium content platform with credit-based payments, HLS video stre
 - HLS video player with keyboard navigation
 - Photo viewer with prev/next navigation
 - Credit-based purchasing (7 / 14 / 30 day access)
-- Multiple payment methods: BLIK, Crypto (BTC, ETH, USDT, USDC), PayPal, Revolut
+- Multiple payment methods: BLIK, Crypto (BTC, ETH, LTC, USDC), PayPal, Revolut
 - Real-time payment status updates (SSE + WebSocket for BLIK)
 - Favorites system
 - User dashboard with credit balance, purchases, and notifications
@@ -127,7 +129,7 @@ cd YOUR_REPO
 Copy the example and fill in your values:
 
 ```bash
-cp backend/.env.example .env
+cp .env.example .env
 ```
 
 Edit `.env` with your actual credentials:
@@ -222,14 +224,14 @@ This creates:
 
 ## Deploy na VPS
 
-Repozytorium zawiera skrypty deployu. Zobacz **[REPO_STRUCTURE.md](REPO_STRUCTURE.md)** — pełny opis struktury i deployu.
+Repozytorium zawiera skrypty deployu. Zobacz **[DEPLOY.md](DEPLOY.md)** — pełny opis struktury i deployu na VPS.
 
 ```bash
 # Szybki deploy (rsync + docker compose na VPS)
 ./scripts/deploy-vps.sh --build
 ```
 
-VPS: ustaw `VPS_HOST`, `VPS_USER` w env. Szczegóły w `REPO_STRUCTURE.md`, `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
+VPS: ustaw `VPS_HOST`, `VPS_USER` w env. Szczegóły w `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
 
 ---
 
