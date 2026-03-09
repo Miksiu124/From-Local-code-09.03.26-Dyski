@@ -12,3 +12,7 @@ Dockerfile.frontend
 .env.deploy
 .env.production
 .env.*.local
+certbot
+postgres_data
+redis_data
+logs

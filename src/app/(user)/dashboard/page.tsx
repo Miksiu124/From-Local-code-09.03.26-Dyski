@@ -18,6 +18,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { formatCredits } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 type UserProfile = {
@@ -33,6 +34,7 @@ type MeResponse = {
   email: string;
   creditBalance: number;
   role: string;
+  emailVerified?: boolean;
 };
 
 type AccessResponse = {
@@ -62,6 +64,7 @@ function StatusMessage({ type, message }: { type: "success" | "error"; message: 
 export default function DashboardPage() {
   const router = useRouter();
   const t = useTranslations("dashboard");
+  const tAuth = useTranslations("auth");
 
   const [me, setMe] = useState<MeResponse | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -93,6 +96,8 @@ export default function DashboardPage() {
   const [emailStatus, setEmailStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [passwordStatus, setPasswordStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [autoplayStatus, setAutoplayStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [resendVerifyLoading, setResendVerifyLoading] = useState(false);
+  const [verifyResendStatus, setVerifyResendStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -263,8 +268,56 @@ export default function DashboardPage() {
 
   const isOAuth = profile && !profile.hasPassword;
 
+  const handleResendVerification = async () => {
+    setResendVerifyLoading(true);
+    setVerifyResendStatus(null);
+    try {
+      const res = await fetch("/api/auth/resend-verification", { method: "POST", credentials: "include" });
+      const data = await res.json();
+      if (res.ok) {
+        setVerifyResendStatus({ type: "success", message: data.message || "Verification email sent. Check your inbox." });
+      } else {
+        setVerifyResendStatus({ type: "error", message: data.error || "Failed to send" });
+      }
+    } catch {
+      setVerifyResendStatus({ type: "error", message: "Network error" });
+    } finally {
+      setResendVerifyLoading(false);
+      setTimeout(() => setVerifyResendStatus(null), 4000);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-3xl">
+      {me && !me.emailVerified && (
+        <div className="mb-6 rounded-xl bg-yellow-500/10 border border-yellow-500/20 p-4 flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-sm text-yellow-200">{tAuth("verifyEmailRequired")}</p>
+            <Button
+            variant="outline"
+            size="sm"
+            className="border-yellow-500/30 text-yellow-200 hover:bg-yellow-500/10 shrink-0 gap-2"
+            disabled={resendVerifyLoading}
+            onClick={handleResendVerification}
+          >
+            {resendVerifyLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {tAuth("resendVerification")}
+          </Button>
+          </div>
+          {verifyResendStatus && (
+            <div className="text-sm flex items-center gap-2">
+              {verifyResendStatus.type === "success" ? (
+                <Check className="h-4 w-4 text-green-400 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+              )}
+              <span className={verifyResendStatus.type === "success" ? "text-green-400" : "text-red-400"}>
+                {verifyResendStatus.message}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <h1 className="text-2xl sm:text-3xl font-bold mb-8 slide-up">{t("title")}</h1>
 
       {/* Stats */}

@@ -17,6 +17,7 @@ services:
       - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
       - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
       - PORT=8080
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
     expose:
       - "8080"
     ports:
@@ -47,6 +48,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
     container_name: content-frontend
     restart: unless-stopped
     env_file: .env
@@ -58,6 +61,7 @@ services:
       # NOTE: Set NEXT_PUBLIC_APP_URL to your domain in .env
       # e.g. NEXT_PUBLIC_APP_URL=https://yourdomain.com
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
+      - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
       - ADMIN_EMAILS=${ADMIN_EMAILS}
     ports:
       - "127.0.0.1:3000:3000"
@@ -163,8 +167,9 @@ services:
       - internal
 
   # ── Nginx Reverse Proxy ──────────────────────────────────────
+  # Pin to 1.28+ to avoid CVE-2025-23419 (SSL session reuse); see docs/NGINX_SECURITY_AUDIT.md
   nginx:
-    image: nginx:alpine
+    image: nginx:1.28-alpine
     container_name: content-nginx
     restart: unless-stopped
     ports:

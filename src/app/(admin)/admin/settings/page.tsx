@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Save, Webhook, CreditCard } from "lucide-react";
+import { Save, Webhook, CreditCard, Timer, Package, Coins, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,23 @@ interface SettingItem {
 }
 
 const BOOLEAN_KEYS = ["blik_enabled"];
-const FEATURED_KEYS = ["blik_enabled", "discord_webhook_url", "discord_ping_role_id", "paypal_address", "revolut_address"];
+const FEATURED_KEYS = [
+  "blik_enabled",
+  "discord_webhook_url",
+  "discord_ping_role_id",
+  "paypal_address",
+  "revolut_address",
+  "blik_expiration_minutes",
+  "bundle_credit_cost_14d",
+  "bundle_credit_cost_30d",
+  "crypto_expiration_hours",
+  "crypto_wallets",
+  "referral_credits_referrer",
+  "referral_bonus_percent_referee",
+  "referral_max_per_user",
+  "referral_min_purchase_amount",
+  "referral_cooldown_hours",
+];
 const HIDDEN_KEYS = ["blik_enabled"];
 
 export default function AdminSettingsPage() {
@@ -62,7 +78,9 @@ export default function AdminSettingsPage() {
       if (res.ok) {
         setMessage("Settings saved successfully");
       } else {
-        setMessage("Failed to save settings");
+        const data = await res.json().catch(() => ({}));
+        const msg = (data as { message?: string })?.message || (data as { error?: string })?.error || "Failed to save settings";
+        setMessage(msg);
       }
     } catch {
       setMessage("Failed to save settings");
@@ -106,11 +124,11 @@ export default function AdminSettingsPage() {
       const wallets = setting.value as Record<string, string>;
       return (
         <div className="space-y-2">
-          {Object.entries(wallets).map(([currency, address]) => (
+          {(["BTC", "ETH", "LTC", "USDC"] as const).map((currency) => (
             <div key={currency} className="flex items-center gap-2">
               <span className="text-sm font-mono w-12">{currency}</span>
               <Input
-                value={address}
+                value={wallets[currency] ?? ""}
                 onChange={(e) => {
                   const newWallets = { ...wallets, [currency]: e.target.value };
                   updateSetting(setting.key, newWallets);
@@ -150,6 +168,16 @@ export default function AdminSettingsPage() {
   const discordPingRoleSetting = settings.find((s) => s.key === "discord_ping_role_id");
   const paypalSetting = settings.find((s) => s.key === "paypal_address");
   const revolutSetting = settings.find((s) => s.key === "revolut_address");
+  const blikExpirationSetting = settings.find((s) => s.key === "blik_expiration_minutes");
+  const bundle14dSetting = settings.find((s) => s.key === "bundle_credit_cost_14d");
+  const bundle30dSetting = settings.find((s) => s.key === "bundle_credit_cost_30d");
+  const cryptoExpirationSetting = settings.find((s) => s.key === "crypto_expiration_hours");
+  const cryptoWalletsSetting = settings.find((s) => s.key === "crypto_wallets");
+  const referralCreditsReferrer = settings.find((s) => s.key === "referral_credits_referrer");
+  const referralBonusReferee = settings.find((s) => s.key === "referral_bonus_percent_referee");
+  const referralMaxPerUser = settings.find((s) => s.key === "referral_max_per_user");
+  const referralMinPurchase = settings.find((s) => s.key === "referral_min_purchase_amount");
+  const referralCooldown = settings.find((s) => s.key === "referral_cooldown_hours");
   const otherSettings = settings.filter((s) => !FEATURED_KEYS.includes(s.key) && !HIDDEN_KEYS.includes(s.key));
 
   return (
@@ -257,6 +285,240 @@ export default function AdminSettingsPage() {
                     value={String(revolutSetting.value || "")}
                     onChange={(e) => updateSetting("revolut_address", e.target.value)}
                     placeholder="@your-revolut-tag"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* BLIK Settings */}
+      {blikExpirationSetting && (
+        <Card className="mb-6 border-2 border-amber-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10">
+                <Timer className="h-6 w-6 text-amber-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">BLIK</h3>
+                <p className="text-sm text-muted-foreground">
+                  Czas ważności płatności BLIK w minutach.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  Czas wygaśnięcia (minuty)
+                </label>
+                <Input
+                  type="number"
+                  value={Number(blikExpirationSetting.value) || ""}
+                  onChange={(e) => updateSetting("blik_expiration_minutes", Number(e.target.value))}
+                  placeholder="5"
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Bundle Credit Costs */}
+      {(bundle14dSetting || bundle30dSetting) && (
+        <Card className="mb-6 border-2 border-blue-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10">
+                <Package className="h-6 w-6 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Pakiety kredytów</h3>
+                <p className="text-sm text-muted-foreground">
+                  Koszt dostępu do wszystkich modeli na wybrany okres.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {bundle14dSetting && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    14 dni (kredyty)
+                  </label>
+                  <Input
+                    type="number"
+                    value={Number(bundle14dSetting.value) || ""}
+                    onChange={(e) => updateSetting("bundle_credit_cost_14d", Number(e.target.value))}
+                    placeholder="500"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {bundle30dSetting && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    30 dni (kredyty)
+                  </label>
+                  <Input
+                    type="number"
+                    value={Number(bundle30dSetting.value) || ""}
+                    onChange={(e) => updateSetting("bundle_credit_cost_30d", Number(e.target.value))}
+                    placeholder="900"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Crypto Settings */}
+      {(cryptoExpirationSetting || cryptoWalletsSetting) && (
+        <Card className="mb-6 border-2 border-orange-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10">
+                <Coins className="h-6 w-6 text-orange-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Kryptowaluty</h3>
+                <p className="text-sm text-muted-foreground">
+                  Czas oczekiwania na płatność oraz adresy portfeli.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {cryptoExpirationSetting && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Czas oczekiwania (godziny)
+                  </label>
+                  <Input
+                    type="number"
+                    value={Number(cryptoExpirationSetting.value) || ""}
+                    onChange={(e) => updateSetting("crypto_expiration_hours", Number(e.target.value))}
+                    placeholder="48"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {cryptoWalletsSetting && typeof cryptoWalletsSetting.value === "object" && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Adresy portfeli
+                  </label>
+                  <div className="space-y-2">
+                    {(["BTC", "ETH", "LTC", "USDC"] as const).map((currency) => {
+                      const wallets = cryptoWalletsSetting.value as Record<string, string>;
+                      const address = wallets[currency] ?? "";
+                      return (
+                      <div key={currency} className="flex items-center gap-2">
+                        <span className="text-sm font-mono w-12">{currency}</span>
+                        <Input
+                          value={address}
+                          onChange={(e) => {
+                            const wallets = cryptoWalletsSetting.value as Record<string, string>;
+                            updateSetting("crypto_wallets", { ...wallets, [currency]: e.target.value });
+                          }}
+                          placeholder={`${currency} wallet address`}
+                          className="flex-1 font-mono text-sm"
+                        />
+                      </div>
+                    );})}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Referral Settings */}
+      {(referralCreditsReferrer || referralBonusReferee || referralMaxPerUser || referralMinPurchase || referralCooldown) && (
+        <Card className="mb-6 border-2 border-violet-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10">
+                <UserPlus className="h-6 w-6 text-violet-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Referral</h3>
+                <p className="text-sm text-muted-foreground">
+                  Program poleceń – nagrody dla polecającego i poleconego przy pierwszym zakupie.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {referralCreditsReferrer && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Kredyty dla polecającego (za każdego poleconego)
+                  </label>
+                  <Input
+                    type="number"
+                    value={referralCreditsReferrer.value != null ? Number(referralCreditsReferrer.value) : ""}
+                    onChange={(e) => updateSetting("referral_credits_referrer", Number(e.target.value))}
+                    placeholder="50"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {referralBonusReferee && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Bonus % dla poleconego (przy pierwszym zakupie)
+                  </label>
+                  <Input
+                    type="number"
+                    value={referralBonusReferee.value != null ? Number(referralBonusReferee.value) : ""}
+                    onChange={(e) => updateSetting("referral_bonus_percent_referee", Number(e.target.value))}
+                    placeholder="10"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {referralMaxPerUser && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Maks. poleconych na użytkownika
+                  </label>
+                  <Input
+                    type="number"
+                    value={referralMaxPerUser.value != null ? Number(referralMaxPerUser.value) : ""}
+                    onChange={(e) => updateSetting("referral_max_per_user", Number(e.target.value))}
+                    placeholder="100"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {referralMinPurchase && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Min. kwota zakupu (PLN) do naliczenia
+                  </label>
+                  <Input
+                    type="number"
+                    value={referralMinPurchase.value != null ? Number(referralMinPurchase.value) : ""}
+                    onChange={(e) => updateSetting("referral_min_purchase_amount", Number(e.target.value))}
+                    placeholder="0"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {referralCooldown && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Cooldown (godziny) – 0 = jednorazowo
+                  </label>
+                  <Input
+                    type="number"
+                    value={referralCooldown.value != null ? Number(referralCooldown.value) : ""}
+                    onChange={(e) => updateSetting("referral_cooldown_hours", Number(e.target.value))}
+                    placeholder="0"
                     className="font-mono text-sm"
                   />
                 </div>

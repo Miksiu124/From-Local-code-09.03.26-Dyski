@@ -1,10 +1,10 @@
-# Działająca strona na VPS — Dyskiof.net
+# Dyskiof.net — Premium Content Platform
 
-> **Dyskiof.net** — pełnoprawna platforma premium content działająca na VPS. Kredyty, HLS streaming, panel admina, płatności (BLIK, Crypto, PayPal, Revolut). Zbudowana w **Next.js 16**, **Go (Echo)**, **PostgreSQL**, **Redis** i **Cloudflare R2**.
+> **Dyskiof.net** — full-featured premium content platform running on VPS. Credits, HLS streaming, admin panel, payments (BLIK, Crypto, PayPal, Revolut), referral system, promo codes, and custom tracking links. Built with **Next.js 16**, **Go (Echo)**, **PostgreSQL**, **Redis**, and **Cloudflare R2**.
 
 [![Dyskiof.net](https://img.shields.io/badge/Dyskiof.net-VPS%20Ready-success)](https://dyskiof.net)
 
-> **Deploy:** Zobacz [DEPLOY.md](DEPLOY.md) — pełna instrukcja wdrożenia na VPS. Szybki deploy: `./scripts/deploy-vps.sh --build`
+> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build`
 
 ---
 
@@ -18,11 +18,13 @@
 | Cache / PubSub | Redis 7 |
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
-| SMTP | Postfix relay (boky/postfix) lub BillionMail (patrz `docs/BILLIONMAIL_SETUP.md`) |
-| Proxy | Nginx (reverse proxy, rate limiting, WAF) |
+| Bot Protection | Cloudflare Turnstile (CAPTCHA on registration) |
+| SMTP | Postfix relay (boky/postfix) or BillionMail (see `docs/BILLIONMAIL_SETUP.md`) |
+| Proxy | Nginx 1.28 (reverse proxy, rate limiting, Cloudflare IP trust) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
-| Auth | JWT + cookie sessions |
+| Auth | JWT + cookie sessions, email verification |
+| Currency | PLN base with automatic USD conversion (4 PLN = 1 USD) |
 
 ---
 
@@ -30,33 +32,56 @@
 
 ### User-facing
 - Browse models with filtering (video/photo) and sorting
-- HLS video player with keyboard navigation
-- Photo viewer with prev/next navigation
+- HLS video player with keyboard navigation, mobile seek zones, quality selection
+- Photo viewer with prev/next navigation and swipe support
 - Credit-based purchasing (7 / 14 / 30 day access)
 - Multiple payment methods: BLIK, Crypto (BTC, ETH, LTC, USDC), PayPal, Revolut
 - Real-time payment status updates (SSE + WebSocket for BLIK)
-- Favorites system
-- User dashboard with credit balance, purchases, and notifications
+- Payment proof upload (JPEG, PNG, WebP, GIF, PDF) with inline admin review
+- Promo codes (percent discount or bonus credits)
+- Referral program (earn credits when referred users make purchases)
+- Email verification (required for purchases and content streaming)
+- Favorites system with dedicated content viewer
+- User dashboard with credit balance, purchases, notifications, and email verification status
+- Currency converter (PLN/USD) on purchase page
 - Responsive, dark-themed UI with animations
 
+### Video Player
+- iOS native fullscreen with play-before-fullscreen workaround
+- Android container-based fullscreen (reliable across browsers)
+- Mobile seek zones: tap left 25% for -10s, tap right 75% for +10s, center for play/pause
+- Touch-friendly progress bar (taller on mobile)
+- Quality selector rendered via portal (no overflow clipping in fullscreen)
+- Fullscreen in-place navigation (prev/next without exiting fullscreen on Android)
+- Swipe navigation with velocity detection
+
 ### Admin panel
-- Real-time payment approval queue (SSE + polling)
-- User management (ban, credit adjustments, access grants)
+- Real-time payment approval queue (SSE + polling) with inline payment proof viewer
+- User management (ban, credit adjustments, access grants, email verification filter)
 - Model management (R2 import, country assignment, featured toggle)
-- Credit package management (create/edit/delete)
-- Platform settings (crypto wallets, costs, expiration times, BLIK toggle)
+- Credit package management (create/edit/delete, prices in PLN)
+- Promo codes management (create/edit/delete, percent or fixed credits, per-user limits, first-purchase-only, expiration)
+- Custom tracking links with visit analytics and conversion tracking
+- Platform settings (crypto wallets, BLIK/crypto expiration, bundle costs, referral settings)
 - Analytics dashboard (revenue, users, top sellers)
 - R2 bucket sync and import tools
 
 ### Security
 - JWT authentication with HTTP-only cookies
-- Rate limiting (Redis-based + Nginx zones)
+- Email verification enforcement (purchases and streaming blocked for unverified users)
+- Cloudflare Turnstile bot protection on registration
+- Rate limiting (Redis-based + Nginx zones with Cloudflare IP trust)
 - CSRF protection middleware
-- CSP, HSTS, and other security headers
+- CSP, HSTS, Permissions-Policy, and other security headers
 - Token-secured HLS streaming (prevents direct video access)
 - Admin role enforcement
 - User banning
-- WAF-style request blocking (Nginx)
+- IP extraction via CF-Connecting-IP (Nginx forwards real client IP)
+- SMTP retry with exponential backoff (4 attempts)
+- Security email notifications on password and email changes
+- API data minimization (only essential fields returned)
+- Log sanitization (no PII or tokens in logs)
+- Nginx pinned to 1.28+ (CVE-2025-23419 fix)
 
 ---
 
@@ -67,15 +92,21 @@
 │   ├── cmd/server/main.go      # Entry point and route registration
 │   ├── cmd/seed/main.go        # Database seeder
 │   ├── internal/               # Domain packages
-│   │   ├── admin/              # Admin endpoints
-│   │   ├── auth/               # Auth (register/login/JWT)
+│   │   ├── admin/              # Admin endpoints + promo codes + custom links
+│   │   ├── auth/               # Auth (register/login/JWT/email verification)
+│   │   ├── common/             # Shared utilities (currency, errors)
 │   │   ├── content/            # Content streaming, R2 client
-│   │   ├── credits/            # Credit purchases, BLIK WS
-│   │   ├── favorites/          # Favorites
+│   │   ├── credits/            # Credit purchases, BLIK WS, promo validation
+│   │   ├── discord/            # Discord webhook notifications
+│   │   ├── favorites/          # Favorites with content viewer details
+│   │   ├── geo/                # Geo/country endpoints
+│   │   ├── links/              # Custom tracking link resolution
 │   │   ├── models/             # Model browsing
 │   │   ├── purchases/          # Model access purchases
+│   │   ├── referral/           # Referral system
 │   │   ├── notifications/      # Notifications
-│   │   ├── middleware/         # Auth, CORS, rate limiting
+│   │   ├── mailer/             # SMTP with retry + email templates
+│   │   ├── middleware/         # Auth, admin, email verification
 │   │   └── jobs/              # Cron jobs (R2 sync)
 │   ├── migrations/             # SQL migrations (auto-run on init)
 │   ├── Dockerfile
@@ -83,23 +114,47 @@
 │
 ├── src/                        # Next.js frontend
 │   ├── app/
-│   │   ├── (auth)/             # /login, /register
-│   │   ├── (user)/             # /models, /content, /purchase, etc.
-│   │   └── (admin)/admin/      # /admin/*
+│   │   ├── (auth)/             # /login, /register, /verify-email, /forgot-password, /reset-password
+│   │   ├── (user)/             # /models, /content, /purchase, /dashboard, /favorites, /referral, /my-purchases
+│   │   ├── (admin)/admin/      # /admin/* (payments, packages, promo-codes, custom-links, models, users, analytics, settings)
+│   │   └── l/[slug]/           # Custom link redirect route
 │   ├── components/             # React components
-│   ├── lib/                    # Utilities, API client
+│   │   ├── admin/              # Admin sidebar, payments list
+│   │   ├── layout/             # Header, footer, notification bell
+│   │   ├── payments/           # Credit purchase flow, currency converter
+│   │   ├── ui/                 # Button, card, input, retry-image, etc.
+│   │   └── user/               # Model detail, models grid, video player, content viewer, favorites, referral panel
+│   ├── lib/                    # Utilities, API client, rate limiting
 │   └── messages/               # i18n (en.json, pl.json)
 │
 ├── prisma/
-│   ├── schema.prisma           # Database schema
-│   └── seed.ts                 # Seed script
+│   ├── schema.prisma           # Database schema (users, models, content, credits, promo codes, referrals, custom links, etc.)
+│   └── seed.ts                 # Seed script (packages in PLN, settings, countries)
 │
 ├── nginx/
-│   └── nginx.conf              # Reverse proxy config
+│   ├── nginx.conf              # Dev reverse proxy config
+│   └── nginx.conf.production   # Production config (SSL, Cloudflare IP trust, rate limiting)
+│
+├── scripts/                    # Deploy and utility scripts
+│   ├── deploy-vps.sh           # Main deploy script (rsync + docker compose)
+│   ├── deploy-vps.ps1          # PowerShell deploy variant
+│   ├── vps-fresh-install.sh    # Fresh VPS install
+│   ├── vps-rebuild-fresh.sh    # Full rebuild preserving users
+│   └── ...                     # Load testing, DNS, env generation scripts
+│
+├── docs/                       # Documentation
+│   ├── SECURITY_AUDIT.md
+│   ├── NGINX_SECURITY_AUDIT.md
+│   ├── MIGRATION_NEW_VPS_2026.md
+│   └── ...
+│
+├── .github/                    # CI/CD
+│   └── workflows/              # Tests, DAST, CodeQL
 │
 ├── docker-compose.yml          # All services
-├── Dockerfile.frontend         # Next.js container
-├── next.config.ts
+├── docker-compose.billionmail.yml  # BillionMail SMTP override
+├── Dockerfile.frontend         # Next.js container (with Turnstile build-arg)
+├── next.config.ts              # CSP headers, Turnstile domain allowlisting
 ├── package.json
 └── tsconfig.json
 ```
@@ -110,6 +165,7 @@
 
 - **Docker** and **Docker Compose** (v2)
 - **Cloudflare R2** bucket with content uploaded
+- (Optional) **Cloudflare Turnstile** site key + secret key for bot protection
 - (Optional) **Node.js 20+** for local frontend dev
 - (Optional) **Go 1.24+** for local backend dev
 
@@ -120,8 +176,8 @@
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/Miksiu124/From-Local-code-09.03.26-Dyski.git
+cd From-Local-code-09.03.26-Dyski
 ```
 
 ### 2. Create the .env file
@@ -163,12 +219,16 @@ ADMIN_EMAILS=your_email@example.com
 # BLIK
 BLIK_EXPIRATION_MINUTES=2
 
+# Cloudflare Turnstile (optional, bot protection on registration)
+TURNSTILE_SECRET_KEY=your_turnstile_secret
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
+
 # SMTP (self-hosted Postfix relay, no external provider needed)
 SMTP_HOST=smtp
 SMTP_PORT=587
-SMTP_FROM=noreply@yourdomain.com
-SMTP_HOSTNAME=mail.yourdomain.com
-SMTP_ALLOWED_DOMAINS=yourdomain.com
+SMTP_FROM=noreply@dyskiof.net
+SMTP_HOSTNAME=mail.dyskiof.net
+SMTP_ALLOWED_DOMAINS=dyskiof.net
 
 # Frontend (used by docker-compose)
 NEXT_PUBLIC_APP_URL=http://localhost
@@ -200,9 +260,9 @@ docker compose exec frontend npx tsx prisma/seed.ts
 
 This creates:
 - Default admin user: `admin@contentvault.com` / `admin123`
-- 4 credit packages (Starter, Popular, Pro, Ultimate)
+- 4 credit packages: Starter (20 PLN), Popular (40 PLN), Pro (100 PLN), Ultimate (200 PLN)
 - 21 countries
-- Default platform settings
+- Default platform settings (crypto wallets, expiration times, referral config)
 
 ### 5. Import content from R2
 
@@ -217,21 +277,21 @@ This creates:
 |---|---|
 | `http://localhost` | Main site |
 | `http://localhost/login` | Login page |
-| `http://localhost/register` | Registration |
+| `http://localhost/register` | Registration (with Turnstile if configured) |
 | `http://localhost/admin` | Admin panel |
 
 ---
 
 ## Deploy na VPS
 
-Repozytorium zawiera skrypty deployu. Zobacz **[DEPLOY.md](DEPLOY.md)** — pełny opis struktury i deployu na VPS.
+The repository includes deploy scripts. See **[DEPLOY.md](DEPLOY.md)** for full structure and VPS deployment guide.
 
 ```bash
-# Szybki deploy (rsync + docker compose na VPS)
+# Quick deploy (rsync + docker compose on VPS)
 ./scripts/deploy-vps.sh --build
 ```
 
-VPS: ustaw `VPS_HOST`, `VPS_USER` w env. Szczegóły w `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
+Set `VPS_HOST`, `VPS_USER` in `.env.deploy`. Details in `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
 
 ---
 
@@ -266,15 +326,19 @@ The R2 sync job runs automatically every hour and on API startup.
 | Method | Flow |
 |---|---|
 | BLIK | User enters 6-digit code. Admin sees it in real-time. Admin approves/rejects. User gets instant notification. |
-| Crypto | User selects crypto. Gets wallet address. Sends payment. Submits TxID. Admin verifies and approves. |
+| Crypto (BTC, ETH, LTC, USDC) | User selects crypto. Gets wallet address + blockchain network. Sends payment. Submits TxID. Admin verifies and approves. |
 | PayPal | User creates purchase. Sends payment manually. Admin approves. |
 | Revolut | User creates purchase. Sends payment manually. Admin approves. |
 
 All payment methods support:
-- Configurable expiration times
-- Payment proof upload (images)
+- Configurable expiration times (BLIK in minutes, crypto/PayPal/Revolut in hours)
+- Payment proof upload (JPEG, PNG, WebP, GIF, PDF with magic byte validation)
+- Admin inline proof viewer (images and PDFs)
 - Admin notes
 - Discord webhook notifications
+- Promo code discounts
+
+Prices are stored in PLN. For English locale, prices are converted to USD at 4:1 rate (rounded up).
 
 ---
 
@@ -296,16 +360,21 @@ All payment methods support:
 | `STREAMING_TOKEN_TTL` | No | HLS token TTL in seconds (default: 21600) |
 | `ADMIN_EMAILS` | Yes | Comma-separated admin emails |
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
+| `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key (bot protection) |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | No | Cloudflare Turnstile site key (frontend widget) |
 | `SMTP_HOST` | No | SMTP server hostname (default: `smtp`) |
 | `SMTP_PORT` | No | SMTP port (default: `587`) |
 | `SMTP_USER` | No | SMTP username (empty for local Postfix relay) |
 | `SMTP_PASSWORD` | No | SMTP password (empty for local Postfix relay) |
-| `SMTP_FROM` | No | Sender address (default: `noreply@contentvault.io`) |
+| `SMTP_FROM` | No | Sender address (default: `noreply@dyskiof.net`) |
 | `SMTP_HOSTNAME` | No | Mail server hostname for DNS records |
 | `SMTP_ALLOWED_DOMAINS` | No | Domains allowed to send mail |
 | `NGINX_CONFIG` | No | Path to nginx config (default: `./nginx/nginx.conf`) |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |
+| `DISCORD_CLIENT_ID` | No | Discord OAuth client ID |
+| `DISCORD_CLIENT_SECRET` | No | Discord OAuth client secret |
+| `DISCORD_REDIRECT_URI` | No | Discord OAuth redirect URI |
 
 ---
 
@@ -343,7 +412,7 @@ npm run db:studio      # Open Prisma Studio GUI
 
 ## Tests
 
-Tests run automatically on push and pull requests via GitHub Actions.
+Tests run automatically on push and pull requests via GitHub Actions (tests, DAST, CodeQL).
 
 ```bash
 # Backend (Go)
@@ -386,16 +455,18 @@ docker compose down -v
 
 The Go backend exposes a RESTful API at `/api/`. Key endpoint groups:
 
-- **Auth** `/api/auth/*` - register, login, logout, me
-- **Models** `/api/models/*` - browse models, content lists
-- **Content** `/api/content/*` - thumbnails, HLS playlists/segments
-- **Credits** `/api/credits/*` - purchase flow, status, BLIK
-- **Purchases** `/api/purchases` - buy model access with credits
-- **Favorites** `/api/favorites` - toggle/list/check
-- **Notifications** `/api/notifications` - list/mark read
-- **Admin** `/api/admin/*` - full admin CRUD + analytics
+- **Auth** `/api/auth/*` — register, login, logout, me, verify-email, resend-verification, forgot/reset-password, Discord OAuth
+- **Models** `/api/models/*` — browse models, content lists, public settings
+- **Content** `/api/content/*` — thumbnails, HLS playlists/segments, content details
+- **Credits** `/api/credits/*` — purchase flow, status, BLIK, promo code validation
+- **Purchases** `/api/purchases` — buy model access with credits
+- **Favorites** `/api/favorites` — toggle/list/check, content details for favorites viewer
+- **Referral** `/api/referral/me` — referral stats and link
+- **Notifications** `/api/notifications` — list/mark read, SSE stream
+- **Links** `/api/public/links/:slug` — custom link redirect with tracking
+- **Admin** `/api/admin/*` — full admin CRUD (users, models, packages, promo codes, custom links, settings, analytics)
 
-All authenticated endpoints require the `session_token` cookie (set on login).
+All authenticated endpoints require the `session_token` cookie (set on login). Purchases and streaming require email verification.
 
 ---
 

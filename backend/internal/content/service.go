@@ -93,8 +93,10 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 
 	// Pre-load existing unique_ids for this model to detect true duplicates
 	existingIDs := make(map[string]bool)
-	existRows, _ := s.db.Query(ctx, `SELECT unique_id FROM content_items WHERE model_id = $1`, modelID)
-	if existRows != nil {
+	existRows, err := s.db.Query(ctx, `SELECT unique_id FROM content_items WHERE model_id = $1`, modelID)
+	if err != nil {
+		log.Printf("[Sync] Query existing content_items for model %s: %v", modelID, err)
+	} else if existRows != nil {
 		for existRows.Next() {
 			var uid string
 			if existRows.Scan(&uid) == nil {
@@ -288,7 +290,6 @@ func (s *Service) BackfillDurations(ctx context.Context) {
 			items = append(items, struct{ uniqueID, masterPath string }{uid, mp})
 		}
 	}
-	rows.Close()
 
 	log.Printf("[Backfill] Found %d videos without duration", len(items))
 	for _, item := range items {

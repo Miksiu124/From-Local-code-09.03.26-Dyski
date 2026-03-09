@@ -20,18 +20,34 @@ export function getClientLocale(): string {
   return "en";
 }
 
-export function formatPrice(price: number, locale?: string): string {
+/** Fixed exchange rate: 4 PLN = 1 USD (round up when converting PLN to USD) */
+export const PLN_TO_USD = 4;
+
+/** Convert PLN to USD, rounding up */
+export function convertPlnToUsd(pln: number): number {
+  return Math.ceil(pln / PLN_TO_USD);
+}
+
+/** Convert USD to PLN */
+export function convertUsdToPln(usd: number): number {
+  return usd * PLN_TO_USD;
+}
+
+/** Price is stored in PLN. For pl locale: show PLN. For en: show USD (ceil(pln/4) for totals, exact rate for per-credit) */
+export function formatPrice(pricePln: number, locale?: string, options?: { exact?: boolean }): string {
   const loc = locale || getClientLocale();
   if (loc === "pl") {
     return new Intl.NumberFormat("pl-PL", {
       style: "currency",
       currency: "PLN",
-    }).format(price);
+    }).format(pricePln);
   }
+  const usd = options?.exact ? pricePln / PLN_TO_USD : convertPlnToUsd(pricePln);
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-  }).format(price);
+    ...(options?.exact && { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  }).format(usd);
 }
 
 export function getCurrencySymbol(locale?: string): string {

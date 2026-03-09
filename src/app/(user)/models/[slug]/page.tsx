@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ModelDetail } from "@/components/user/model-detail";
 import { FolderBackdrop } from "@/components/user/folder-backdrop";
@@ -45,6 +46,22 @@ type AccessResponse = {
 type MeResponse = {
   creditBalance: number;
 };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const data = await fetchApi<ModelResponse>(`/models/${slug}`).catch(() => null);
+  if (!data?.model) return {};
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
+  return {
+    title: data.model.name,
+    description: data.model.description || `Exclusive content from ${data.model.name} on Dyskiof`,
+    openGraph: {
+      title: `${data.model.name} | Dyskiof`,
+      description: data.model.description || `Exclusive content from ${data.model.name}`,
+      url: `${baseUrl}/models/${slug}`,
+    },
+  };
+}
 
 export default async function ModelDetailPage({ params, searchParams }: Props) {
   const { slug } = await params;

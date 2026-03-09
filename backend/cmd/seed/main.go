@@ -84,7 +84,7 @@ func main() {
 		{"paypal_expiration_hours", 1, "PayPal payment expiration time in hours"},
 		{"revolut_expiration_hours", 1, "Revolut payment expiration time in hours"},
 		{"max_pending_credit_purchases", 3, "Max pending credit purchases per user"},
-		{"crypto_wallets", map[string]string{"BTC": "", "ETH": "", "USDT": "", "USDC": ""}, "Crypto wallet addresses"},
+		{"crypto_wallets", map[string]string{"BTC": "", "ETH": "", "LTC": "", "USDC": ""}, "Crypto wallet addresses"},
 	}
 
 	for _, s := range settings {
@@ -118,16 +118,17 @@ func main() {
 	}
 
 	// ── Credit packages ──────────────────────────────────────────────────
+	// Prices in PLN (admin enters PLN; 4 PLN = 1 USD)
 	packages := []struct {
 		Name    string
 		Credits int
 		Price   float64
 		Tier    int
 	}{
-		{"Starter", 50, 5.0, 1},
-		{"Popular", 120, 10.0, 2},
-		{"Pro", 300, 25.0, 3},
-		{"Ultimate", 700, 50.0, 4},
+		{"Starter", 50, 20.0, 1},
+		{"Popular", 120, 40.0, 2},
+		{"Pro", 300, 100.0, 3},
+		{"Ultimate", 700, 200.0, 4},
 	}
 
 	for _, p := range packages {

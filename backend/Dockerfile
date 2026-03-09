@@ -15,7 +15,8 @@ RUN go mod download
 COPY . .
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -ldflags="-w -s" -o /app/server ./cmd/server
+    go build -ldflags="-w -s" -o /app/server ./cmd/server && \
+    go build -ldflags="-w -s" -o /app/seed ./cmd/seed
 
 # ── Runtime Stage ─────────────────────────────────────────────
 FROM alpine:3.21
@@ -26,6 +27,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 
 COPY --from=builder /app/server .
+COPY --from=builder /app/seed .
 COPY --from=builder /app/migrations ./migrations
 
 RUN chown -R appuser:appgroup /app

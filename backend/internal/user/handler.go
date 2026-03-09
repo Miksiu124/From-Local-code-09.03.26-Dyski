@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"content-platform-backend/internal/common"
+	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,11 +23,12 @@ var (
 )
 
 type Handler struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	mailer *mailer.Mailer
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, m *mailer.Mailer) *Handler {
+	return &Handler{db: db, mailer: m}
 }
 
 func (h *Handler) GetBalance(c echo.Context) error {
@@ -124,9 +126,10 @@ func (h *Handler) UpdateEmail(c echo.Context) error {
 		return common.BadRequest(c, "Invalid email address")
 	}
 
-	// Verify current password
+	// Verify current password and get old email
 	var currentHash *string
-	err := h.db.QueryRow(ctx, `SELECT password FROM users WHERE id = $1`, userID).Scan(&currentHash)
+	var oldEmail string
+	err := h.db.QueryRow(ctx, `SELECT password, email FROM users WHERE id = $1`, userID).Scan(&currentHash, &oldEmail)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -153,6 +156,20 @@ func (h *Handler) UpdateEmail(c echo.Context) error {
 	if err != nil {
 		log.Printf("[UpdateEmail] DB error: %v", err)
 		return common.InternalError(c)
+	}
+
+	// Security: notify both old and new email addresses
+	if h.mailer != nil && h.mailer.IsConfigured() {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[UpdateEmail] Panic sending notification: %v", r)
+				}
+			}()
+			if err := h.mailer.SendEmailChanged(req.Email, oldEmail); err != nil {
+				log.Printf("[UpdateEmail] Failed to send notification after retries: %v", err)
+			}
+		}()
 	}
 
 	return common.Success(c, map[string]string{"message": "Email updated"})
@@ -189,7 +206,8 @@ func (h *Handler) UpdatePassword(c echo.Context) error {
 	}
 
 	var currentHash *string
-	err := h.db.QueryRow(ctx, `SELECT password FROM users WHERE id = $1`, userID).Scan(&currentHash)
+	var userEmail string
+	err := h.db.QueryRow(ctx, `SELECT password, email FROM users WHERE id = $1`, userID).Scan(&currentHash, &userEmail)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -210,6 +228,20 @@ func (h *Handler) UpdatePassword(c echo.Context) error {
 	`, string(newHash), userID)
 	if err != nil {
 		return common.InternalError(c)
+	}
+
+	// Security: notify user that password was changed
+	if h.mailer != nil && h.mailer.IsConfigured() && userEmail != "" {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[UpdatePassword] Panic sending notification: %v", r)
+				}
+			}()
+			if err := h.mailer.SendPasswordChanged(userEmail); err != nil {
+				log.Printf("[UpdatePassword] Failed to send notification after retries: %v", err)
+			}
+		}()
 	}
 
 	return common.Success(c, map[string]string{"message": "Password updated"})

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Play,
   Pause,
@@ -52,8 +53,23 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   const [hlsError, setHlsError] = useState<string | null>(null);
   const retryCountRef = useRef(0);
   const [initKey, setInitKey] = useState(0);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const qualityButtonRef = useRef<HTMLButtonElement>(null);
+  const qualityMenuRef = useRef<HTMLDivElement | null>(null);
+  const qualityMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [qualityMenuRect, setQualityMenuRect] = useState<{ top: number; right: number } | null>(null);
 
   const MAX_AUTO_RETRIES = 2;
+
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    setIsIOS(/iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+    setIsMobile("ontouchstart" in window || window.innerWidth < 768);
+  }, []);
+
+  // Fullscreen restore removed: ContentViewer now uses in-place nav when fullscreen,
+  // so VideoPlayer stays mounted and fullscreen persists on Android.
 
   useEffect(() => {
     fetch("/api/user/preferences")
@@ -265,6 +281,20 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     };
   }, []);
 
+  // iOS: video.webkitEnterFullscreen() doesn't fire document fullscreenchange; use video events
+  useEffect(() => {
+    const v = videoRef.current as HTMLVideoElement & { webkitbeginfullscreen?: () => void; webkitendfullscreen?: () => void };
+    if (!v) return;
+    const onBegin = () => setIsFullscreen(true);
+    const onEnd = () => setIsFullscreen(false);
+    v.addEventListener("webkitbeginfullscreen", onBegin);
+    v.addEventListener("webkitendfullscreen", onEnd);
+    return () => {
+      v.removeEventListener("webkitbeginfullscreen", onBegin);
+      v.removeEventListener("webkitendfullscreen", onEnd);
+    };
+  }, []);
+
   // Auto-hide controls
   const resetHideTimer = useCallback(() => {
     setShowControls(true);
@@ -301,14 +331,34 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     if (val > 0 && v.muted) v.muted = false;
   }, []);
 
-  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const getClientX = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>): number => {
+    if ("touches" in e) return e.changedTouches?.[0]?.clientX ?? 0;
+    return e.clientX;
+  };
+
+  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const v = videoRef.current;
     const bar = progressRef.current;
     if (!v || !bar || !duration) return;
     const rect = bar.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const clientX = getClientX(e);
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     v.currentTime = pct * duration;
   }, [duration]);
+
+  const handleSeekBack = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, v.currentTime - 10);
+    resetHideTimer();
+  }, [resetHideTimer]);
+
+  const handleSeekForward = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.min(duration, v.currentTime + 10);
+    resetHideTimer();
+  }, [duration, resetHideTimer]);
 
   const handleProgressHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const bar = progressRef.current;
@@ -329,29 +379,146 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
     if (isFs) {
       if (doc.exitFullscreen) {
-        doc.exitFullscreen();
+        doc.exitFullscreen().catch(() => { });
       } else if (doc.webkitExitFullscreen) {
         doc.webkitExitFullscreen();
       }
-    } else {
-      if (c.requestFullscreen) {
-        c.requestFullscreen();
-      } else if (c.webkitRequestFullscreen) {
-        c.webkitRequestFullscreen();
-      } else if (v?.webkitEnterFullscreen) {
-        // iOS Safari fallback – fullscreen on the video element itself
-        v.webkitEnterFullscreen();
+      return;
+    }
+
+    // iOS: webkitEnterFullscreen wymaga aby wideo BYŁO ODTWARZANE — inaczej nie działa.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isIOS && v) {
+      const enterFs = (v as any).webkitEnterFullscreen || (v as any).webkitEnterFullScreen;
+      if (enterFs) {
+        const doFullscreen = () => { try { enterFs.call(v); } catch { } };
+        if (v.paused) {
+          v.play().then(doFullscreen).catch(doFullscreen);
+        } else {
+          doFullscreen();
+        }
+        return;
       }
     }
+
+    // Android: Fullscreen API jest zawodny na video — najpierw container (bardziej niezawodny).
+    // Niektóre przeglądarki wymagają play() przed fullscreen (user gesture).
+    const isMobile = "ontouchstart" in window || window.innerWidth < 768;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    const tryContainerFullscreen = () => {
+      const req = c.requestFullscreen || (c as any).webkitRequestFullscreen || (c as any).mozRequestFullScreen;
+      if (!req) return false;
+      try {
+        if (v?.paused) {
+          v.play().then(() => req.call(c)).catch(() => req.call(c));
+        } else {
+          req.call(c);
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const tryVideoFullscreen = () => {
+      if (!v) return false;
+      const req = v.requestFullscreen || v.webkitRequestFullscreen;
+      if (req) {
+        if (v.paused) {
+          v.play().then(() => req.call(v)).catch(() => req.call(v));
+        } else {
+          req.call(v);
+        }
+        return true;
+      }
+      const enterFs = (v as any).webkitEnterFullscreen || (v as any).webkitEnterFullScreen;
+      if (enterFs) {
+        if (v.paused) {
+          v.play().then(() => enterFs.call(v)).catch(() => enterFs.call(v));
+        } else {
+          enterFs.call(v);
+        }
+        return true;
+      }
+      return false;
+    };
+
+    // Na Androidzie: container fullscreen działa lepiej niż video.requestFullscreen
+    if (isMobile && isAndroid && tryContainerFullscreen()) return;
+    if (isMobile && tryVideoFullscreen()) return;
+
+    // Desktop lub fallback: container fullscreen
+    if (!tryContainerFullscreen() && v) {
+      tryVideoFullscreen();
+    }
+  }, []);
+
+  const openQualityMenu = useCallback(() => {
+    if (qualityMenuCloseTimeoutRef.current) {
+      clearTimeout(qualityMenuCloseTimeoutRef.current);
+      qualityMenuCloseTimeoutRef.current = null;
+    }
+    setShowQualityMenu(true);
+  }, []);
+
+  const scheduleQualityMenuClose = useCallback(() => {
+    if (qualityMenuCloseTimeoutRef.current) clearTimeout(qualityMenuCloseTimeoutRef.current);
+    qualityMenuCloseTimeoutRef.current = setTimeout(() => setShowQualityMenu(false), 200);
   }, []);
 
   const handleQualityChange = useCallback((levelIndex: number) => {
     if (hlsRef.current) {
-      hlsRef.current.currentLevel = levelIndex;
+      hlsRef.current.nextLevel = levelIndex;
       setCurrentQuality(levelIndex);
     }
     setShowQualityMenu(false);
+    setQualityMenuRect(null);
   }, []);
+
+  // Update quality menu position when opening (for portal — avoids overflow clipping)
+  useEffect(() => {
+    if (!showQualityMenu || !qualityButtonRef.current) {
+      setQualityMenuRect(null);
+      return;
+    }
+    const updateRect = () => {
+      const btn = qualityButtonRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      setQualityMenuRect({ top: r.top, right: window.innerWidth - r.right });
+    };
+    updateRect();
+    let scrollRaf: number | null = null;
+    const throttledScroll = () => {
+      if (scrollRaf != null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        updateRect();
+      });
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (qualityButtonRef.current?.contains(target)) return;
+      if (qualityMenuRef.current?.contains(target)) return;
+      setShowQualityMenu(false);
+    };
+    window.addEventListener("scroll", throttledScroll, { passive: true, capture: true });
+    window.addEventListener("resize", updateRect);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      window.removeEventListener("scroll", throttledScroll, true);
+      if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
+      window.removeEventListener("resize", updateRect);
+      document.removeEventListener("mousedown", handleClickOutside);
+      if (qualityMenuCloseTimeoutRef.current) {
+        clearTimeout(qualityMenuCloseTimeoutRef.current);
+        qualityMenuCloseTimeoutRef.current = null;
+      }
+      setQualityMenuRect(null);
+      qualityMenuRef.current = null;
+    };
+  }, [showQualityMenu]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -417,25 +584,53 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   };
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
   const qualityLabel = currentQuality === -1
     ? "Auto"
     : qualityLevels.find((q) => q.index === currentQuality)?.label || "Auto";
 
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
+  // Apple-style: tap left = -10s, tap right = +10s, tap center = play/pause
+  // Mobile: first tap = show overlay only; second tap (center) = play/pause
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("[data-controls]")) return;
+    if (isIOS && (e.target === videoRef.current || videoRef.current?.contains(e.target as Node))) return; // iOS: native controls
+    if (hlsError) return; // Don't toggle play while error is shown
+    resetHideTimer();
+
+    // Mobile: first tap only shows overlay, no play/pause
+    if (isMobile && !showControls) return;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const x = e.clientX - rect.left;
+      const pct = x / rect.width;
+      // Desktop: seek only via arrow buttons (1:1 hit area); mobile: 25%/75% zones
+      if (isMobile) {
+        if (pct < 0.25) {
+          handleSeekBack();
+          return;
+        }
+        if (pct > 0.75) {
+          handleSeekForward();
+          return;
+        }
+      }
+    }
+
+    // Center zone — play/pause
+    togglePlay();
+  }, [togglePlay, resetHideTimer, hlsError, isIOS, isMobile, showControls, handleSeekBack, handleSeekForward]);
+
   return (
     <div
       ref={containerRef}
+      data-video-player
       className="relative bg-black rounded-xl sm:rounded-2xl overflow-hidden aspect-video group select-none"
+      style={{ touchAction: "manipulation" } as React.CSSProperties}
       onMouseMove={resetHideTimer}
       onMouseLeave={() => { if (playing) setShowControls(false); }}
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest("[data-controls]")) return;
-        if (hlsError) return; // Don't toggle play while error is shown
-        togglePlay();
-        resetHideTimer();
-      }}
+      onClick={handleContainerClick}
       tabIndex={0}
       role="application"
       aria-label="Video player"
@@ -444,6 +639,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         ref={videoRef}
         className="w-full h-full"
         playsInline
+        controls={isIOS}
         controlsList="nodownload"
         onContextMenu={(e) => e.preventDefault()}
       />
@@ -470,8 +666,8 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         </div>
       )}
 
-      {/* Big play button */}
-      {!playing && !loading && !hlsError && (
+      {/* Big play button (ukryty na iOS — natywne controls) */}
+      {!isIOS && !playing && !loading && !hlsError && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="bg-black/50 rounded-full p-5">
             <Play className="h-14 w-14 text-white fill-white" />
@@ -479,26 +675,49 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         </div>
       )}
 
-      {/* ──── Controls overlay ──── */}
+      {/* Seek buttons — mobile: 48px touch target; desktop: 1:1 z ikoną (w-9 h-9) */}
+      {!isIOS && showControls && !hlsError && (
+        <>
+          <button
+            type="button"
+            className="absolute left-3 sm:left-[12%] top-1/2 -translate-y-1/2 z-[6] opacity-60 hover:opacity-90 transition-opacity cursor-pointer bg-black/40 rounded-full p-3 min-w-[48px] min-h-[48px] sm:p-0 sm:w-9 sm:h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+            style={{ touchAction: "manipulation" } as React.CSSProperties}
+            onClick={(e) => { e.stopPropagation(); handleSeekBack(); }}
+            aria-label="Cofnij 10 sekund"
+          >
+            <img src="/icons/seek-back-10.png" alt="" className="h-8 w-8 sm:h-9 sm:w-9 object-contain invert" />
+          </button>
+          <button
+            type="button"
+            className="absolute right-3 sm:right-[12%] top-1/2 -translate-y-1/2 z-[6] opacity-60 hover:opacity-90 transition-opacity cursor-pointer bg-black/40 rounded-full p-3 min-w-[48px] min-h-[48px] sm:p-0 sm:w-9 sm:h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+            style={{ touchAction: "manipulation" } as React.CSSProperties}
+            onClick={(e) => { e.stopPropagation(); handleSeekForward(); }}
+            aria-label="Przewiń 10 sekund"
+          >
+            <img src="/icons/seek-forward-10.png" alt="" className="h-8 w-8 sm:h-9 sm:w-9 object-contain invert" />
+          </button>
+        </>
+      )}
+
+      {/* ──── Controls overlay (ukryte na iOS — używamy natywnych controls dla fullscreen) ──── */}
+      {!isIOS && (
       <div
         data-controls
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 sm:px-5 pb-3 sm:pb-4 pt-16 sm:pt-20 transition-opacity duration-300 ${showControls && !hlsError ? "opacity-100" : "opacity-0 pointer-events-none"
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 sm:px-5 pb-4 sm:pb-6 pt-16 sm:pt-20 transition-opacity duration-300 ${showControls && !hlsError ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
+        style={{ touchAction: "manipulation" } as React.CSSProperties}
       >
-        {/* Progress bar */}
+        {/* Progress bar — single bar (track + progress), taller on mobile for easier touch */}
         <div
           ref={progressRef}
-          className="relative w-full h-[6px] bg-white/20 rounded-full cursor-pointer group/progress mb-4 hover:h-[10px] transition-all"
+          className="relative w-full h-3 sm:h-[6px] bg-white/20 rounded-full cursor-pointer group/progress mb-4 sm:hover:h-[10px] transition-all touch-none"
           onClick={(e) => { e.stopPropagation(); handleSeek(e); }}
+          onTouchEnd={(e) => { e.stopPropagation(); handleSeek(e); }}
           onMouseMove={(e) => { e.stopPropagation(); handleProgressHover(e); }}
           onMouseLeave={() => setHoverTime(null)}
+          style={{ touchAction: "none" } as React.CSSProperties}
         >
-          {/* Buffered */}
-          <div
-            className="absolute top-0 left-0 h-full bg-white/25 rounded-full pointer-events-none"
-            style={{ width: `${bufferedPct}%` }}
-          />
-          {/* Progress fill */}
+          {/* Progress fill only — buffered removed to avoid double-bar appearance */}
           <div
             className="absolute top-0 left-0 h-full bg-red-500 rounded-full pointer-events-none"
             style={{ width: `${progressPct}%` }}
@@ -518,12 +737,16 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           )}
         </div>
 
-        {/* Controls row */}
-        <div className="flex items-center gap-3">
-          {/* Play / Pause */}
+        {/* Controls row — scrollable on mobile when many buttons overflow (scrollbar hidden) */}
+        <div
+          className="flex items-center gap-2 sm:gap-3 flex-nowrap overflow-x-auto overflow-y-visible min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        >
+          {/* Play / Pause — min 48px touch target na mobile (Android) */}
           <button
             onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className="text-white hover:text-white/80 transition-colors p-1.5"
+            className="shrink-0 text-white hover:text-white/80 transition-colors p-1.5 min-w-[48px] min-h-[48px] flex items-center justify-center -m-1"
+            style={{ touchAction: "manipulation" } as React.CSSProperties}
             aria-label={playing ? "Pause" : "Play"}
           >
             {playing ? (
@@ -534,7 +757,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           </button>
 
           {/* Volume (always visible slider) */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={(e) => { e.stopPropagation(); toggleMute(); }}
               className="text-white hover:text-white/80 transition-colors p-1.5"
@@ -550,40 +773,47 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
               value={muted ? 0 : volume}
               onChange={(e) => { e.stopPropagation(); handleVolumeChange(e); }}
               onClick={(e) => e.stopPropagation()}
-              className="w-20 accent-white h-1 cursor-pointer"
+              className="w-12 sm:w-20 accent-white h-1 cursor-pointer shrink-0"
               aria-label="Volume"
             />
           </div>
 
           {/* Time display */}
-          <span className="text-white text-sm tabular-nums ml-1 select-none">
+          <span className="shrink-0 text-white text-sm tabular-nums ml-1 select-none">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
 
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Quality selector */}
+          {/* Quality selector — menu rendered via portal to avoid overflow clipping */}
           {qualityLevels.length > 0 && (
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
-                onClick={(e) => { e.stopPropagation(); setShowQualityMenu(!showQualityMenu); }}
-                className="flex items-center gap-1.5 text-white hover:text-white/80 transition-colors p-1.5 text-sm"
+                ref={qualityButtonRef}
+                onClick={(e) => { e.stopPropagation(); setShowQualityMenu((v) => !v); }}
+                onMouseEnter={openQualityMenu}
+                onMouseLeave={scheduleQualityMenuClose}
+                className="flex items-center gap-1.5 text-white hover:text-white/80 transition-colors p-1.5 text-sm min-w-[44px] min-h-[44px] justify-center"
                 aria-label="Quality settings"
+                aria-expanded={showQualityMenu}
               >
                 <Settings className="h-5 w-5" />
                 <span className="hidden sm:inline">{qualityLabel}</span>
               </button>
 
-              {showQualityMenu && (
+              {showQualityMenu && qualityMenuRect && typeof document !== "undefined" && createPortal(
                 <div
-                  className="absolute bottom-full right-0 mb-3 bg-black/95 rounded-lg border border-white/10 py-1.5 min-w-[140px] z-10"
+                  ref={(el) => { qualityMenuRef.current = el; }}
+                  className="fixed bg-black/95 rounded-lg border border-white/10 py-1.5 min-w-[140px] z-[9999] shadow-xl"
+                  style={{ top: qualityMenuRect.top - 8, right: qualityMenuRect.right, transform: "translateY(-100%)" }}
                   onClick={(e) => e.stopPropagation()}
+                  onMouseEnter={openQualityMenu}
+                  onMouseLeave={scheduleQualityMenuClose}
                 >
                   <button
                     onClick={() => handleQualityChange(-1)}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === -1 ? "text-red-500 font-medium" : "text-white"
-                      }`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === -1 ? "text-red-500 font-medium" : "text-white"}`}
                   >
                     Auto
                   </button>
@@ -593,21 +823,22 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
                       <button
                         key={level.index}
                         onClick={() => handleQualityChange(level.index)}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === level.index ? "text-red-500 font-medium" : "text-white"
-                          }`}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === level.index ? "text-red-500 font-medium" : "text-white"}`}
                       >
                         {level.label}
                       </button>
                     ))}
-                </div>
+                </div>,
+                isFullscreen && containerRef.current ? containerRef.current : document.body
               )}
             </div>
           )}
 
-          {/* Fullscreen */}
+          {/* Fullscreen — min 48px touch target for reliable tap on real mobile (DevTools uses mouse, real device uses finger) */}
           <button
             onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-            className="text-white hover:text-white/80 transition-colors p-1.5"
+            className="min-w-[48px] min-h-[48px] flex items-center justify-center -m-2 text-white hover:text-white/80 transition-colors p-2"
+            style={{ touchAction: "manipulation" } as React.CSSProperties}
             aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             {isFullscreen ? (
@@ -618,6 +849,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

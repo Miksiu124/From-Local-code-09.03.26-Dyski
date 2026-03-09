@@ -10,6 +10,8 @@ import {
   BarChart3,
   Settings,
   Coins,
+  Tag,
+  Link as LinkIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +22,8 @@ export function AdminSidebar() {
   const links = [
     { href: "/admin/payments", label: t("creditPurchases"), icon: CreditCard },
     { href: "/admin/packages", label: t("creditPackages"), icon: Coins },
+    { href: "/admin/promo-codes", label: t("promoCodes"), icon: Tag },
+    { href: "/admin/custom-links", label: t("customLinks"), icon: LinkIcon },
     { href: "/admin/models", label: t("models"), icon: FolderOpen },
     { href: "/admin/users", label: t("users"), icon: Users },
     { href: "/admin/analytics", label: t("analytics"), icon: BarChart3 },

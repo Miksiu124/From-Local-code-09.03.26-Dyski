@@ -10,16 +10,16 @@ import "./globals.css";
 
 const outfit = Outfit({ subsets: ["latin"] });
 
-const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://contentvault.io").replace(/\/+$/, "");
+const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
 
 export const metadata: Metadata = {
   title: {
-    default: "ContentVault – Premium Content Platform",
-    template: "%s | ContentVault",
+    default: "Dyskiof – Premium Content Platform",
+    template: "%s | Dyskiof",
   },
   description:
     "Browse exclusive premium content from top creators. Instant access, multiple payment methods, and a curated library updated daily.",
-  keywords: ["premium content", "creators", "exclusive", "videos", "photos", "ContentVault"],
+  keywords: ["Dyskiof", "dyskiof.net", "premium content", "creators", "exclusive", "videos", "photos"],
   metadataBase: new URL(baseUrl),
   alternates: {
     canonical: baseUrl,
@@ -30,8 +30,8 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    siteName: "ContentVault",
-    title: "ContentVault – Premium Content Platform",
+    siteName: "Dyskiof",
+    title: "Dyskiof – Premium Content Platform",
     description:
       "Browse exclusive premium content from top creators. Instant access, multiple payment methods.",
     locale: "en_US",
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "ContentVault – Premium Content Platform",
+    title: "Dyskiof – Premium Content Platform",
     description:
       "Browse exclusive premium content from top creators.",
   },
@@ -79,7 +79,7 @@ export default async function RootLayout({
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "WebSite",
-              name: "ContentVault",
+              name: "Dyskiof",
               url: baseUrl,
               description: "Browse exclusive premium content from top creators.",
               potentialAction: {
@@ -99,7 +99,7 @@ export default async function RootLayout({
         >
           <div className="flex min-h-screen flex-col">
             <Header />
-            <main className="flex-1">
+            <main className="flex-1 pb-24 md:pb-0">
               <ErrorBoundary>{children}</ErrorBoundary>
             </main>
             <ConditionalFooter />

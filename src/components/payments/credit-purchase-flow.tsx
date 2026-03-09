@@ -21,7 +21,7 @@ interface CreditPackage {
 }
 
 type PaymentMethod = "BLIK" | "CRYPTO" | "PAYPAL" | "REVOLUT";
-type CryptoCurrency = "BTC" | "ETH" | "USDT" | "USDC";
+type CryptoCurrency = "BTC" | "ETH" | "LTC" | "USDC";
 
 type Step = "select-package" | "select-method" | "blik-code" | "payment-details" | "waiting";
 
@@ -57,11 +57,34 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
   const [blikExpired, setBlikExpired] = useState(false);
   const [blikSubmitCount, setBlikSubmitCount] = useState(0);
   const [blikCooldown, setBlikCooldown] = useState(0);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoApplied, setPromoApplied] = useState<{ promoCodeId: string; finalCredits: number; finalPrice: number } | null>(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
   const proofInputRef = useRef<HTMLInputElement>(null);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const BLIK_MAX_RETRIES = 5;
   const BLIK_COOLDOWN_SECONDS = 20;
+
+  useEffect(() => {
+    setPromoCode("");
+    setPromoApplied(null);
+    setPromoError("");
+  }, [selectedPackage?.id]);
+
+  // Sync proofUploaded from server when entering waiting step (e.g. after refresh)
+  useEffect(() => {
+    if (step !== "waiting" || !paymentResult) return;
+    let cancelled = false;
+    fetch(`/api/credits/purchase/${paymentResult.id}/status`, { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.paymentProofUrl) setProofUploaded(true);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [step, paymentResult?.id]);
 
   // SSE for real-time payment status, with polling fallback
   useEffect(() => {
@@ -84,6 +107,9 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
             if (data.status !== "PENDING") {
               setPaymentStatus(data.status);
               if (pollInterval) clearInterval(pollInterval);
+            }
+            if (data.paymentProofUrl) {
+              setProofUploaded(true);
             }
           }
         } catch {
@@ -139,9 +165,44 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
   const cryptos: { id: CryptoCurrency; label: string }[] = [
     { id: "BTC", label: t("cryptoCurrencies.btc") },
     { id: "ETH", label: t("cryptoCurrencies.eth") },
-    { id: "USDT", label: t("cryptoCurrencies.usdt") },
+    { id: "LTC", label: t("cryptoCurrencies.ltc") },
     { id: "USDC", label: t("cryptoCurrencies.usdc") },
   ];
+
+  const getBlockchainLabel = (currency: string): string => {
+    switch (currency) {
+      case "BTC": return t("blockchainBtc");
+      case "LTC": return t("blockchainLtc");
+      case "ETH": return t("blockchainEth");
+      case "USDC": return t("blockchainUsdc");
+      default: return currency;
+    }
+  };
+
+  const handleApplyPromo = async () => {
+    if (!selectedPackage || !promoCode.trim()) return;
+    setPromoLoading(true);
+    setPromoError("");
+    setPromoApplied(null);
+    try {
+      const res = await fetch("/api/credits/validate-promo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ code: promoCode.trim(), creditPackageId: selectedPackage.id }),
+      });
+      const data = await res.json();
+      if (data.valid && data.promoCodeId) {
+        setPromoApplied({ promoCodeId: data.promoCodeId, finalCredits: data.finalCredits, finalPrice: data.finalPrice });
+      } else {
+        setPromoError(data.message || "Invalid promo code");
+      }
+    } catch {
+      setPromoError("Failed to validate promo");
+    } finally {
+      setPromoLoading(false);
+    }
+  };
 
   const handleMethodNext = () => {
     if (!selectedMethod) return;
@@ -168,6 +229,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
           paymentMethod: selectedMethod,
           cryptoCurrency: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
           blikCode: selectedMethod === "BLIK" ? (blikCodeOverride || blikCode) : undefined,
+          promoCodeId: promoApplied?.promoCodeId || undefined,
         }),
       });
 
@@ -335,7 +397,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                       <div>
                         <p className="font-semibold text-base sm:text-lg">{pkg.name}</p>
                         <p className="text-xs sm:text-sm text-muted-foreground">
-                          {pkg.credits} credits &middot; {formatPrice(pkg.price / pkg.credits)} {t("perCredit")}
+                          {pkg.credits} credits &middot; {formatPrice(pkg.price / pkg.credits, undefined, { exact: true })} {t("perCredit")}
                         </p>
                       </div>
                     </div>
@@ -352,6 +414,36 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                 </Card>
               ))}
             </div>
+            {selectedPackage && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">{t("promoCode")}</p>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder={t("promoCodePlaceholder")}
+                    value={promoCode}
+                    onChange={(e) => {
+                      setPromoCode(e.target.value.toUpperCase());
+                      setPromoApplied(null);
+                      setPromoError("");
+                    }}
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={handleApplyPromo}
+                    disabled={!promoCode.trim() || promoLoading}
+                  >
+                    {promoLoading ? "..." : t("applyPromo")}
+                  </Button>
+                </div>
+                {promoError && <p className="text-sm text-destructive">{promoError}</p>}
+                {promoApplied && (
+                  <p className="text-sm text-green-500">
+                    {t("promoApplied", { credits: promoApplied.finalCredits, price: formatPrice(promoApplied.finalPrice) })}
+                  </p>
+                )}
+              </div>
+            )}
             <Button
               className="w-full mt-6 h-11"
               disabled={!selectedPackage}
@@ -645,6 +737,9 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                         <p className="text-sm text-muted-foreground">{t("walletAddress")}</p>
                         <p className="text-sm font-mono mt-1 break-all">{paymentResult.walletAddress}</p>
                       </div>
+                      <p className="text-sm font-medium text-center">
+                        {t("useBlockchain", { blockchain: getBlockchainLabel(paymentResult.cryptoCurrency || "") })}
+                      </p>
                       <p className="text-sm text-center text-muted-foreground">
                         {t("sendExactAmount", { amount: `${formatPrice(paymentResult.amount)} (${paymentResult.cryptoCurrency})` })}
                       </p>
@@ -749,6 +844,9 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                     )}
                     <p className="text-xs text-muted-foreground">
                       JPEG, PNG, WebP, GIF, PDF &middot; Max 10 MB
+                    </p>
+                    <p className="text-xs text-muted-foreground italic">
+                      {t("proofSpeedsUpPurchase")}
                     </p>
                   </div>
 

@@ -136,6 +136,6 @@ Kompletne zestawienie technologii wykorzystanych w projekcie ContentVault.
 ## Metody płatności
 
 - **BLIK** — real-time WebSocket
-- **Crypto** — BTC, ETH, USDT, USDC
+- **Crypto** — BTC, ETH, LTC, USDC
 - **PayPal**
 - **Revolut**
