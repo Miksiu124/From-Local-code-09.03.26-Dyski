@@ -13,9 +13,10 @@ echo "=========================================="
 echo "[1/6] Tworzę użytkownika deploy..."
 if ! id deploy &>/dev/null; then
   adduser --disabled-password --gecos "" deploy
-  echo "deploy:CHANGE_ME_ON_FIRST_LOGIN" | chpasswd
+  DEPLOY_PASS=$(openssl rand -base64 24)
+  echo "deploy:${DEPLOY_PASS}" | chpasswd
   usermod -aG sudo deploy
-  echo "   Użytkownik deploy utworzony. Hasło: CHANGE_ME_ON_FIRST_LOGIN (zmień po pierwszym logowaniu)"
+  echo "   Użytkownik deploy utworzony. Hasło: ${DEPLOY_PASS} (zmień po pierwszym logowaniu!)"
 else
   echo "   Użytkownik deploy już istnieje"
 fi

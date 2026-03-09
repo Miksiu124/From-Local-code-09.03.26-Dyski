@@ -64,3 +64,13 @@ query.sql
 # logs
 dump.log
 temp-docker-stats.log
+*.log
+
+# secrets / credentials (safety net)
+*.key
+*.crt
+credentials.json
+secrets.json
+
+# debug sessions
+debug-*.log
