@@ -17,6 +17,7 @@ import (
 	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/mailer"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
@@ -25,6 +26,8 @@ import (
 // allowedSettingsKeys — whitelist for UpdateSettings (security: prevent arbitrary key injection)
 var allowedSettingsKeys = map[string]bool{
 	"blik_enabled":                 true,
+	"blik_expiration_minutes":      true,
+	"default_country_id":          true,
 	"max_pending_credit_purchases": true,
 	"crypto_wallets":               true,
 	"paypal_address":               true,
@@ -40,11 +43,17 @@ var allowedSettingsKeys = map[string]bool{
 	"revolut_expiration_hours":     true,
 	"liczba_credit_card_14d":       true,
 	"liczba_credit_card_30d":       true,
+	"referral_credits_referrer":    true,
+	"referral_bonus_percent_referee": true,
+	"referral_max_per_user":       true,
+	"referral_min_purchase_amount": true,
+	"referral_cooldown_hours":     true,
 }
 
 type Handler struct {
 	db             *pgxpool.Pool
 	r2             *content.R2Client
+	r2Proof        *content.R2Client
 	cfg            *config.Config
 	redis          *redis.Client
 	contentService *content.Service
@@ -52,8 +61,8 @@ type Handler struct {
 	mailer         *mailer.Mailer
 }
 
-func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, cfg *config.Config, redisClient *redis.Client, contentService *content.Service, m *mailer.Mailer) *Handler {
-	return &Handler{db: db, r2: r2, cfg: cfg, redis: redisClient, contentService: contentService, discord: discord.NewNotifier(db, cfg.FrontendURL), mailer: m}
+func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, r2Proof *content.R2Client, cfg *config.Config, redisClient *redis.Client, contentService *content.Service, m *mailer.Mailer) *Handler {
+	return &Handler{db: db, r2: r2, r2Proof: r2Proof, cfg: cfg, redis: redisClient, contentService: contentService, discord: discord.NewNotifier(db, cfg.FrontendURL), mailer: m}
 }
 
 // ═══ Credit Purchases ════════════════════════════════════════════════════════
@@ -179,12 +188,13 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	var userID, userEmail, status string
 	var credits int
 	var amount float64
+	var promoCodeID *string
 	err = tx.QueryRow(ctx, `
-		SELECT cp.user_id, cp.credits, cp.amount, u.email, cp.status
+		SELECT cp.user_id, cp.credits, cp.amount, u.email, cp.status, cp.promo_code_id
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
 		WHERE cp.id = $1 FOR UPDATE
-	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status)
+	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status, &promoCodeID)
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
@@ -197,6 +207,13 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	`, purchaseID)
 	if err != nil {
 		return common.InternalError(c)
+	}
+
+	if promoCodeID != nil {
+		_, err = tx.Exec(ctx, `UPDATE promo_codes SET used_count = used_count + 1 WHERE id = $1`, *promoCodeID)
+		if err != nil {
+			return common.InternalError(c)
+		}
 	}
 
 	_, err = tx.Exec(ctx, `
@@ -213,6 +230,9 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	if err != nil {
 		return common.InternalError(c)
 	}
+
+	// Referral: if referee's first purchase, award referrer and bonus to referee
+	h.awardReferralCredits(ctx, tx, userID, credits, amount, purchaseID)
 
 	approveMsg := fmt.Sprintf("Your purchase of %d credits has been approved.", credits)
 	_, _ = tx.Exec(ctx, `
@@ -235,8 +255,13 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	// Payment confirmation email
 	if h.mailer != nil && h.mailer.IsConfigured() && userEmail != "" {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ApprovePurchase] Panic sending payment confirmation: %v", r)
+				}
+			}()
 			if err := h.mailer.SendPaymentConfirmation(userEmail, credits, amount); err != nil {
-				log.Printf("[ApprovePurchase] Failed to send payment confirmation to %s: %v", userEmail, err)
+				log.Printf("[ApprovePurchase] Failed to send payment confirmation to %s after retries: %v", userEmail, err)
 			}
 		}()
 	}
@@ -302,6 +327,92 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 	h.discord.NotifyPurchaseRejected(ctx, info, req.Reason)
 
 	return common.Success(c, map[string]bool{"success": true})
+}
+
+// GetPurchaseProof streams the payment proof file from R2 for admin viewing.
+func (h *Handler) GetPurchaseProof(c echo.Context) error {
+	ctx := c.Request().Context()
+	purchaseID := c.Param("id")
+	if !common.IsValidUUID(purchaseID) {
+		return common.NotFound(c, "Purchase not found")
+	}
+
+	var proofKey string
+	err := h.db.QueryRow(ctx, `
+		SELECT payment_proof_url FROM credit_purchases WHERE id = $1
+	`, purchaseID).Scan(&proofKey)
+	if err != nil || proofKey == "" {
+		return common.NotFound(c, "Payment proof not found")
+	}
+
+	body, contentType, err := h.r2Proof.GetObject(ctx, proofKey)
+	if err != nil {
+		log.Printf("[GetPurchaseProof] R2 GetObject failed: %v", err)
+		return common.NotFound(c, "Payment proof not found")
+	}
+	defer body.Close()
+
+	c.Response().Header().Set("Content-Type", contentType)
+	c.Response().Header().Set("Content-Disposition", "inline")
+	return c.Stream(http.StatusOK, contentType, body)
+}
+
+// awardReferralCredits runs inside the approval tx: if referee has a referral and credits_awarded_at is null,
+// awards referrer credits and referee bonus per settings.
+func (h *Handler) awardReferralCredits(ctx context.Context, tx pgx.Tx, userID string, credits int, amount float64, purchaseID string) {
+	var referrerID, referralID string
+	err := tx.QueryRow(ctx, `
+		SELECT id, referrer_id FROM referrals WHERE referee_id = $1 AND credits_awarded_at IS NULL
+	`, userID).Scan(&referralID, &referrerID)
+	if err != nil {
+		return // no referral or already awarded
+	}
+
+	// Get settings (defaults if not set) - read from db (settings are global, not in tx)
+	creditsReferrer := 50
+	bonusPercent := 10
+	maxPerUser := 100
+	minAmount := 0.0
+	for _, row := range []struct {
+		key    string
+		target *int
+	}{
+		{"referral_credits_referrer", &creditsReferrer},
+		{"referral_bonus_percent_referee", &bonusPercent},
+		{"referral_max_per_user", &maxPerUser},
+	} {
+		var v json.RawMessage
+		if h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, row.key).Scan(&v) == nil && len(v) > 0 {
+			json.Unmarshal(v, row.target)
+		}
+	}
+	var minAmountVal json.RawMessage
+	if h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'referral_min_purchase_amount'`).Scan(&minAmountVal) == nil && len(minAmountVal) > 0 {
+		json.Unmarshal(minAmountVal, &minAmount)
+	}
+
+	if amount < minAmount {
+		return
+	}
+
+	var awardedCount int
+	_ = tx.QueryRow(ctx, `SELECT COUNT(*) FROM referrals WHERE referrer_id = $1 AND credits_awarded_at IS NOT NULL`, referrerID).Scan(&awardedCount)
+	if awardedCount >= maxPerUser {
+		return
+	}
+
+	bonusCredits := credits * bonusPercent / 100
+	if bonusCredits > 0 {
+		tx.Exec(ctx, `UPDATE users SET credit_balance = credit_balance + $1 WHERE id = $2`, bonusCredits, userID)
+		tx.Exec(ctx, `INSERT INTO credit_transactions (user_id, type, amount, credit_purchase_id, description) VALUES ($1, 'ADJUSTMENT', $2, NULL, $3)`,
+			userID, bonusCredits, "Referral bonus on first purchase")
+	}
+	if creditsReferrer > 0 {
+		tx.Exec(ctx, `UPDATE users SET credit_balance = credit_balance + $1 WHERE id = $2`, creditsReferrer, referrerID)
+		tx.Exec(ctx, `INSERT INTO credit_transactions (user_id, type, amount, credit_purchase_id, description) VALUES ($1, 'ADJUSTMENT', $2, NULL, $3)`,
+			referrerID, creditsReferrer, "Referral bonus - referred user purchased")
+	}
+	tx.Exec(ctx, `UPDATE referrals SET credits_awarded_at = now(), credits_amount = $1 WHERE id = $2`, creditsReferrer, referralID)
 }
 
 func (h *Handler) publishBlikAction(ctx context.Context, purchaseID, action string) {
@@ -400,7 +511,7 @@ func (h *Handler) ListUsers(c echo.Context) error {
 
 	query := `
 		SELECT u.id, u.email, u.name, u.role, u.credit_balance,
-		       COALESCE(u.is_banned, false),
+		       COALESCE(u.is_banned, false), COALESCE(u.email_verified, false),
 		       u.created_at::text, u.last_login_at::text,
 		       (SELECT COUNT(*) FROM purchases WHERE user_id = u.id) as purchases_count,
 		       (SELECT COUNT(*) FROM credit_purchases WHERE user_id = u.id) as credit_purchases_count,
@@ -410,11 +521,20 @@ func (h *Handler) ListUsers(c echo.Context) error {
 	args := []interface{}{}
 	argIdx := 1
 
+	whereClause := ""
 	if search != "" {
-		query += ` WHERE u.email ILIKE $` + strconv.Itoa(argIdx) + ` OR u.name ILIKE $` + strconv.Itoa(argIdx)
+		whereClause = ` WHERE (u.email ILIKE $` + strconv.Itoa(argIdx) + ` OR u.name ILIKE $` + strconv.Itoa(argIdx) + `)`
 		args = append(args, "%"+search+"%")
 		argIdx++
 	}
+	if verifiedOnly := c.QueryParam("verifiedOnly"); verifiedOnly == "true" {
+		if whereClause != "" {
+			whereClause += ` AND COALESCE(u.email_verified, false) = true`
+		} else {
+			whereClause = ` WHERE COALESCE(u.email_verified, false) = true`
+		}
+	}
+	query += whereClause
 
 	query += ` ORDER BY ` + orderCol + ` ` + sortDir + ` LIMIT $` + strconv.Itoa(argIdx)
 	args = append(args, limit)
@@ -430,13 +550,13 @@ func (h *Handler) ListUsers(c echo.Context) error {
 		var id, email, role, createdAt string
 		var name, lastLogin *string
 		var balance, purchases, creditPurchases, userAccess int
-		var isBanned bool
-		if err := rows.Scan(&id, &email, &name, &role, &balance, &isBanned, &createdAt, &lastLogin, &purchases, &creditPurchases, &userAccess); err != nil {
+		var isBanned, emailVerified bool
+		if err := rows.Scan(&id, &email, &name, &role, &balance, &isBanned, &emailVerified, &createdAt, &lastLogin, &purchases, &creditPurchases, &userAccess); err != nil {
 			continue
 		}
 		users = append(users, map[string]interface{}{
 			"id": id, "email": email, "name": name, "role": role,
-			"creditBalance": balance, "isBanned": isBanned,
+			"creditBalance": balance, "isBanned": isBanned, "emailVerified": emailVerified,
 			"createdAt": createdAt, "lastLoginAt": lastLogin,
 			"_count": map[string]int{
 				"purchases":       purchases,
@@ -887,6 +1007,240 @@ func (h *Handler) DeletePackage(c echo.Context) error {
 	return common.Success(c, map[string]bool{"success": true})
 }
 
+// ═══ Promo Codes ═══════════════════════════════════════════════════════════════
+
+func (h *Handler) ListPromoCodes(c echo.Context) error {
+	ctx := c.Request().Context()
+	rows, err := h.db.Query(ctx, `
+		SELECT id, code, discount_type, discount_value, min_purchase_credits, max_uses, used_count, expires_at, is_active, once_per_user, first_purchase_only, created_at::text
+		FROM promo_codes ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	defer rows.Close()
+
+	var promos []map[string]interface{}
+	for rows.Next() {
+		var id, code, discountType, createdAt string
+		var discountValue, minCredits, usedCount int
+		var maxUses *int
+		var expiresAt *time.Time
+		var isActive, oncePerUser, firstPurchaseOnly bool
+		if err := rows.Scan(&id, &code, &discountType, &discountValue, &minCredits, &maxUses, &usedCount, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly, &createdAt); err != nil {
+			continue
+		}
+		item := map[string]interface{}{
+			"id":                 id,
+			"code":               code,
+			"discountType":       discountType,
+			"discountValue":      discountValue,
+			"minPurchaseCredits": minCredits,
+			"usedCount":          usedCount,
+			"isActive":           isActive,
+			"oncePerUser":        oncePerUser,
+			"firstPurchaseOnly":  firstPurchaseOnly,
+			"createdAt":          createdAt,
+		}
+		if maxUses != nil {
+			item["maxUses"] = *maxUses
+		} else {
+			item["maxUses"] = nil
+		}
+		if expiresAt != nil {
+			item["expiresAt"] = expiresAt.Format(time.RFC3339)
+		} else {
+			item["expiresAt"] = nil
+		}
+		promos = append(promos, item)
+	}
+	if promos == nil {
+		promos = []map[string]interface{}{}
+	}
+	return common.Success(c, promos)
+}
+
+func (h *Handler) CreatePromoCode(c echo.Context) error {
+	ctx := c.Request().Context()
+	var req struct {
+		Code               string  `json:"code"`
+		DiscountType       string  `json:"discountType"`
+		DiscountValue      int     `json:"discountValue"`
+		MinPurchaseCredits int     `json:"minPurchaseCredits"`
+		MaxUses            *int    `json:"maxUses"`
+		ExpiresAt          *string `json:"expiresAt"`
+		OncePerUser        bool    `json:"oncePerUser"`
+		FirstPurchaseOnly  bool    `json:"firstPurchaseOnly"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return common.BadRequest(c, "Invalid request body")
+	}
+
+	code := strings.ToUpper(strings.TrimSpace(req.Code))
+	if code == "" {
+		return common.BadRequest(c, "Code is required")
+	}
+	if req.DiscountType != "PERCENT" && req.DiscountType != "FIXED_CREDITS" {
+		return common.BadRequest(c, "discountType must be PERCENT or FIXED_CREDITS")
+	}
+	if req.DiscountValue <= 0 {
+		return common.BadRequest(c, "discountValue must be positive")
+	}
+	if req.DiscountType == "PERCENT" && req.DiscountValue > 100 {
+		return common.BadRequest(c, "Percent discount cannot exceed 100")
+	}
+	if req.MinPurchaseCredits < 0 {
+		return common.BadRequest(c, "minPurchaseCredits cannot be negative")
+	}
+
+	var expiresAt interface{}
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			return common.BadRequest(c, "Invalid expiresAt format")
+		}
+		expiresAt = t
+	} else {
+		expiresAt = nil
+	}
+
+	var id string
+	err := h.db.QueryRow(ctx, `
+		INSERT INTO promo_codes (id, code, discount_type, discount_value, min_purchase_credits, max_uses, expires_at, once_per_user, first_purchase_only)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+	`, code, req.DiscountType, req.DiscountValue, req.MinPurchaseCredits, req.MaxUses, expiresAt, req.OncePerUser, req.FirstPurchaseOnly).Scan(&id)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			return common.BadRequest(c, "Promo code already exists")
+		}
+		log.Printf("[CreatePromoCode] DB Error: %v", err)
+		return common.JSONError(c, http.StatusInternalServerError, "db_error", "Failed to create promo code")
+	}
+
+	log.Printf("[CreatePromoCode] SUCCESS: Code %s created with ID %s", code, id)
+	return common.Created(c, map[string]string{"id": id})
+}
+
+func (h *Handler) UpdatePromoCode(c echo.Context) error {
+	ctx := c.Request().Context()
+	promoID := c.Param("id")
+	var req struct {
+		Code               *string `json:"code"`
+		DiscountType       *string `json:"discountType"`
+		DiscountValue      *int    `json:"discountValue"`
+		MinPurchaseCredits *int    `json:"minPurchaseCredits"`
+		MaxUses            *int    `json:"maxUses"`
+		ExpiresAt          *string `json:"expiresAt"`
+		IsActive           *bool   `json:"isActive"`
+		OncePerUser        *bool   `json:"oncePerUser"`
+		FirstPurchaseOnly  *bool   `json:"firstPurchaseOnly"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return common.BadRequest(c, "Invalid request body")
+	}
+
+	setClauses := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	if req.Code != nil {
+		code := strings.ToUpper(strings.TrimSpace(*req.Code))
+		if code == "" {
+			return common.BadRequest(c, "Code cannot be empty")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("code=$%d", argIdx))
+		args = append(args, code)
+		argIdx++
+	}
+	if req.DiscountType != nil {
+		if *req.DiscountType != "PERCENT" && *req.DiscountType != "FIXED_CREDITS" {
+			return common.BadRequest(c, "discountType must be PERCENT or FIXED_CREDITS")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("discount_type=$%d", argIdx))
+		args = append(args, *req.DiscountType)
+		argIdx++
+	}
+	if req.DiscountValue != nil {
+		if *req.DiscountValue <= 0 {
+			return common.BadRequest(c, "discountValue must be positive")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("discount_value=$%d", argIdx))
+		args = append(args, *req.DiscountValue)
+		argIdx++
+	}
+	if req.MinPurchaseCredits != nil {
+		if *req.MinPurchaseCredits < 0 {
+			return common.BadRequest(c, "minPurchaseCredits cannot be negative")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("min_purchase_credits=$%d", argIdx))
+		args = append(args, *req.MinPurchaseCredits)
+		argIdx++
+	}
+	if req.MaxUses != nil {
+		setClauses = append(setClauses, fmt.Sprintf("max_uses=$%d", argIdx))
+		args = append(args, *req.MaxUses)
+		argIdx++
+	}
+	if req.ExpiresAt != nil {
+		if *req.ExpiresAt == "" {
+			setClauses = append(setClauses, "expires_at=NULL")
+		} else {
+			t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+			if err != nil {
+				return common.BadRequest(c, "Invalid expiresAt format")
+			}
+			setClauses = append(setClauses, fmt.Sprintf("expires_at=$%d", argIdx))
+			args = append(args, t)
+			argIdx++
+		}
+	}
+	if req.IsActive != nil {
+		setClauses = append(setClauses, fmt.Sprintf("is_active=$%d", argIdx))
+		args = append(args, *req.IsActive)
+		argIdx++
+	}
+	if req.OncePerUser != nil {
+		setClauses = append(setClauses, fmt.Sprintf("once_per_user=$%d", argIdx))
+		args = append(args, *req.OncePerUser)
+		argIdx++
+	}
+	if req.FirstPurchaseOnly != nil {
+		setClauses = append(setClauses, fmt.Sprintf("first_purchase_only=$%d", argIdx))
+		args = append(args, *req.FirstPurchaseOnly)
+		argIdx++
+	}
+
+	if len(setClauses) == 0 {
+		return common.BadRequest(c, "No fields to update")
+	}
+
+	query := fmt.Sprintf("UPDATE promo_codes SET %s WHERE id=$%d", strings.Join(setClauses, ", "), argIdx)
+	args = append(args, promoID)
+
+	result, err := h.db.Exec(ctx, query, args...)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			return common.BadRequest(c, "Promo code already exists")
+		}
+		log.Printf("[UpdatePromoCode] DB Error: %v", err)
+		return common.JSONError(c, http.StatusInternalServerError, "db_error", "Failed to update promo code")
+	}
+	if result.RowsAffected() == 0 {
+		return common.NotFound(c, "Promo code not found")
+	}
+
+	return common.Success(c, map[string]bool{"success": true})
+}
+
+func (h *Handler) DeletePromoCode(c echo.Context) error {
+	ctx := c.Request().Context()
+	_, err := h.db.Exec(ctx, `DELETE FROM promo_codes WHERE id = $1`, c.Param("id"))
+	if err != nil {
+		return common.InternalError(c)
+	}
+	return common.Success(c, map[string]bool{"success": true})
+}
+
 // ═══ Settings ════════════════════════════════════════════════════════════════
 
 func (h *Handler) GetSettings(c echo.Context) error {
@@ -957,8 +1311,7 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 			continue
 		}
 		if !allowedSettingsKeys[entry.Key] && !strings.HasPrefix(entry.Key, "discord_") {
-			log.Printf("[UpdateSettings] Rejected unknown key: %s", entry.Key)
-			errCount++
+			log.Printf("[UpdateSettings] Skipping unknown key (not in whitelist): %s", entry.Key)
 			continue
 		}
 		valJSON, err := json.Marshal(entry.Value)
@@ -1211,6 +1564,7 @@ func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID st
 		log.Printf("[Discord] Failed to fetch purchase info for %s: %v", purchaseID, err)
 		return info
 	}
+	// Amount from DB is in PLN
 	if blikCode != nil {
 		info.BlikCode = *blikCode
 	}

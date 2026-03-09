@@ -20,10 +20,38 @@ type R2Client struct {
 }
 
 func NewR2Client(cfg *config.Config) *R2Client {
+	return newR2ClientWithCreds(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2BucketName, cfg)
+}
+
+// NewR2ProofClient returns an R2 client for payment proof uploads.
+// Uses R2_PROOF_* env vars when set; otherwise falls back to the main R2 bucket.
+func NewR2ProofClient(cfg *config.Config) *R2Client {
+	endpoint := cfg.R2ProofEndpoint
+	accessKey := cfg.R2ProofAccessKeyID
+	secretKey := cfg.R2ProofSecretAccessKey
+	bucket := cfg.R2ProofBucketName
+
+	if endpoint == "" {
+		endpoint = cfg.R2Endpoint
+	}
+	if accessKey == "" {
+		accessKey = cfg.R2AccessKeyID
+	}
+	if secretKey == "" {
+		secretKey = cfg.R2SecretAccessKey
+	}
+	if bucket == "" {
+		bucket = cfg.R2BucketName
+	}
+
+	return newR2ClientWithCreds(endpoint, accessKey, secretKey, bucket, cfg)
+}
+
+func newR2ClientWithCreds(endpoint, accessKey, secretKey, bucket string, cfg *config.Config) *R2Client {
 	resolver := aws.EndpointResolverWithOptionsFunc(
 		func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 			return aws.Endpoint{
-				URL: cfg.R2Endpoint,
+				URL: endpoint,
 			}, nil
 		},
 	)
@@ -33,8 +61,8 @@ func NewR2Client(cfg *config.Config) *R2Client {
 		awsconfig.WithEndpointResolverWithOptions(resolver),
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(
-				cfg.R2AccessKeyID,
-				cfg.R2SecretAccessKey,
+				accessKey,
+				secretKey,
 				"",
 			),
 		),
@@ -46,7 +74,7 @@ func NewR2Client(cfg *config.Config) *R2Client {
 
 	return &R2Client{
 		client: client,
-		bucket: cfg.R2BucketName,
+		bucket: bucket,
 		cfg:    cfg,
 	}
 }

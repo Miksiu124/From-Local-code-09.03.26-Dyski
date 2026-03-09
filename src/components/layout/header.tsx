@@ -14,6 +14,7 @@ import {
   X,
   ChevronDown,
   ShoppingCart,
+  UserPlus,
 } from "lucide-react";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { Button } from "@/components/ui/button";
@@ -210,6 +211,7 @@ export function Header() {
                         { href: "/dashboard", icon: LayoutDashboard, label: t("nav.dashboard") },
                         { href: "/my-purchases", icon: ShoppingCart, label: t("nav.myPurchases") },
                         { href: "/favorites", icon: Heart, label: t("nav.favorites") },
+                        { href: "/referral", icon: UserPlus, label: t("nav.referral") },
                         ...(isAdmin ? [{ href: "/admin", icon: ShieldCheck, label: t("nav.admin") }] : []),
                       ].map((item) => (
                         <Link

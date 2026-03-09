@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -36,9 +37,11 @@ func NewHandler(service *Service, cfg *config.Config, rateLimiter *middleware.Ra
 // ── Register ─────────────────────────────────────────────────────────────────
 
 type RegisterRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Name           string `json:"name"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	RefCode        string `json:"ref"` // referral code from ?ref= or body
+	TurnstileToken string `json:"turnstileToken"` 
 }
 
 var (
@@ -72,6 +75,32 @@ func (h *Handler) Register(c echo.Context) error {
 	var req RegisterRequest
 	if err := c.Bind(&req); err != nil {
 		return common.BadRequest(c, "Invalid request body")
+	}
+
+	// 1. Verify Turnstile token first if configured
+	if h.cfg.TurnstileSecretKey != "" {
+		if req.TurnstileToken == "" {
+			return common.BadRequest(c, "Turnstile verification missing")
+		}
+
+		resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", url.Values{
+			"secret":   {h.cfg.TurnstileSecretKey},
+			"response": {req.TurnstileToken},
+			"remoteip": {ip},
+		})
+		if err != nil {
+			log.Printf("[Turnstile] HTTP error: %v", err)
+			return common.BadRequest(c, "Failed to verify captcha")
+		}
+		defer resp.Body.Close()
+
+		var result struct {
+			Success bool `json:"success"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || !result.Success {
+			log.Printf("[Turnstile] Verification failed for IP: %s", ip)
+			return common.BadRequest(c, "Captcha verification failed. Are you a robot?")
+		}
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
@@ -120,20 +149,42 @@ func (h *Handler) Register(c echo.Context) error {
 		return common.BadRequest(c, "Unable to create account. Please try a different email or log in.")
 	}
 
-	if err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password); err != nil {
+	refCode := strings.TrimSpace(req.RefCode)
+	if refCode == "" {
+		refCode = c.QueryParam("ref")
+	}
+	if err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password, refCode); err != nil {
 		log.Printf("[Register] Service error: %v", err)
 		return common.JSONError(c, http.StatusInternalServerError, "registration_failed", "Registration failed. Please try again later.")
 	}
 
-	log.Printf("[Register] SUCCESS: User %s created", req.Email)
+	log.Printf("[Register] SUCCESS: User created")
 
 	go func() {
-		if err := h.mailer.SendWelcome(req.Email, req.Name); err != nil {
-			log.Printf("[Register] Failed to send welcome email to %s: %v", req.Email, err)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Register] Panic sending verification email: %v", r)
+			}
+		}()
+		// Use Background context: request context is cancelled when response is sent,
+		// which would abort DB/Redis/SMTP ops before the email is sent.
+		ctx := context.Background()
+		token, err := h.service.CreateEmailVerificationToken(ctx, req.Email)
+		if err != nil {
+			log.Printf("[Register] CreateEmailVerificationToken failed for %s: %v", req.Email, err)
+			return
+		}
+		if token == "" {
+			log.Printf("[Register] CreateEmailVerificationToken returned empty token for %s", req.Email)
+			return
+		}
+		verifyURL := h.cfg.FrontendURL + "/verify-email?token=" + url.QueryEscape(token)
+		if err := h.mailer.SendVerificationEmail(req.Email, req.Name, verifyURL); err != nil {
+			log.Printf("[Register] Failed to send verification email to %s after retries: %v", req.Email, err)
 		}
 	}()
 
-	return common.Created(c, map[string]string{"message": "Account created successfully"})
+	return common.Created(c, map[string]string{"message": "Account created. Please check your email to verify your account."})
 }
 
 // ── Login ────────────────────────────────────────────────────────────────────
@@ -183,11 +234,12 @@ func (h *Handler) Login(c echo.Context) error {
 
 	return common.Success(c, map[string]interface{}{
 		"user": map[string]interface{}{
-			"id":            user.ID,
-			"email":         user.Email,
-			"name":          user.Name,
-			"role":          role,
-			"creditBalance": user.CreditBalance,
+			"id":             user.ID,
+			"email":          user.Email,
+			"name":           user.Name,
+			"role":           role,
+			"creditBalance":  user.CreditBalance,
+			"emailVerified":  user.EmailVerified,
 		},
 	})
 }
@@ -239,7 +291,47 @@ func (h *Handler) Me(c echo.Context) error {
 		"creditBalance": user.CreditBalance,
 		"avatarUrl":     user.AvatarURL,
 		"autoplay":      user.Autoplay,
+		"emailVerified": user.EmailVerified,
 	})
+}
+
+// ── Verify Email ────────────────────────────────────────────────────────────
+
+func (h *Handler) VerifyEmail(c echo.Context) error {
+	token := c.QueryParam("token")
+	if token == "" {
+		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/verify-email?error=missing_token")
+	}
+	if err := h.service.VerifyEmail(c.Request().Context(), token); err != nil {
+		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/verify-email?error=invalid_token")
+	}
+	return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?verified=1")
+}
+
+// ── Resend Verification Email ───────────────────────────────────────────────
+
+func (h *Handler) ResendVerification(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+	user, err := h.service.GetUser(c.Request().Context(), userID)
+	if err != nil || user.EmailVerified {
+		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+	}
+	token, err := h.service.CreateEmailVerificationToken(c.Request().Context(), user.Email)
+	if err != nil || token == "" {
+		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+	}
+	verifyURL := h.cfg.FrontendURL + "/verify-email?token=" + url.QueryEscape(token)
+	name := ""
+	if user.Name != nil {
+		name = *user.Name
+	}
+	if err := h.mailer.SendVerificationEmail(user.Email, name, verifyURL); err != nil {
+		log.Printf("[ResendVerification] Failed to send verification email: %v", err)
+	}
+	return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 }
 
 // ── Forgot Password ─────────────────────────────────────────────────────────
@@ -286,8 +378,13 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 	if token != "" {
 		resetURL := h.cfg.FrontendURL + "/reset-password?token=" + token
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ForgotPassword] Panic sending reset email: %v", r)
+				}
+			}()
 			if err := h.mailer.SendPasswordReset(req.Email, resetURL); err != nil {
-				log.Printf("[ForgotPassword] Failed to send email to %s: %v", req.Email, err)
+				log.Printf("[ForgotPassword] Failed to send reset email: %v", err)
 			}
 		}()
 	}
@@ -393,7 +490,7 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	body, _ := io.ReadAll(tokenResp.Body)
 	var tokenData discordTokenResponse
 	if err := json.Unmarshal(body, &tokenData); err != nil || tokenData.AccessToken == "" {
-		log.Printf("[Discord] Invalid token response: %s", string(body))
+		log.Printf("[Discord] Invalid token response (do not log body - may contain tokens)")
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
 
@@ -410,7 +507,7 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	body, _ = io.ReadAll(userResp.Body)
 	var dUser discordUser
 	if err := json.Unmarshal(body, &dUser); err != nil || dUser.ID == "" {
-		log.Printf("[Discord] Invalid user response: %s", string(body))
+		log.Printf("[Discord] Invalid user response (do not log body - may contain PII)")
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
 

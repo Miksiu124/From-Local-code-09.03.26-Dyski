@@ -65,6 +65,7 @@ type Config struct {
 	DiscordClientID     string
 	DiscordClientSecret string
 	DiscordRedirectURI  string
+	TurnstileSecretKey  string
 }
 
 func Load() (*Config, error) {
@@ -103,6 +104,7 @@ func Load() (*Config, error) {
 		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
+		TurnstileSecretKey:    getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
 	}
 
 	// Normalize URLs: strip trailing slashes to prevent double-slash bugs

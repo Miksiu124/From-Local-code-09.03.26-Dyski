@@ -1,11 +1,12 @@
 # ContentVault — deploy na VPS (PowerShell)
-# Uzycie: .\scripts\deploy-vps.ps1 [-Build] [-Rebuild] [-Billionmail]
+# Uzycie: .\scripts\deploy-vps.ps1 [-Build] [-Rebuild] [-RebuildFresh] [-Billionmail]
 #   -Build       = sync + docker compose build + up
 #   -Rebuild     = sync + pelna przebudowa od zera (zachowuje tylko postgres_data)
+#   -RebuildFresh = sync + przebudowa OD ZERA z baza (zachowuje 4 uzytkownikow + .env)
 #   -Billionmail = uzyj docker-compose.billionmail.yml
 # Wymaga: rsync (z Git Bash lub WSL) albo uzyj scp
 
-param([switch]$Build, [switch]$Rebuild, [switch]$Billionmail)
+param([switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$Billionmail)
 
 # Laduj .env.deploy jesli istnieje
 $deployEnv = Join-Path (Split-Path -Parent $PSScriptRoot) ".env.deploy"
@@ -58,7 +59,10 @@ Write-Host "Starting on VPS..."
 $composeFiles = "-f docker-compose.yml"
 if ($Billionmail) { $composeFiles = "-f docker-compose.yml -f docker-compose.billionmail.yml" }
 
-if ($Rebuild) {
+if ($RebuildFresh) {
+  $bmArg = if ($Billionmail) { " --billionmail" } else { "" }
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && sed -i 's/`r`$//' scripts/vps-rebuild-fresh.sh 2>/dev/null; bash scripts/vps-rebuild-fresh.sh$bmArg"
+} elseif ($Rebuild) {
   $bmArg = if ($Billionmail) { " --billionmail" } else { "" }
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/vps-rebuild.sh$bmArg"
 } elseif ($Build) {

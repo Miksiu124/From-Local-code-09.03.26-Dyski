@@ -45,7 +45,7 @@ export function NotificationBell({ dropdownAnchorRef }: NotificationBellProps = 
   useEffect(() => {
     fetchNotifications();
 
-    const es = new EventSource("/api/notifications/stream");
+    const es = new EventSource("/api/notifications/stream", { withCredentials: true });
 
     es.onopen = () => {
       sseConnected.current = true;

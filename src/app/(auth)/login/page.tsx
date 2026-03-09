@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { motion } from "framer-motion";
@@ -13,11 +13,22 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 export default function LoginPage() {
   const t = useTranslations("auth");
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [resendLoading, setResendLoading] = useState(false);
+
+  const registered = searchParams.get("registered") === "1";
+  const verified = searchParams.get("verified") === "1";
+
+  useEffect(() => {
+    if (registered) setSuccessMessage(t("checkEmailVerify"));
+    if (verified) setSuccessMessage(t("emailVerifiedSuccess"));
+  }, [registered, verified, t]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +88,15 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {successMessage && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-xl bg-green-500/10 border border-green-500/20 p-3 text-sm text-green-400"
+                >
+                  {successMessage}
+                </motion.div>
+              )}
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}

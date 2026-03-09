@@ -16,6 +16,8 @@ import {
   Loader2,
   Bitcoin,
   Wallet,
+  FileCheck,
+  FileX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -203,6 +205,19 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
             )
           );
         }
+
+        if (data.event === "proof_uploaded") {
+          setItems((prev) =>
+            prev.map((p) =>
+              p.id === data.id ? { ...p, paymentProofUrl: data.paymentProofUrl ?? p.paymentProofUrl } : p
+            )
+          );
+          setSelectedPurchase((prev) =>
+            prev && prev.id === data.id
+              ? { ...prev, paymentProofUrl: data.paymentProofUrl ?? prev.paymentProofUrl }
+              : prev
+          );
+        }
       } catch {
         // ignore parse errors on keepalive comments
       }
@@ -281,7 +296,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
       const res = await fetch(`/api/admin/credits/purchases/${id}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
+        body: JSON.stringify({ reason: notes }),
       });
       if (res.ok) {
         setItems((prev) => prev.filter((p) => p.id !== id));
@@ -453,6 +468,26 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                             : p.transactionCode}
                         </span>
                       </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{t("paymentProof")}</span>
+                        <span
+                          className={`inline-flex items-center gap-1 font-medium ${
+                            p.paymentProofUrl ? "text-green-600" : "text-muted-foreground"
+                          }`}
+                        >
+                          {p.paymentProofUrl ? (
+                            <>
+                              <FileCheck className="h-3 w-3" />
+                              {t("proofAttached")}
+                            </>
+                          ) : (
+                            <>
+                              <FileX className="h-3 w-3" />
+                              {t("noProof")}
+                            </>
+                          )}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Actions */}
@@ -557,6 +592,37 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                 </div>
               )}
             </div>
+
+            {selectedPurchase.paymentProofUrl && (
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">{t("paymentProof")}</p>
+                <div className="rounded-lg border border-border bg-muted overflow-hidden">
+                  {selectedPurchase.paymentProofUrl.toLowerCase().endsWith(".pdf") ? (
+                    <iframe
+                      src={`/api/admin/credits/purchases/${selectedPurchase.id}/proof`}
+                      title={t("viewProof")}
+                      className="w-full h-80"
+                    />
+                  ) : (
+                    <img
+                      src={`/api/admin/credits/purchases/${selectedPurchase.id}/proof`}
+                      alt={t("viewProof")}
+                      className="w-full max-h-80 object-contain"
+                    />
+                  )}
+                  <div className="p-2 border-t border-border">
+                    <a
+                      href={`/api/admin/credits/purchases/${selectedPurchase.id}/proof`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline"
+                    >
+                      {t("viewProof")} →
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="text-sm text-muted-foreground mb-1">Admin Notes</p>

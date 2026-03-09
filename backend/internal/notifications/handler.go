@@ -100,6 +100,9 @@ func (h *Handler) Stream(c echo.Context) error {
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 
+	maxDuration := time.NewTimer(30 * time.Minute)
+	defer maxDuration.Stop()
+
 	for {
 		select {
 		case msg := <-redisCh:
@@ -109,6 +112,11 @@ func (h *Handler) Stream(c echo.Context) error {
 		case <-keepalive.C:
 			fmt.Fprint(c.Response().Writer, ": keepalive\n\n")
 			c.Response().Flush()
+
+		case <-maxDuration.C:
+			fmt.Fprint(c.Response().Writer, "data: {\"event\":\"reconnect\"}\n\n")
+			c.Response().Flush()
+			return nil
 
 		case <-ctx.Done():
 			return nil

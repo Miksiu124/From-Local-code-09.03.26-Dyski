@@ -34,7 +34,7 @@ export default async function PurchasePage() {
     <div className="container mx-auto px-4 py-8">
       <div className="slide-up">
         <h1 className="text-2xl sm:text-3xl font-bold mb-2">{t("title")}</h1>
-        <div className="flex items-center gap-2 text-muted-foreground mb-8">
+        <div className="flex items-center gap-2 text-muted-foreground mb-4">
           <Coins className="h-4 w-4 text-primary" />
           <p className="text-sm">
             {t("balance")}: <span className="text-foreground font-semibold">{formatCredits(me.creditBalance)}</span> {t("creditsLabel")}

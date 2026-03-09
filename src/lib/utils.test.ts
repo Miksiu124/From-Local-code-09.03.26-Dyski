@@ -4,6 +4,7 @@ import {
   formatCredits,
   formatPrice,
   getCurrencySymbol,
+  convertPlnToUsd,
 } from "./utils";
 
 describe("generateTransactionCode", () => {
@@ -21,15 +22,25 @@ describe("formatCredits", () => {
   });
 });
 
+describe("convertPlnToUsd", () => {
+  it("converts PLN to USD with ceil (4 PLN = 1 USD)", () => {
+    expect(convertPlnToUsd(40)).toBe(10);
+    expect(convertPlnToUsd(50)).toBe(13);
+    expect(convertPlnToUsd(41)).toBe(11);
+  });
+});
+
 describe("formatPrice", () => {
-  it("formats numbers as currency", () => {
-    const result = formatPrice(10);
+  it("formats USD for en locale (PLN to USD, ceil)", () => {
+    const result = formatPrice(40, "en");
     expect(result).toContain("10");
+    expect(result).toMatch(/\$|USD/);
     expect(typeof result).toBe("string");
   });
-  it("formats PLN for pl locale", () => {
-    const result = formatPrice(10, "pl");
-    expect(result).toMatch(/\d/);
+  it("formats PLN for pl locale (price is PLN)", () => {
+    const result = formatPrice(40, "pl");
+    expect(result).toContain("40");
+    expect(result).toMatch(/zł|PLN/);
     expect(typeof result).toBe("string");
   });
 });

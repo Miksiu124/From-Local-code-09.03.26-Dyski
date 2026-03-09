@@ -11,6 +11,7 @@ import (
 
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/referral"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,10 +39,11 @@ type UserRow struct {
 	AvatarURL     *string
 	Autoplay      bool
 	IsBanned      bool
+	EmailVerified bool
 }
 
-// Register creates a new user with hashed password
-func (s *Service) Register(ctx context.Context, name, email, password string) error {
+// Register creates a new user with hashed password and optionally saves referral
+func (s *Service) Register(ctx context.Context, name, email, password, refCode string) error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
@@ -52,13 +54,19 @@ func (s *Service) Register(ctx context.Context, name, email, password string) er
 		namePtr = &name
 	}
 
-	_, err = s.db.Exec(ctx, `
-		INSERT INTO users (email, password, name, role, credit_balance)
-		VALUES ($1, $2, $3, 'USER', 0)
-	`, email, string(hashedPassword), namePtr)
+	var userID string
+	err = s.db.QueryRow(ctx, `
+		INSERT INTO users (email, password, name, role, credit_balance, email_verified)
+		VALUES ($1, $2, $3, 'USER', 0, false)
+		RETURNING id
+	`, email, string(hashedPassword), namePtr).Scan(&userID)
 
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
+	}
+
+	if refCode != "" {
+		_ = referral.SaveReferralFromCode(ctx, s.db, userID, refCode)
 	}
 	return nil
 }
@@ -67,9 +75,9 @@ func (s *Service) Register(ctx context.Context, name, email, password string) er
 func (s *Service) Login(ctx context.Context, email, password string) (string, *UserRow, error) {
 	var user UserRow
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
 		FROM users WHERE email = $1
-	`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
+	`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
 
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid credentials")
@@ -122,9 +130,9 @@ func (s *Service) Logout(ctx context.Context, userID string) error {
 func (s *Service) GetUser(ctx context.Context, userID string) (*UserRow, error) {
 	var user UserRow
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
 		FROM users WHERE id = $1
-	`, userID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
+	`, userID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
 
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
@@ -182,19 +190,19 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 
 	// Try to find existing user by discord_id
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
 		FROM users WHERE discord_id = $1
-	`, discordID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
+	`, discordID).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
 
 	if err != nil {
 		// Try by email
 		err = s.db.QueryRow(ctx, `
-			SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+			SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
 			FROM users WHERE email = $1
-		`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned)
+		`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
 
 		if err != nil {
-			// Create new user
+			// Create new user – Discord verifies email, so email_verified = true
 			var namePtr *string
 			if displayName != "" {
 				truncated := displayName
@@ -213,18 +221,19 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 			}
 
 			err = s.db.QueryRow(ctx, `
-				INSERT INTO users (email, name, role, credit_balance, discord_id, avatar_url)
-				VALUES ($1, $2, 'USER', 0, $3, $4)
-				RETURNING id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false)
+				INSERT INTO users (email, name, role, credit_balance, discord_id, avatar_url, email_verified)
+				VALUES ($1, $2, 'USER', 0, $3, $4, true)
+				RETURNING id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
 			`, email, namePtr, discordID, avatarURL).Scan(
-				&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned,
+				&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified,
 			)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create discord user: %w", err)
 			}
 		} else {
-			// Link discord_id to existing user
-			_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1 WHERE id = $2`, discordID, user.ID)
+			// Link discord_id to existing user; Discord verifies email
+			_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1, email_verified = true WHERE id = $2`, discordID, user.ID)
+			user.EmailVerified = true
 		}
 	}
 
@@ -250,6 +259,34 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
 
 	return token, &user, nil
+}
+
+// CreateEmailVerificationToken creates a token for email verification (24h TTL)
+func (s *Service) CreateEmailVerificationToken(ctx context.Context, email string) (string, error) {
+	var userID string
+	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&userID)
+	if err != nil {
+		return "", fmt.Errorf("user not found: %w", err)
+	}
+	token := generateSessionID()
+	key := fmt.Sprintf("email-verify:%s", token)
+	s.redis.Set(ctx, key, userID, 24*time.Hour)
+	return token, nil
+}
+
+// VerifyEmail validates the token and sets email_verified = true
+func (s *Service) VerifyEmail(ctx context.Context, token string) error {
+	key := fmt.Sprintf("email-verify:%s", token)
+	userID, err := s.redis.Get(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf("invalid or expired token")
+	}
+	_, err = s.db.Exec(ctx, `UPDATE users SET email_verified = true WHERE id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to verify email")
+	}
+	s.redis.Del(ctx, key)
+	return nil
 }
 
 // ResetPassword validates the token and updates the password

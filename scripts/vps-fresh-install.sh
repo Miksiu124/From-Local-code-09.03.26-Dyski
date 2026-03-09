@@ -96,6 +96,10 @@ echo "[8/9] Uruchamiam seed..."
 (docker compose run --rm -e DATABASE_URL="postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable" frontend npx tsx prisma/seed.ts 2>/dev/null) || \
 echo "   Uruchom recznie: docker compose run --rm -e DATABASE_URL=postgresql://platform:PASS@postgres:5432/content_platform frontend npx tsx prisma/seed.ts"
 
+# 8b. Przypisz kraje do modeli (PL, DE, US) + utworz modele jesli nie istnieja
+echo "[8b/9] Przypisuje kraje do modeli..."
+docker compose exec -T postgres psql -U platform -d content_platform < scripts/assign-model-countries.sql 2>/dev/null && echo "   [OK] Kraje przypisane" || echo "   Uruchom recznie: bash scripts/vps-assign-countries.sh"
+
 # 9. Przywroc dane chronionego uzytkownika
 echo "[9/9] Przywracam dane $PROTECTED_EMAIL..."
 

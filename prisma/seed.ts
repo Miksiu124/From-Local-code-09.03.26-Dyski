@@ -97,7 +97,7 @@ async function main() {
       value: {
         BTC: "",
         ETH: "",
-        USDT: "",
+        LTC: "",
         USDC: "",
       },
       description: "Crypto wallet addresses (one per currency)",
@@ -134,10 +134,11 @@ async function main() {
 
   // Seed default credit packages
   const packages = [
-    { name: "Starter", credits: 50, price: 5.0, tier: 1 },
-    { name: "Popular", credits: 120, price: 10.0, tier: 2 },
-    { name: "Pro", credits: 300, price: 25.0, tier: 3 },
-    { name: "Ultimate", credits: 700, price: 50.0, tier: 4 },
+    // Prices in PLN (4 PLN = 1 USD)
+    { name: "Starter", credits: 50, price: 20.0, tier: 1 },
+    { name: "Popular", credits: 120, price: 40.0, tier: 2 },
+    { name: "Pro", credits: 300, price: 100.0, tier: 3 },
+    { name: "Ultimate", credits: 700, price: 200.0, tier: 4 },
   ];
 
   for (const pkg of packages) {

@@ -7,6 +7,7 @@ import { Heart, Play, Image, Loader2, Film, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { RetryImage } from "@/components/ui/retry-image";
 
 interface FavoriteItem {
   id: string;
@@ -125,7 +126,10 @@ export function FavoritesGrid() {
   };
 
   const handleItemClick = (item: FavoriteItem) => {
-    router.push(`/content/${item.modelSlug}/${item.contentItemId}`);
+    const params = new URLSearchParams();
+    if (activeFilter !== "ALL") params.set("filter", activeFilter);
+    const qs = params.toString();
+    router.push(qs ? `/favorites/${item.contentItemId}?${qs}` : `/favorites/${item.contentItemId}`);
   };
 
   const filteredItems = activeFilter === "ALL"
@@ -200,28 +204,21 @@ export function FavoritesGrid() {
                 onClick={() => handleItemClick(item)}
               >
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
-                  <img
+                  <RetryImage
                     src={`/api/content/${item.contentItemId}/thumbnail`}
                     alt=""
                     className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
                     loading="lazy"
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      img.style.display = "none";
-                      const fallback = img.nextElementSibling as HTMLElement;
-                      if (fallback) fallback.style.display = "flex";
-                    }}
+                    fallback={
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-secondary">
+                        {item.contentType === "VIDEO" ? (
+                          <Play className="h-8 w-8 text-muted-foreground/30" />
+                        ) : (
+                          <Image className="h-8 w-8 text-muted-foreground/30" />
+                        )}
+                      </div>
+                    }
                   />
-                  <div
-                    className="absolute inset-0 items-center justify-center bg-gradient-to-br from-muted to-secondary"
-                    style={{ display: "none" }}
-                  >
-                    {item.contentType === "VIDEO" ? (
-                      <Play className="h-8 w-8 text-muted-foreground/30" />
-                    ) : (
-                      <Image className="h-8 w-8 text-muted-foreground/30" />
-                    )}
-                  </div>
 
                   {/* Remove favorite button */}
                   <button

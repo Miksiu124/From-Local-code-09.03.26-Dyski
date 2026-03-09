@@ -29,6 +29,7 @@ interface UserItem {
   role: string;
   creditBalance: number;
   isBanned: boolean;
+  emailVerified?: boolean;
   createdAt: string;
   lastLoginAt: string | null;
   _count: {
@@ -100,6 +101,7 @@ export default function AdminUsersPage() {
   const [creditsReason, setCreditsReason] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("user");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
 
   const fetchUsers = useCallback(async () => {
@@ -111,6 +113,7 @@ export default function AdminUsersPage() {
         sortDir: sortDir,
       });
       if (search) params.set("search", search);
+      if (verifiedOnly) params.set("verifiedOnly", "true");
 
       const res = await fetch(`/api/admin/users?${params}`);
       const data = await res.json();
@@ -132,7 +135,7 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, sortKey, sortDir]);
+  }, [page, search, sortKey, sortDir, verifiedOnly]);
 
   useEffect(() => {
     fetchUsers();
@@ -259,15 +262,26 @@ export default function AdminUsersPage() {
         <Badge variant="secondary">{total} users</Badge>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by email or name..."
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="pl-10"
-        />
+      {/* Search & Filter */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={t("searchByEmail")}
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={verifiedOnly}
+            onChange={(e) => { setVerifiedOnly(e.target.checked); setPage(1); }}
+            className="rounded border-border"
+          />
+          <span className="text-sm">{t("verifiedOnly")}</span>
+        </label>
       </div>
 
       {/* Users Table */}
@@ -344,7 +358,14 @@ export default function AdminUsersPage() {
                       <td className="p-4">
                         <div>
                           <p className="font-medium">{user.name || "No name"}</p>
-                          <p className="text-xs text-muted-foreground">{user.email}</p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            {user.email}
+                            {user.emailVerified ? (
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">✓</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 text-amber-500 border-amber-500/50">nie zweryf.</Badge>
+                            )}
+                          </p>
                         </div>
                       </td>
                       <td className="p-4">

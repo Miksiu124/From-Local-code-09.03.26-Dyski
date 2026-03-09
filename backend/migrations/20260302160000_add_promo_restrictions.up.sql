@@ -1,0 +1,3 @@
+ALTER TABLE promo_codes
+  ADD COLUMN IF NOT EXISTS once_per_user BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS first_purchase_only BOOLEAN NOT NULL DEFAULT false;

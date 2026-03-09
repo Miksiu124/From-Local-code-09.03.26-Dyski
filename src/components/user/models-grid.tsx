@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AccessRequiredPopup } from "@/components/access-required-popup";
 import { cn } from "@/lib/utils";
+import { RetryImage } from "@/components/ui/retry-image";
 
 interface ModelItem {
   id: string;
@@ -66,8 +67,20 @@ export function ModelsGrid({
   const t = useTranslations("models");
   const router = useRouter();
 
-  const [models, setModels] = useState<ModelItem[]>(initialModels);
-  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [models, setModels] = useState<ModelItem[]>(() => {
+    if (typeof window === "undefined") return initialModels;
+    if (sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country")) {
+      return [];
+    }
+    return initialModels;
+  });
+  const [cursor, setCursor] = useState<string | null>(() => {
+    if (typeof window === "undefined") return initialCursor;
+    if (sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country")) {
+      return null;
+    }
+    return initialCursor;
+  });
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -130,6 +143,7 @@ export function ModelsGrid({
   useLayoutEffect(() => {
     const target = savedScrollTargetRef.current;
     if (target === null || loading) return;
+    if (filteredMode && models.length === 0) return;
     const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
     if (maxScroll >= target) {
       window.scrollTo({ top: target, behavior: "instant" });
@@ -140,7 +154,7 @@ export function ModelsGrid({
       window.scrollTo({ top: maxScroll, behavior: "instant" });
       savedScrollTargetRef.current = null;
     }
-  }, [models.length, loading, cursor]);
+  }, [models.length, loading, cursor, filteredMode]);
 
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -165,7 +179,7 @@ export function ModelsGrid({
   const goPrev = () => setActiveIndex((prev) => (prev - 1 + displayFeatured.length) % displayFeatured.length);
 
   const fetchModels = useCallback(
-    async (opts: { cursor?: string; search?: string; country?: string; reset?: boolean }) => {
+    async (opts: { cursor?: string; search?: string; country?: string; reset?: boolean; signal?: AbortSignal }) => {
       setLoading(true);
       try {
         const params = new URLSearchParams();
@@ -174,16 +188,23 @@ export function ModelsGrid({
         if (opts.search) params.set("search", opts.search);
         if (opts.country) params.set("country", opts.country);
 
-        const res = await fetch(`/api/models?${params.toString()}`);
+        const res = await fetch(`/api/models?${params.toString()}`, { signal: opts.signal });
         if (!res.ok) return;
 
         const data = await res.json();
         if (opts.reset) {
-          setModels(data.models);
+          setModels(data.models ?? []);
         } else {
-          setModels((prev) => [...prev, ...data.models]);
+          setModels((prev) => {
+            const ids = new Set(prev.map((m) => m.id));
+            const newOnes = (data.models ?? []).filter((m: ModelItem) => !ids.has(m.id));
+            return [...prev, ...newOnes];
+          });
         }
-        setCursor(data.nextCursor);
+        setCursor(data.nextCursor ?? null);
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -191,10 +212,14 @@ export function ModelsGrid({
     []
   );
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const hasFetchedFilteredRef = useRef(false);
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    abortControllerRef.current?.abort();
 
     if (!search && !selectedCountry) {
+      hasFetchedFilteredRef.current = false;
       if (initialModels.length > 0) {
         setFilteredMode(false);
         setModels(initialModels);
@@ -204,20 +229,35 @@ export function ModelsGrid({
     }
 
     setFilteredMode(true);
-    searchTimerRef.current = setTimeout(() => {
-      fetchModels({ search: search || undefined, country: selectedCountry || undefined, reset: true });
-    }, 300);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const doFetch = () => {
+      fetchModels({
+        search: search || undefined,
+        country: selectedCountry || undefined,
+        reset: true,
+        signal: controller.signal,
+      });
+    };
+
+    const isInitialWithFilters = !hasFetchedFilteredRef.current;
+    if (isInitialWithFilters) hasFetchedFilteredRef.current = true;
+    searchTimerRef.current = setTimeout(doFetch, isInitialWithFilters ? 0 : 300);
 
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      controller.abort();
+      abortControllerRef.current = null;
     };
   }, [search, selectedCountry, fetchModels, initialModels, initialCursor]);
 
   useEffect(() => {
     if (initialLoaded || initialModels.length > 0) return;
+    if (search || selectedCountry) return;
     setInitialLoaded(true);
     fetchModels({ reset: true });
-  }, [initialLoaded, initialModels.length, fetchModels]);
+  }, [initialLoaded, initialModels.length, fetchModels, search, selectedCountry]);
 
   const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
@@ -396,19 +436,27 @@ export function ModelsGrid({
                 >
                   <div className="flex h-full min-h-[100px]">
                     <div className="w-24 lg:w-1/3 relative shrink-0">
-                      <img
+                      <RetryImage
                         src={`/api/models/${model.folderName}/thumbnail`}
                         alt={model.name}
                         className="absolute inset-0 w-full h-full object-cover"
+                        fallback={
+                          <div className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground/50 text-2xl font-bold">
+                            {model.name.charAt(0).toUpperCase()}
+                          </div>
+                        }
                       />
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent to-card" />
                     </div>
                     <div className="flex-1 p-4 flex flex-col justify-center">
                       <h4 className="text-sm lg:text-base font-bold text-white group-hover:text-primary transition-colors truncate">{model.name}</h4>
                       <span className="text-xs text-muted-foreground mt-0.5">
-                        {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
-                          ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
-                          : `${model.contentCount} ${t("items")}`}
+                        <span className="hidden sm:inline">
+                          {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                            ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                            : `${model.contentCount} ${t("items")}`}
+                        </span>
+                        <span className="sm:hidden">{model.contentCount} {t("items")}</span>
                       </span>
                     </div>
                   </div>
@@ -546,26 +594,19 @@ export function ModelsGrid({
                   className="group block"
                 >
                   <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
-                    <img
+                    <RetryImage
                       src={`/api/models/${model.folderName}/thumbnail`}
                       alt={model.name}
                       className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
                       loading="lazy"
-                      onError={(e) => {
-                        const img = e.target as HTMLImageElement;
-                        img.style.display = "none";
-                        const fallback = img.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = "flex";
-                      }}
+                      fallback={
+                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
+                          <span className="text-4xl font-bold text-muted-foreground/30">
+                            {model.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      }
                     />
-                    <div
-                      className="absolute inset-0 items-center justify-center bg-gradient-to-br from-secondary to-muted"
-                      style={{ display: "none" }}
-                    >
-                      <span className="text-4xl font-bold text-muted-foreground/30">
-                        {model.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
 
                     <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent opacity-80" />
                     <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-all duration-500" />
@@ -592,12 +633,11 @@ export function ModelsGrid({
 
                     {/* Model avatar */}
                     <div className="absolute bottom-12 sm:bottom-14 right-2.5">
-                      <img
+                      <RetryImage
                         src={`/api/models/${model.folderName}/avatar`}
                         alt=""
                         className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
                         loading="lazy"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                       />
                     </div>
 
@@ -606,9 +646,12 @@ export function ModelsGrid({
                       <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[10px] sm:text-xs font-medium text-white/50">
-                          {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
-                            ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
-                            : `${model.contentCount} ${t("items")}`}
+                          <span className="hidden sm:inline">
+                            {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                              ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                              : `${model.contentCount} ${t("items")}`}
+                          </span>
+                          <span className="sm:hidden">{model.contentCount} {t("items")}</span>
                         </span>
                         {!hasAccess(model.id) && cost7d > 0 && (
                           <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">

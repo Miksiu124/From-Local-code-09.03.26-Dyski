@@ -43,6 +43,7 @@ type CreatePurchaseRequest struct {
 	PaymentMethod   string `json:"paymentMethod"`
 	CryptoCurrency  string `json:"cryptoCurrency,omitempty"`
 	BlikCode        string `json:"blikCode,omitempty"`
+	PromoCodeID     string `json:"promoCodeId,omitempty"`
 }
 
 func (h *Handler) CreatePurchase(c echo.Context) error {
@@ -104,6 +105,59 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	`, req.CreditPackageID).Scan(&pkgID, &pkgName, &pkgCredits, &pkgPrice)
 	if err != nil {
 		return common.NotFound(c, "Package not found or inactive")
+	}
+
+	// Apply promo code if provided
+	var promoCodeID *string
+	if req.PromoCodeID != "" {
+		var promoID string
+		var discountType string
+		var discountValue, minCredits, usedCount int
+		var maxUses *int
+		var expiresAt *time.Time
+		var isActive, oncePerUser, firstPurchaseOnly bool
+		err := h.db.QueryRow(ctx, `
+			SELECT id, discount_type, discount_value, min_purchase_credits, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
+			FROM promo_codes WHERE id = $1
+		`, req.PromoCodeID).Scan(&promoID, &discountType, &discountValue, &minCredits, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
+		if err != nil || !isActive {
+			return common.BadRequest(c, "Invalid or expired promo code")
+		}
+		if expiresAt != nil && expiresAt.Before(time.Now()) {
+			return common.BadRequest(c, "Promo code has expired")
+		}
+		if maxUses != nil && usedCount >= *maxUses {
+			return common.BadRequest(c, "Promo code has reached its usage limit")
+		}
+		if pkgCredits < minCredits {
+			return common.BadRequest(c, fmt.Sprintf("Minimum %d credits required for this promo", minCredits))
+		}
+		if oncePerUser {
+			var alreadyUsed int
+			_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM credit_purchases WHERE user_id = $1 AND promo_code_id = $2 AND status = 'APPROVED'`, userID, promoID).Scan(&alreadyUsed)
+			if alreadyUsed > 0 {
+				return common.BadRequest(c, "You have already used this promo code")
+			}
+		}
+		if firstPurchaseOnly {
+			var approvedCount int
+			_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM credit_purchases WHERE user_id = $1 AND status = 'APPROVED'`, userID).Scan(&approvedCount)
+			if approvedCount > 0 {
+				return common.BadRequest(c, "This promo code is only valid for your first credit purchase")
+			}
+		}
+		if discountType == "PERCENT" {
+			if discountValue <= 0 || discountValue > 100 {
+				return common.BadRequest(c, "Invalid promo code")
+			}
+			pkgPrice = pkgPrice * (1 - float64(discountValue)/100)
+		} else if discountType == "FIXED_CREDITS" {
+			if discountValue <= 0 {
+				return common.BadRequest(c, "Invalid promo code")
+			}
+			pkgCredits = pkgCredits + discountValue
+		}
+		promoCodeID = &promoID
 	}
 
 	// Calculate expiration based on payment method
@@ -171,17 +225,19 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		cryptoCurrencyStr = &req.CryptoCurrency
 	}
 
-	err = tx.QueryRow(ctx, `
+	insertQuery := `
 		INSERT INTO credit_purchases (
 			user_id, credit_package_id, credits, amount, payment_method,
 			transaction_code, blik_code, crypto_currency,
-			expiration_time, status
+			expiration_time, status, promo_code_id
 		) VALUES ($1, $2, $3, $4, $5::payment_method, $6, $7, $8::crypto_currency, 
-				  now() + ($9 || ' minutes')::interval, 'PENDING')
+				  now() + ($9 || ' minutes')::interval, 'PENDING', $10)
 		RETURNING id, expiration_time::text
-	`, userID, pkgID, pkgCredits, pkgPrice, req.PaymentMethod,
+	`
+	err = tx.QueryRow(ctx, insertQuery,
+		userID, pkgID, pkgCredits, pkgPrice, req.PaymentMethod,
 		txCode, blikCode, cryptoCurrencyStr,
-		strconv.Itoa(expirationMinutes)).Scan(&purchaseID, &expirationTime)
+		strconv.Itoa(expirationMinutes), promoCodeID).Scan(&purchaseID, &expirationTime)
 	if err != nil {
 		log.Printf("[Credits] Failed to insert purchase: %v", err)
 		return common.InternalError(c)
@@ -224,7 +280,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
-	// Discord notification for new purchase
+	// Discord notification for new purchase (amount in PLN)
 	discordInfo := discord.PurchaseInfo{
 		PurchaseID:      purchaseID,
 		PackageName:     pkgName,
@@ -293,6 +349,54 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	})
 }
 
+// validProofMagicBytes checks file magic bytes against allowed types (JPEG, PNG, WebP, GIF, PDF).
+func validProofMagicBytes(data []byte) (contentType string, ok bool) {
+	if len(data) < 12 {
+		return "", false
+	}
+	// JPEG: FF D8 FF
+	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+		return "image/jpeg", true
+	}
+	// PNG: 89 50 4E 47 0D 0A 1A 0A
+	if len(data) >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 &&
+		data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A {
+		return "image/png", true
+	}
+	// GIF: 47 49 46 38 37 or 47 49 46 38 39
+	if len(data) >= 6 && data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38 &&
+		(data[4] == 0x37 || data[4] == 0x39) && data[5] == 0x61 {
+		return "image/gif", true
+	}
+	// WebP: RIFF....WEBP (52 49 46 46 xx xx xx xx 57 45 42 50)
+	if len(data) >= 12 && data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46 &&
+		data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50 {
+		return "image/webp", true
+	}
+	// PDF: 25 50 44 46 (%PDF)
+	if len(data) >= 4 && data[0] == 0x25 && data[1] == 0x50 && data[2] == 0x44 && data[3] == 0x46 {
+		return "application/pdf", true
+	}
+	return "", false
+}
+
+// sanitizeProofFilename replaces unsafe chars for R2 key.
+func sanitizeProofFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		} else if r == ' ' || r == ',' || r == '@' {
+			b.WriteRune('_')
+		}
+	}
+	result := b.String()
+	if result == "" {
+		return "user"
+	}
+	return result
+}
+
 // UploadProof handles the upload of payment proof files to R2
 func (h *Handler) UploadProof(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -326,15 +430,23 @@ func (h *Handler) UploadProof(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
-	detectedType := http.DetectContentType(data)
-	if !strings.HasPrefix(detectedType, "image/") {
-		return common.BadRequest(c, "Only image files are allowed (jpeg, png, webp, gif)")
+	contentType, ok := validProofMagicBytes(data)
+	if !ok {
+		return common.BadRequest(c, "Invalid file type. Allowed: JPEG, PNG, WebP, GIF, PDF")
 	}
 
 	var status string
+	var userName, userEmail string
+	var amount float64
+	var createdAt time.Time
+	var paymentMethod string
 	err = h.db.QueryRow(ctx, `
-		SELECT status FROM credit_purchases WHERE id = $1 AND user_id = $2
-	`, purchaseID, userID).Scan(&status)
+		SELECT cp.status, COALESCE(u.name, u.email, 'user') AS user_name, u.email,
+		       cp.amount, cp.created_at, cp.payment_method
+		FROM credit_purchases cp
+		JOIN users u ON u.id = cp.user_id
+		WHERE cp.id = $1 AND cp.user_id = $2
+	`, purchaseID, userID).Scan(&status, &userName, &userEmail, &amount, &createdAt, &paymentMethod)
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
@@ -342,13 +454,33 @@ func (h *Handler) UploadProof(c echo.Context) error {
 		return common.BadRequest(c, "Can only upload proof for PENDING purchases")
 	}
 
-	ext := filepath.Ext(file.Filename)
+	ext := filepath.Ext(strings.ToLower(file.Filename))
 	if ext == "" {
-		ext = ".jpg"
+		switch contentType {
+		case "application/pdf":
+			ext = ".pdf"
+		default:
+			ext = ".jpg"
+		}
 	}
-	r2Key := fmt.Sprintf("proofs/%s_%s%s", purchaseID, userID, ext)
+	// Normalize extension for known types
+	if contentType == "application/pdf" && ext != ".pdf" {
+		ext = ".pdf"
+	}
 
-	if err := h.r2.PutObject(ctx, r2Key, bytes.NewReader(data), detectedType); err != nil {
+	username := userName
+	if username == "" || username == "user" {
+		username = userEmail
+	}
+	if username == "" {
+		username = "user"
+	}
+	safeName := sanitizeProofFilename(username)
+	dateStr := createdAt.Format("2006-01-02")
+	amountStr := strings.ReplaceAll(fmt.Sprintf("%.2f", amount), ".", "_")
+	r2Key := fmt.Sprintf("proofs/%s_%s_%s_%s%s", safeName, amountStr, dateStr, paymentMethod, ext)
+
+	if err := h.r2.PutObject(ctx, r2Key, bytes.NewReader(data), contentType); err != nil {
 		log.Printf("[UploadProof] R2 upload failed: %v", err)
 		return common.InternalError(c)
 	}
@@ -359,6 +491,14 @@ func (h *Handler) UploadProof(c echo.Context) error {
 	if err != nil {
 		return common.InternalError(c)
 	}
+
+	// Notify admin panel in real-time
+	adminPayload, _ := json.Marshal(map[string]interface{}{
+		"event":            "proof_uploaded",
+		"id":               purchaseID,
+		"paymentProofUrl":   r2Key,
+	})
+	_ = h.redis.Publish(ctx, "admin:purchases", string(adminPayload))
 
 	return common.Success(c, map[string]string{
 		"message": "Proof uploaded successfully",
@@ -511,16 +651,18 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 
 	var status, paymentMethod string
 	var expirationTime string
+	var paymentProofUrl *string
 	err := h.db.QueryRow(ctx, `
-		SELECT status, payment_method, expiration_time::text
+		SELECT status, payment_method, expiration_time::text, payment_proof_url
 		FROM credit_purchases WHERE id = $1 AND user_id = $2
-	`, purchaseID, userID).Scan(&status, &paymentMethod, &expirationTime)
+	`, purchaseID, userID).Scan(&status, &paymentMethod, &expirationTime, &paymentProofUrl)
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
 
 	return common.Success(c, map[string]interface{}{
 		"status":         status,
+		"paymentProofUrl": paymentProofUrl,
 		"paymentMethod":  paymentMethod,
 		"expirationTime": expirationTime,
 	})
@@ -551,7 +693,8 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
 		c.Response().WriteHeader(http.StatusOK)
-		fmt.Fprintf(c.Response().Writer, "data: {\"status\":\"%s\"}\n\n", status)
+		payload, _ := json.Marshal(map[string]string{"status": status})
+		fmt.Fprintf(c.Response().Writer, "data: %s\n\n", payload)
 		c.Response().Flush()
 		return nil
 	}
@@ -587,7 +730,8 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 			var currentStatus string
 			err := h.db.QueryRow(ctx, `SELECT status FROM credit_purchases WHERE id = $1`, purchaseID).Scan(&currentStatus)
 			if err == nil && currentStatus != "PENDING" {
-				fmt.Fprintf(c.Response().Writer, "data: {\"status\":\"%s\"}\n\n", currentStatus)
+				payload, _ := json.Marshal(map[string]string{"status": currentStatus})
+				fmt.Fprintf(c.Response().Writer, "data: %s\n\n", payload)
 				c.Response().Flush()
 				return nil
 			}
@@ -595,7 +739,8 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 			c.Response().Flush()
 
 		case <-maxDuration.C:
-			fmt.Fprint(c.Response().Writer, "data: {\"status\":\"TIMEOUT\"}\n\n")
+			payload, _ := json.Marshal(map[string]string{"status": "TIMEOUT"})
+			fmt.Fprintf(c.Response().Writer, "data: %s\n\n", payload)
 			c.Response().Flush()
 			return nil
 
@@ -741,6 +886,93 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 	return common.Success(c, map[string]interface{}{
 		"success":        true,
 		"expirationTime": expirationTime,
+	})
+}
+
+// ValidatePromo validates a promo code and returns discounted credits/price
+func (h *Handler) ValidatePromo(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+
+	var req struct {
+		Code            string `json:"code"`
+		CreditPackageID string `json:"creditPackageId"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return common.BadRequest(c, "Invalid request body")
+	}
+	req.Code = strings.TrimSpace(strings.ToUpper(req.Code))
+	if req.Code == "" || req.CreditPackageID == "" {
+		return common.Success(c, map[string]interface{}{"valid": false, "message": "Invalid promo code"})
+	}
+
+	var pkgCredits int
+	var pkgPrice float64
+	if err := h.db.QueryRow(ctx, `SELECT credits, price FROM credit_packages WHERE id = $1 AND is_active = true`, req.CreditPackageID).Scan(&pkgCredits, &pkgPrice); err != nil {
+		return common.NotFound(c, "Package not found")
+	}
+
+	var promoID string
+	var discountType string
+	var discountValue, minCredits, usedCount int
+	var maxUses *int
+	var expiresAt *time.Time
+	var isActive, oncePerUser, firstPurchaseOnly bool
+	err := h.db.QueryRow(ctx, `
+		SELECT id, discount_type, discount_value, min_purchase_credits, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
+		FROM promo_codes WHERE UPPER(TRIM(code)) = $1
+	`, req.Code).Scan(&promoID, &discountType, &discountValue, &minCredits, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
+	if err != nil || !isActive {
+		return common.Success(c, map[string]interface{}{"valid": false, "message": "Invalid or expired promo code"})
+	}
+	if expiresAt != nil && expiresAt.Before(time.Now()) {
+		return common.Success(c, map[string]interface{}{"valid": false, "message": "Promo code has expired"})
+	}
+	if maxUses != nil && usedCount >= *maxUses {
+		return common.Success(c, map[string]interface{}{"valid": false, "message": "Promo code has reached its usage limit"})
+	}
+	if pkgCredits < minCredits {
+		return common.Success(c, map[string]interface{}{
+			"valid": false, "message": fmt.Sprintf("Minimum %d credits required for this promo", minCredits),
+		})
+	}
+	if oncePerUser {
+		var alreadyUsed int
+		_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM credit_purchases WHERE user_id = $1 AND promo_code_id = $2 AND status = 'APPROVED'`, userID, promoID).Scan(&alreadyUsed)
+		if alreadyUsed > 0 {
+			return common.Success(c, map[string]interface{}{"valid": false, "message": "You have already used this promo code"})
+		}
+	}
+	if firstPurchaseOnly {
+		var approvedCount int
+		_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM credit_purchases WHERE user_id = $1 AND status = 'APPROVED'`, userID).Scan(&approvedCount)
+		if approvedCount > 0 {
+			return common.Success(c, map[string]interface{}{"valid": false, "message": "This promo code is only valid for your first credit purchase"})
+		}
+	}
+
+	finalCredits := pkgCredits
+	finalPrice := pkgPrice
+	if discountType == "PERCENT" {
+		if discountValue > 0 && discountValue <= 100 {
+			finalPrice = pkgPrice * (1 - float64(discountValue)/100)
+		}
+	} else if discountType == "FIXED_CREDITS" {
+		if discountValue > 0 {
+			finalCredits = pkgCredits + discountValue
+		}
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"valid":         true,
+		"promoCodeId":   promoID,
+		"discountType":  discountType,
+		"discountValue": discountValue,
+		"finalCredits":  finalCredits,
+		"finalPrice":   finalPrice,
 	})
 }
 

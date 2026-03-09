@@ -13,11 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/user/video-player";
+import { RetryImage } from "@/components/ui/retry-image";
 
 interface ContentItem {
   id: string;
   contentType: string;
-  thumbnailPath: string | null;
   duration: number | null;
 }
 
@@ -296,10 +296,9 @@ export function ModelDetail({
       const res = await fetch(`/api/favorites?${params.toString()}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        const mapped: ContentItem[] = (data.items || []).map((i: { contentItemId: string; contentType: string; thumbnailPath: string | null; duration: number | null }) => ({
+        const mapped: ContentItem[] = (data.items || []).map((i: { contentItemId: string; contentType: string; duration: number | null }) => ({
           id: i.contentItemId,
           contentType: i.contentType,
-          thumbnailPath: i.thumbnailPath,
           duration: i.duration,
         }));
         if (append) {
@@ -820,28 +819,21 @@ export function ModelDetail({
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
                   {hasAccess ? (
                     <>
-                      <img
+                      <RetryImage
                         src={`/api/content/${item.id}/thumbnail`}
                         alt=""
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
                         loading="lazy"
-                        onError={(e) => {
-                          const img = e.target as HTMLImageElement;
-                          img.style.display = "none";
-                          const fallback = img.nextElementSibling as HTMLElement;
-                          if (fallback) fallback.style.display = "flex";
-                        }}
+                        fallback={
+                          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-secondary">
+                            {item.contentType === "VIDEO" ? (
+                              <Play className="h-8 w-8 text-muted-foreground/30" />
+                            ) : (
+                              <Image className="h-8 w-8 text-muted-foreground/30" />
+                            )}
+                          </div>
+                        }
                       />
-                      <div
-                        className="absolute inset-0 items-center justify-center bg-gradient-to-br from-muted to-secondary"
-                        style={{ display: "none" }}
-                      >
-                        {item.contentType === "VIDEO" ? (
-                          <Play className="h-8 w-8 text-muted-foreground/30" />
-                        ) : (
-                          <Image className="h-8 w-8 text-muted-foreground/30" />
-                        )}
-                      </div>
                     </>
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-secondary">
@@ -924,12 +916,17 @@ export function ModelDetail({
           // Fix #6: Mobile swipe support
           onTouchStart={(e) => {
             const touch = e.touches[0];
+            const target = e.target as HTMLElement;
             (overlayRef.current as any).__touchStartX = touch.clientX;
             (overlayRef.current as any).__touchStartY = touch.clientY;
+            (overlayRef.current as any).__touchStartTarget = target;
           }}
           onTouchEnd={(e) => {
             const el = overlayRef.current as any;
             if (!el?.__touchStartX) return;
+            // Don't trigger swipe if touch started on controls (progress bar, play, seek)
+            const startTarget = el.__touchStartTarget as HTMLElement | undefined;
+            if (startTarget?.closest?.("[data-controls]")) return;
             const dx = e.changedTouches[0].clientX - el.__touchStartX;
             const dy = Math.abs(e.changedTouches[0].clientY - el.__touchStartY);
             if (Math.abs(dx) < 50 || dy > Math.abs(dx)) return;
@@ -1021,7 +1018,7 @@ export function ModelDetail({
             className="flex-1 flex items-center justify-center overflow-auto px-4 pb-4 cursor-pointer"
             onClick={(e) => {
               const target = e.target as HTMLElement;
-              if (target.closest("video, img, .video-player-controls, button")) return;
+              if (target.closest("[data-video-player], img, button")) return;
               closeOverlay();
             }}
           >
@@ -1037,7 +1034,7 @@ export function ModelDetail({
                   <VideoPlayer contentItemId={selectedItemId} />
                 </div>
               ) : (
-                <img
+                <RetryImage
                   src={`/api/content/${selectedItemId}/thumbnail`}
                   alt=""
                   className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
@@ -1049,9 +1046,12 @@ export function ModelDetail({
           </div>
 
           <p className="text-center text-[10px] sm:text-xs text-white/30 pb-3">
-            {selectedItem.contentType === "VIDEO"
-              ? t("shiftArrowsToNavigate")
-              : t("arrowsToNavigate")}
+            <span className="hidden sm:inline">
+              {selectedItem.contentType === "VIDEO"
+                ? t("shiftArrowsToNavigate")
+                : t("arrowsToNavigate")}
+            </span>
+            <span className="sm:hidden">{t("swipeToNavigate")}</span>
           </p>
         </div>
       )}

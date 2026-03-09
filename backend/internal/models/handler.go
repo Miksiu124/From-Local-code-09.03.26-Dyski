@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"strconv"
 
 	"content-platform-backend/internal/common"
@@ -37,7 +36,7 @@ func (h *Handler) List(c echo.Context) error {
 
 	// Build query dynamically
 	query := `
-		SELECT m.id, m.name, m.folder_name, m.description, m.country_id, m.is_active, m.is_featured,
+		SELECT m.id, m.name, m.folder_name, m.description,
 			   c.name AS country_name, c.flag_emoji,
 			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false) AS content_count,
 			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false AND ci.content_type = 'VIDEO') AS video_count,
@@ -90,9 +89,6 @@ func (h *Handler) List(c echo.Context) error {
 		Name               string  `json:"name"`
 		FolderName         string  `json:"folderName"`
 		Description        *string `json:"description"`
-		CountryID          *string `json:"countryId"`
-		IsActive           bool    `json:"isActive"`
-		IsFeatured         bool    `json:"isFeatured"`
 		CountryName        *string `json:"countryName"`
 		CountryFlag        *string `json:"countryFlag"`
 		ContentCount       int     `json:"contentCount"`
@@ -104,7 +100,7 @@ func (h *Handler) List(c echo.Context) error {
 	var items []ModelItem
 	for rows.Next() {
 		var m ModelItem
-		if err := rows.Scan(&m.ID, &m.Name, &m.FolderName, &m.Description, &m.CountryID, &m.IsActive, &m.IsFeatured,
+		if err := rows.Scan(&m.ID, &m.Name, &m.FolderName, &m.Description,
 			&m.CountryName, &m.CountryFlag, &m.ContentCount, &m.VideoCount, &m.ImageCount, &m.FirstContentItemID); err != nil {
 			continue
 		}
@@ -141,22 +137,18 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		Name        string  `json:"name"`
 		FolderName  string  `json:"folderName"`
 		Description *string `json:"description"`
-		AvatarPath  *string `json:"avatarPath"`
-		CountryID   *string `json:"countryId"`
-		IsActive    bool    `json:"isActive"`
-		IsFeatured  bool    `json:"isFeatured"`
 		CountryName *string `json:"countryName"`
 		CountryFlag *string `json:"countryFlag"`
 	}
 
 	err := h.db.QueryRow(ctx, `
-		SELECT m.id, m.name, m.folder_name, m.description, m.avatar_path,
-			   m.country_id, m.is_active, m.is_featured, c.name, c.flag_emoji
+		SELECT m.id, m.name, m.folder_name, m.description,
+			   c.name, c.flag_emoji
 		FROM models m
 		LEFT JOIN countries c ON c.id = m.country_id
 		WHERE m.folder_name = $1 AND m.is_active = true
-	`, slug).Scan(&model.ID, &model.Name, &model.FolderName, &model.Description, &model.AvatarPath,
-		&model.CountryID, &model.IsActive, &model.IsFeatured, &model.CountryName, &model.CountryFlag)
+	`, slug).Scan(&model.ID, &model.Name, &model.FolderName, &model.Description,
+		&model.CountryName, &model.CountryFlag)
 
 	if err != nil {
 		return common.NotFound(c, "Model not found")
@@ -164,7 +156,7 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 
 	// Get content items
 	rows, err := h.db.Query(ctx, `
-		SELECT id, unique_id, content_type, thumbnail_path, hls_master_path, duration, is_active, created_at
+		SELECT id, content_type, duration
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 		ORDER BY created_at ASC
@@ -175,24 +167,19 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	defer rows.Close()
 
 	type ContentItem struct {
-		ID            string  `json:"id"`
-		UniqueID      string  `json:"uniqueId"`
-		ContentType   string  `json:"contentType"`
-		ThumbnailPath *string `json:"thumbnailPath"`
-		HlsMasterPath *string `json:"hlsMasterPath"`
-		Duration      *int    `json:"duration"`
-		IsActive      bool    `json:"isActive"`
-		CreatedAt     string  `json:"createdAt"`
+		ID          string `json:"id"`
+		ContentType string `json:"contentType"`
+		Duration    *int   `json:"duration"`
 	}
 
 	var contentItems []ContentItem
 	for rows.Next() {
 		var ci ContentItem
-		var createdAt interface{}
-		if err := rows.Scan(&ci.ID, &ci.UniqueID, &ci.ContentType, &ci.ThumbnailPath, &ci.HlsMasterPath, &ci.Duration, &ci.IsActive, &createdAt); err != nil {
+		var duration *int
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration); err != nil {
 			continue
 		}
-		ci.CreatedAt = fmt.Sprintf("%v", createdAt)
+		ci.Duration = duration
 		contentItems = append(contentItems, ci)
 	}
 
@@ -231,7 +218,7 @@ func (h *Handler) ListContent(c echo.Context) error {
 
 	// 2. Build Query
 	query := `
-		SELECT id, unique_id, content_type, thumbnail_path, hls_master_path, duration, is_active, created_at
+		SELECT id, content_type, duration
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 	`
@@ -280,24 +267,19 @@ func (h *Handler) ListContent(c echo.Context) error {
 	defer rows.Close()
 
 	type ContentItem struct {
-		ID            string  `json:"id"`
-		UniqueID      string  `json:"uniqueId"`
-		ContentType   string  `json:"contentType"`
-		ThumbnailPath *string `json:"thumbnailPath"`
-		HlsMasterPath *string `json:"hlsMasterPath"`
-		Duration      *int    `json:"duration"`
-		IsActive      bool    `json:"isActive"`
-		CreatedAt     string  `json:"createdAt"`
+		ID          string `json:"id"`
+		ContentType string `json:"contentType"`
+		Duration    *int   `json:"duration"`
 	}
 
 	var items []ContentItem
 	for rows.Next() {
 		var ci ContentItem
-		var createdAt interface{}
-		if err := rows.Scan(&ci.ID, &ci.UniqueID, &ci.ContentType, &ci.ThumbnailPath, &ci.HlsMasterPath, &ci.Duration, &ci.IsActive, &createdAt); err != nil {
+		var duration *int
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration); err != nil {
 			continue
 		}
-		ci.CreatedAt = fmt.Sprintf("%v", createdAt)
+		ci.Duration = duration
 		items = append(items, ci)
 	}
 
@@ -452,8 +434,6 @@ func (h *Handler) GetPublicSettings(c echo.Context) error {
 		"bundle_credit_cost_14d",
 		"bundle_credit_cost_30d",
 		"blik_enabled",
-		"paypal_address",
-		"revolut_address",
 	}
 
 	result := map[string]interface{}{

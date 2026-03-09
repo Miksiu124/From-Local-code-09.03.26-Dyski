@@ -5,6 +5,7 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/models"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -87,7 +88,7 @@ func (h *Handler) List(c echo.Context) error {
 	}
 
 	query := `
-		SELECT f.id, f.content_item_id, ci.content_type, ci.thumbnail_path, ci.duration,
+		SELECT f.id, f.content_item_id, ci.content_type, ci.duration,
 			   m.id AS model_id, m.name AS model_name, m.folder_name, f.created_at::text
 		FROM favorites f
 		JOIN content_items ci ON ci.id = f.content_item_id
@@ -142,7 +143,6 @@ func (h *Handler) List(c echo.Context) error {
 		ID            string  `json:"id"`
 		ContentItemID string  `json:"contentItemId"`
 		ContentType   string  `json:"contentType"`
-		ThumbnailPath *string `json:"thumbnailPath"`
 		Duration      *int    `json:"duration"`
 		ModelName     string  `json:"modelName"`
 		ModelSlug     string  `json:"modelSlug"`
@@ -153,7 +153,7 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var item FavItem
 		var modelID string
-		if err := rows.Scan(&item.ID, &item.ContentItemID, &item.ContentType, &item.ThumbnailPath, &item.Duration,
+		if err := rows.Scan(&item.ID, &item.ContentItemID, &item.ContentType, &item.Duration,
 			&modelID, &item.ModelName, &item.ModelSlug, &item.CreatedAt); err != nil {
 			continue
 		}
@@ -188,6 +188,141 @@ func (h *Handler) List(c echo.Context) error {
 		"items":      items,
 		"nextCursor": nextCursor,
 		"totalCount": totalCount,
+	})
+}
+
+// GetDetails returns content item details with access check and prev/next navigation
+// scoped to the user's favorites list (same order as List).
+func (h *Handler) GetDetails(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+
+	contentItemID := c.Param("contentItemId")
+	if contentItemID == "" {
+		return common.NotFound(c, "Content item not found")
+	}
+
+	filter := c.QueryParam("filter")
+	if filter == "" {
+		filter = "ALL"
+	}
+	if filter != "ALL" && filter != "VIDEO" && filter != "PHOTO" {
+		filter = "ALL"
+	}
+
+	sort := c.QueryParam("sort")
+	if sort == "" {
+		sort = "newest"
+	}
+	if sort != "newest" && sort != "oldest" && sort != "longest" && sort != "shortest" {
+		sort = "newest"
+	}
+
+	// Verify user has favorited this item and get content + model
+	var ciID, ciType, modelID, modelName, modelFolder, favCreatedAt, favID string
+	var ciDuration *int
+	baseQuery := `
+		SELECT ci.id, ci.content_type, ci.duration,
+		       m.id, m.name, m.folder_name, f.created_at::text, f.id
+		FROM favorites f
+		JOIN content_items ci ON ci.id = f.content_item_id AND ci.is_active = true AND ci.is_hidden = false
+		JOIN models m ON m.id = ci.model_id
+		WHERE f.user_id = $1 AND f.content_item_id = $2
+	`
+	err := h.db.QueryRow(ctx, baseQuery, userID, contentItemID).Scan(
+		&ciID, &ciType, &ciDuration,
+		&modelID, &modelName, &modelFolder, &favCreatedAt, &favID,
+	)
+	if err != nil {
+		return common.NotFound(c, "Content item not found or not favorited")
+	}
+
+	// Access check (same as content handler)
+	isAdmin := middleware.GetUserRole(c) == "ADMIN"
+	hasAccess := isAdmin
+	if !isAdmin {
+		hasAccess, _ = models.CheckContentAccess(ctx, h.db, userID, contentItemID)
+	}
+
+	// Prev/next from favorites list with same filter and sort
+	filterCond := ""
+	if filter == "VIDEO" {
+		filterCond = " AND ci.content_type = 'VIDEO'"
+	} else if filter == "PHOTO" {
+		filterCond = " AND ci.content_type = 'PHOTO'"
+	}
+
+	prevNextFrom := `
+		FROM favorites f
+		JOIN content_items ci ON ci.id = f.content_item_id AND ci.is_active = true AND ci.is_hidden = false
+		WHERE f.user_id = $1 AND f.content_item_id != $2` + filterCond
+
+	var prevID, nextID *string
+
+	switch sort {
+	case "oldest":
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (f.created_at, f.id) < ((SELECT created_at FROM favorites WHERE id = $3), $3)
+			ORDER BY f.created_at DESC, f.id DESC LIMIT 1`, userID, contentItemID, favID).Scan(&prevID)
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (f.created_at, f.id) > ((SELECT created_at FROM favorites WHERE id = $3), $3)
+			ORDER BY f.created_at ASC, f.id ASC LIMIT 1`, userID, contentItemID, favID).Scan(&nextID)
+	case "longest":
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (COALESCE(ci.duration, 0), f.id) > (
+				SELECT COALESCE(ci2.duration, 0), f2.id FROM content_items ci2
+				JOIN favorites f2 ON f2.content_item_id = ci2.id
+				WHERE f2.id = $3
+			)
+			ORDER BY COALESCE(ci.duration, 0) ASC, f.id ASC LIMIT 1`, userID, contentItemID, favID).Scan(&prevID)
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (COALESCE(ci.duration, 0), f.id) < (
+				SELECT COALESCE(ci2.duration, 0), f2.id FROM content_items ci2
+				JOIN favorites f2 ON f2.content_item_id = ci2.id
+				WHERE f2.id = $3
+			)
+			ORDER BY COALESCE(ci.duration, 0) DESC, f.id DESC LIMIT 1`, userID, contentItemID, favID).Scan(&nextID)
+	case "shortest":
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (COALESCE(ci.duration, 0), f.id) < (
+				SELECT COALESCE(ci2.duration, 0), f2.id FROM content_items ci2
+				JOIN favorites f2 ON f2.content_item_id = ci2.id
+				WHERE f2.id = $3
+			)
+			ORDER BY COALESCE(ci.duration, 0) DESC, f.id DESC LIMIT 1`, userID, contentItemID, favID).Scan(&prevID)
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (COALESCE(ci.duration, 0), f.id) > (
+				SELECT COALESCE(ci2.duration, 0), f2.id FROM content_items ci2
+				JOIN favorites f2 ON f2.content_item_id = ci2.id
+				WHERE f2.id = $3
+			)
+			ORDER BY COALESCE(ci.duration, 0) ASC, f.id ASC LIMIT 1`, userID, contentItemID, favID).Scan(&nextID)
+	default: // newest
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (f.created_at, f.id) > ((SELECT created_at FROM favorites WHERE id = $3), $3)
+			ORDER BY f.created_at ASC, f.id ASC LIMIT 1`, userID, contentItemID, favID).Scan(&prevID)
+		_ = h.db.QueryRow(ctx, `SELECT f.content_item_id `+prevNextFrom+`
+			AND (f.created_at, f.id) < ((SELECT created_at FROM favorites WHERE id = $3), $3)
+			ORDER BY f.created_at DESC, f.id DESC LIMIT 1`, userID, contentItemID, favID).Scan(&nextID)
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"model": map[string]interface{}{
+			"id":         modelID,
+			"name":       modelName,
+			"folderName": modelFolder,
+		},
+		"contentItem": map[string]interface{}{
+			"id":          ciID,
+			"contentType": ciType,
+			"duration":    ciDuration,
+		},
+		"hasAccess":  hasAccess,
+		"prevItemId": prevID,
+		"nextItemId": nextID,
 	})
 }
 

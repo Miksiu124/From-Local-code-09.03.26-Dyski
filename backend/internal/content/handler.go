@@ -409,22 +409,22 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 		ORDER BY created_at DESC LIMIT 1
 	`, modelID, ciCreatedAt).Scan(&nextID)
 
+	contentItem := map[string]interface{}{
+		"id":          ciID,
+		"contentType": ciType,
+		"duration":    ciDuration,
+	}
+
 	return common.Success(c, map[string]interface{}{
 		"model": map[string]interface{}{
 			"id":         modelID,
 			"name":       modelName,
 			"folderName": modelFolder,
 		},
-		"contentItem": map[string]interface{}{
-			"id":            ciID,
-			"contentType":   ciType,
-			"thumbnailPath": ciThumbnail,
-			"hlsMasterPath": ciHlsMaster,
-			"duration":      ciDuration,
-		},
-		"hasAccess":  hasAccess,
-		"prevItemId": prevID,
-		"nextItemId": nextID,
+		"contentItem": contentItem,
+		"hasAccess":   hasAccess,
+		"prevItemId":  prevID,
+		"nextItemId":  nextID,
 	})
 }
 

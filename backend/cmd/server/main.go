@@ -21,9 +21,11 @@ import (
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/jobs"
+	"content-platform-backend/internal/links"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
 	"content-platform-backend/internal/purchases"
+	"content-platform-backend/internal/referral"
 	"content-platform-backend/internal/user"
 
 	"github.com/labstack/echo/v4"
@@ -57,6 +59,9 @@ func main() {
 	// ── Echo server ──────────────────────────────────────────────────────
 	e := echo.New()
 	e.HideBanner = true
+	
+	// SECURITY PATTERN: Ufamy tylko zweryfikowanemu przez Nginx nagłówkowi X-Real-IP, zapobiegając fałszowaniu IP przez hakera w X-Forwarded-For
+	e.IPExtractor = echo.ExtractIPFromRealIPHeader()
 
 	// Global middleware
 	e.Use(echomw.Recover())
@@ -98,6 +103,7 @@ func main() {
 	// ── Services ─────────────────────────────────────────────────────────
 	authService := auth.NewService(cfg, pgPool, redisClient)
 	r2Client := content.NewR2Client(cfg)
+	r2ProofClient := content.NewR2ProofClient(cfg)
 	contentService := content.NewService(pgPool, r2Client, cfg)
 
 	// ── Auth middleware ──────────────────────────────────────────────────
@@ -146,6 +152,8 @@ func main() {
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.POST("/logout", authHandler.Logout)
 	authGroup.GET("/me", authHandler.Me, authMW.Authenticate)
+	authGroup.GET("/verify-email", authHandler.VerifyEmail)
+	authGroup.POST("/resend-verification", authHandler.ResendVerification, authMW.Authenticate)
 	authGroup.POST("/forgot-password", authHandler.ForgotPassword)
 	authGroup.POST("/reset-password", authHandler.ResetPassword)
 	authGroup.GET("/discord", authHandler.DiscordRedirect)
@@ -166,6 +174,10 @@ func main() {
 	api.GET("/settings/public", modelsHandler.GetPublicSettings)
 	api.GET("/user/access", modelsHandler.GetUserAccess, authMW.OptionalAuth)
 
+	// Public Custom Links
+	linksHandler := links.NewHandler(pgPool)
+	api.GET("/public/links/:slug", linksHandler.TrackAndResolveLink)
+
 	// Content streaming (requires auth + access)
 	contentHandler := content.NewHandler(pgPool, r2Client, cfg)
 	
@@ -178,13 +190,14 @@ func main() {
 	contentGroup.GET("/:slug/:contentItemId/details", contentHandler.GetContentDetails, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail", contentHandler.Thumbnail, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail/:filename", contentHandler.Thumbnail, authMW.OptionalAuth)
-	contentGroup.GET("/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate)
+	contentGroup.GET("/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate, authMW.RequireEmailVerified)
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
 
 	// Credits (requires auth)
-	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg, r2Client)
+	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg, r2ProofClient)
 	creditsGroup := api.Group("/credits", authMW.Authenticate)
-	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase)
+	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase, authMW.RequireEmailVerified)
+	creditsGroup.POST("/validate-promo", creditsHandler.ValidatePromo)
 	creditsGroup.POST("/purchase/:id/proof", creditsHandler.UploadProof, echomw.BodyLimit("12M"))
 	creditsGroup.GET("/purchase/:id/status", creditsHandler.GetPurchaseStatus)
 	creditsGroup.GET("/purchase/:id/stream", creditsHandler.StreamPurchaseStatus)
@@ -199,7 +212,7 @@ func main() {
 
 	// Purchases (requires auth)
 	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient)
-	api.POST("/purchases", purchasesHandler.Create, authMW.Authenticate)
+	api.POST("/purchases", purchasesHandler.Create, authMW.Authenticate, authMW.RequireEmailVerified)
     api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
 
 	// Favorites (requires auth)
@@ -207,6 +220,7 @@ func main() {
 	favGroup := api.Group("/favorites", authMW.Authenticate)
 	favGroup.POST("", favoritesHandler.Toggle)
 	favGroup.GET("", favoritesHandler.List)
+	favGroup.GET("/:contentItemId/details", favoritesHandler.GetDetails)
 	favGroup.POST("/check", favoritesHandler.BatchCheck)
 
 	// Notifications (requires auth)
@@ -217,7 +231,7 @@ func main() {
 	notifGroup.PATCH("", notifHandler.MarkAllRead)
 
 	// User (requires auth)
-	userHandler := user.NewHandler(pgPool)
+	userHandler := user.NewHandler(pgPool, mailService)
 	api.GET("/user/balance", userHandler.GetBalance, authMW.Authenticate)
 	api.GET("/user/profile", userHandler.GetProfile, authMW.Authenticate)
 	api.PATCH("/user/profile", userHandler.UpdateProfile, authMW.Authenticate)
@@ -226,12 +240,17 @@ func main() {
 	api.PATCH("/user/autoplay", userHandler.UpdateAutoplay, authMW.Authenticate)
 	api.GET("/user/preferences", userHandler.GetPreferences, authMW.Authenticate)
 
+	// Referral (requires auth)
+	referralHandler := referral.NewHandler(pgPool, cfg)
+	api.GET("/referral/me", referralHandler.GetMe, authMW.Authenticate)
+
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
-	adminHandler := admin.NewHandler(pgPool, r2Client, cfg, redisClient, contentService, mailService)
+	adminHandler := admin.NewHandler(pgPool, r2Client, r2ProofClient, cfg, redisClient, contentService, mailService)
 
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)
 	adminGroup.GET("/credits/purchases/stream", adminHandler.StreamPendingPurchases)
+	adminGroup.GET("/credits/purchases/:id/proof", adminHandler.GetPurchaseProof)
 	adminGroup.POST("/credits/purchases/:id/approve", adminHandler.ApprovePurchase)
 	adminGroup.POST("/credits/purchases/:id/reject", adminHandler.RejectPurchase)
 	adminGroup.GET("/users", adminHandler.ListUsers)
@@ -246,6 +265,15 @@ func main() {
 	adminGroup.POST("/packages", adminHandler.CreatePackage)
 	adminGroup.PATCH("/packages/:id", adminHandler.UpdatePackage)
 	adminGroup.DELETE("/packages/:id", adminHandler.DeletePackage)
+	adminGroup.GET("/promo-codes", adminHandler.ListPromoCodes)
+	adminGroup.POST("/promo-codes", adminHandler.CreatePromoCode)
+	adminGroup.PATCH("/promo-codes/:id", adminHandler.UpdatePromoCode)
+	adminGroup.DELETE("/promo-codes/:id", adminHandler.DeletePromoCode)
+	adminGroup.GET("/custom-links", adminHandler.ListCustomLinks)
+	adminGroup.POST("/custom-links", adminHandler.CreateCustomLink)
+	adminGroup.PATCH("/custom-links/:id", adminHandler.UpdateCustomLink)
+	adminGroup.DELETE("/custom-links/:id", adminHandler.DeleteCustomLink)
+	adminGroup.GET("/custom-links/:id/analytics", adminHandler.GetCustomLinkAnalytics)
 	adminGroup.GET("/models", adminHandler.ListModels)
 	adminGroup.PATCH("/models", adminHandler.UpdateModel)
 	adminGroup.PATCH("/content/hidden", adminHandler.ToggleContentHidden)

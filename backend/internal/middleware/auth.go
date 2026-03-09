@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -51,7 +50,7 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 
 		// Check session is still active in Redis
 		sessionKey := fmt.Sprintf("session:%s", claims.UserID)
-		storedToken, err := am.redis.Get(context.Background(), sessionKey).Result()
+		storedToken, err := am.redis.Get(c.Request().Context(), sessionKey).Result()
 		if err != nil || storedToken != claims.ID {
 			return c.JSON(http.StatusUnauthorized, map[string]string{
 				"error": "Session expired or logged in on another device",
@@ -60,10 +59,10 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 
 		// Check if user is banned
 		var isBanned bool
-		if banErr := am.db.QueryRow(context.Background(),
+		if banErr := am.db.QueryRow(c.Request().Context(),
 			`SELECT COALESCE(is_banned, false) FROM users WHERE id = $1`, claims.UserID,
 		).Scan(&isBanned); banErr == nil && isBanned {
-			am.redis.Del(context.Background(), sessionKey)
+			am.redis.Del(c.Request().Context(), sessionKey)
 			return c.JSON(http.StatusForbidden, map[string]string{"error": "Account suspended"})
 		}
 
@@ -76,6 +75,29 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+// RequireEmailVerified runs after Authenticate; returns 403 if user's email is not verified (admins bypass)
+func (am *AuthMiddleware) RequireEmailVerified(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if GetUserRole(c) == "ADMIN" {
+			return next(c)
+		}
+		userID := GetUserID(c)
+		if userID == "" {
+			return next(c)
+		}
+		var emailVerified bool
+		if err := am.db.QueryRow(c.Request().Context(),
+			`SELECT COALESCE(email_verified, false) FROM users WHERE id = $1`, userID,
+		).Scan(&emailVerified); err != nil || !emailVerified {
+			return c.JSON(http.StatusForbidden, map[string]string{
+				"error": "Please verify your email to continue.",
+				"code":  "EMAIL_NOT_VERIFIED",
+			})
+		}
+		return next(c)
+	}
+}
+
 // OptionalAuth extracts JWT if present but doesn't require it
 func (am *AuthMiddleware) OptionalAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -83,7 +105,7 @@ func (am *AuthMiddleware) OptionalAuth(next echo.HandlerFunc) echo.HandlerFunc {
 		if err == nil {
 			// Verify session in Redis
 			sessionKey := fmt.Sprintf("session:%s", claims.UserID)
-			storedToken, err := am.redis.Get(context.Background(), sessionKey).Result()
+			storedToken, err := am.redis.Get(c.Request().Context(), sessionKey).Result()
 			if err == nil && storedToken == claims.ID {
 				c.Set(string(UserIDKey), claims.UserID)
 				c.Set(string(UserEmailKey), claims.Email)

@@ -10,17 +10,20 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       isProd
-        ? "script-src 'self' 'unsafe-inline'"
-        : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com"
+        : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
+      "script-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com",
       "font-src 'self' data:",
-      "connect-src 'self' https: https://*.r2.cloudflarestorage.com https://*.ingest.sentry.io",
+      "connect-src 'self' https: wss: https://*.r2.cloudflarestorage.com https://*.ingest.sentry.io https://challenges.cloudflare.com",
       "media-src 'self' blob: https:",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
+      "frame-src 'self' https://challenges.cloudflare.com",
+      "worker-src 'self' blob:",
     ].join("; "),
   },
   {

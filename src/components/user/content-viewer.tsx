@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Heart, ChevronLeft, ChevronRight } from "lucide-react";
@@ -17,6 +16,19 @@ interface ContentViewerProps {
   modelSlug: string;
   prevItemId: string | null;
   nextItemId: string | null;
+  backHref?: string;
+  backLabel?: string;
+  navBasePath?: string;
+  detailsApiPath?: string;
+  searchParamsForNav?: string;
+}
+
+interface DisplayedState {
+  contentItemId: string;
+  contentType: string;
+  modelName: string;
+  prevItemId: string | null;
+  nextItemId: string | null;
 }
 
 export function ContentViewer({
@@ -26,15 +38,23 @@ export function ContentViewer({
   modelSlug,
   prevItemId,
   nextItemId,
+  backHref: backHrefProp,
+  backLabel,
+  navBasePath,
+  detailsApiPath,
+  searchParamsForNav,
 }: ContentViewerProps) {
   const t = useTranslations("models");
   const router = useRouter();
   const [isFavorited, setIsFavorited] = useState(false);
   const [toggling, setToggling] = useState(false);
 
+  // In fullscreen: in-place nav keeps VideoPlayer mounted (no fullscreen exit on Android)
+  const [displayedState, setDisplayedState] = useState<DisplayedState | null>(null);
 
-  const [backHref, setBackHref] = useState(`/models/${modelSlug}`);
+  const [computedBackHref, setComputedBackHref] = useState(`/models/${modelSlug}`);
   useEffect(() => {
+    if (backHrefProp) return;
     if (typeof window === "undefined") return;
     const filter = sessionStorage.getItem(`filter_model_${modelSlug}`);
     const sort = sessionStorage.getItem(`sort_model_${modelSlug}`);
@@ -44,22 +64,35 @@ export function ContentViewer({
     if (filter && filter !== "ALL" && validFilters.includes(filter)) params.set("filter", filter);
     if (sort && sort !== "newest" && validSorts.includes(sort)) params.set("sort", sort);
     const qs = params.toString();
-    setBackHref(`/models/${modelSlug}${qs ? `?${qs}` : ""}`);
-  }, [modelSlug]);
+    setComputedBackHref(`/models/${modelSlug}${qs ? `?${qs}` : ""}`);
+  }, [modelSlug, backHrefProp]);
+
+  const backHref = backHrefProp ?? computedBackHref;
 
   const handleBack = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    const savedY = typeof window !== "undefined" ? sessionStorage.getItem(`scroll_model_${modelSlug}`) : null;
     router.push(backHref);
-    if (savedY) {
-      const y = parseInt(savedY, 10);
-      if (!Number.isNaN(y) && y >= 0) {
-        requestAnimationFrame(() => {
-          setTimeout(() => window.scrollTo({ top: y, behavior: "instant" }), 50);
-        });
+    if (backHref.startsWith("/models/")) {
+      const savedY = typeof window !== "undefined" ? sessionStorage.getItem(`scroll_model_${modelSlug}`) : null;
+      if (savedY) {
+        const y = parseInt(savedY, 10);
+        if (!Number.isNaN(y) && y >= 0) {
+          requestAnimationFrame(() => {
+            setTimeout(() => window.scrollTo({ top: y, behavior: "instant" }), 50);
+          });
+        }
       }
     }
   }, [backHref, modelSlug, router]);
+
+  const effectiveItemId = displayedState?.contentItemId ?? contentItemId;
+  const effectiveContentType = displayedState?.contentType ?? contentType;
+  const effectivePrevId = displayedState?.prevItemId ?? prevItemId;
+  const effectiveNextId = displayedState?.nextItemId ?? nextItemId;
+
+  useEffect(() => {
+    if (displayedState) setDisplayedState(null);
+  }, [contentItemId]);
 
   useEffect(() => {
     (async () => {
@@ -68,17 +101,17 @@ export function ContentViewer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ contentItemIds: [contentItemId] }),
+          body: JSON.stringify({ contentItemIds: [effectiveItemId] }),
         });
         if (res.ok) {
           const data = await res.json();
-          setIsFavorited(data.favorited.includes(contentItemId));
+          setIsFavorited(data.favorited.includes(effectiveItemId));
         }
       } catch {
         // Silently ignore
       }
     })();
-  }, [contentItemId]);
+  }, [effectiveItemId]);
 
   const toggleFavorite = async () => {
     if (toggling) return;
@@ -88,7 +121,7 @@ export function ContentViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ contentItemId }),
+        body: JSON.stringify({ contentItemId: effectiveItemId }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -103,26 +136,112 @@ export function ContentViewer({
     }
   };
 
+  const navigateInPlace = useCallback(
+    async (targetItemId: string) => {
+      if (contentType !== "VIDEO") return;
+      const apiPath = detailsApiPath ?? `/api/content/${modelSlug}`;
+      const navPath = navBasePath ?? `/content/${modelSlug}`;
+      const qs = searchParamsForNav ?? "";
+      const targetUrl = `${navPath}/${targetItemId}${qs}`;
+      try {
+        const res = await fetch(`${apiPath}/${targetItemId}/details${qs}`, {
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.hasAccess) return;
+        setDisplayedState({
+          contentItemId: data.contentItem.id,
+          contentType: data.contentItem.contentType,
+          modelName: data.model.name,
+          prevItemId: data.prevItemId,
+          nextItemId: data.nextItemId,
+        });
+        router.replace(targetUrl);
+      } catch {
+        router.push(targetUrl);
+      }
+    },
+    [contentType, modelSlug, router, detailsApiPath, navBasePath, searchParamsForNav]
+  );
+
+  const buildNavUrl = useCallback(
+    (targetId: string) => {
+      if (navBasePath) {
+        const qs = searchParamsForNav ?? "";
+        return `${navBasePath}/${targetId}${qs}`;
+      }
+      return `/content/${modelSlug}/${targetId}`;
+    },
+    [navBasePath, modelSlug, searchParamsForNav]
+  );
+
   const goToPrev = useCallback(() => {
-    if (prevItemId) router.push(`/content/${modelSlug}/${prevItemId}`);
-  }, [prevItemId, modelSlug, router]);
+    const targetId = effectivePrevId;
+    if (!targetId) return;
+    const doc = document as Document & { webkitFullscreenElement?: Element };
+    const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    if (isFullscreen && contentType === "VIDEO") {
+      navigateInPlace(targetId);
+    } else {
+      router.push(buildNavUrl(targetId));
+    }
+  }, [effectivePrevId, router, contentType, navigateInPlace, buildNavUrl]);
 
   const goToNext = useCallback(() => {
-    if (nextItemId) router.push(`/content/${modelSlug}/${nextItemId}`);
-  }, [nextItemId, modelSlug, router]);
+    const targetId = effectiveNextId;
+    if (!targetId) return;
+    const doc = document as Document & { webkitFullscreenElement?: Element };
+    const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    if (isFullscreen && contentType === "VIDEO") {
+      navigateInPlace(targetId);
+    } else {
+      router.push(buildNavUrl(targetId));
+    }
+  }, [effectiveNextId, router, contentType, navigateInPlace, buildNavUrl]);
 
   // ── Mobile swipe navigation ──────────────────────────────────
   const touchStartXRef = useRef<number | null>(null);
+  const touchStartTimeRef = useRef<number | null>(null);
+  const touchStartTargetRef = useRef<HTMLElement | null>(null);
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartXRef.current = e.touches[0].clientX;
+    touchStartTimeRef.current = Date.now();
+    touchStartTargetRef.current = e.target as HTMLElement;
   }, []);
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (touchStartXRef.current === null) return;
+    if (touchStartXRef.current === null || touchStartTimeRef.current === null) return;
+    const target = touchStartTargetRef.current;
+    const touchedControls = target?.closest?.("[data-controls]");
+    const doc = document as Document & { webkitFullscreenElement?: Element };
+    const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+
+    // Pomiń swipe tylko gdy touch na controls (progress bar, play, seek) — wtedy user używa player
+    if (touchedControls) {
+      touchStartXRef.current = null;
+      touchStartTimeRef.current = null;
+      touchStartTargetRef.current = null;
+      return;
+    }
     const dx = e.changedTouches[0].clientX - touchStartXRef.current;
+    const dt = Date.now() - touchStartTimeRef.current;
     touchStartXRef.current = null;
-    const THRESHOLD = 50;
-    if (dx < -THRESHOLD) goToNext();
-    else if (dx > THRESHOLD) goToPrev();
+    touchStartTimeRef.current = null;
+    touchStartTargetRef.current = null;
+    const THRESHOLD = 90;
+    const MIN_DURATION_MS = 50;
+    const MIN_VELOCITY = 0.2;
+    if (dt < MIN_DURATION_MS) return;
+    const velocity = Math.abs(dx) / dt;
+    if (Math.abs(dx) < THRESHOLD) return;
+    if (velocity < MIN_VELOCITY && Math.abs(dx) < 120) return;
+    if (dx < -THRESHOLD) {
+      e.preventDefault();
+      goToNext();
+    } else if (dx > THRESHOLD) {
+      e.preventDefault();
+      goToPrev();
+    }
   }, [goToNext, goToPrev]);
 
   useEffect(() => {
@@ -166,7 +285,7 @@ export function ContentViewer({
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{t("backToModel", { modelName })}</span>
+          <span className="hidden sm:inline">{backLabel ?? t("backToModel", { modelName })}</span>
           <span className="sm:hidden">Back</span>
         </a>
 
@@ -175,7 +294,7 @@ export function ContentViewer({
             variant="ghost"
             size="icon"
             onClick={goToPrev}
-            disabled={!prevItemId}
+            disabled={!effectivePrevId}
             className="h-8 w-8 rounded-lg"
             title={contentType === "VIDEO" ? "Previous (Shift+Left)" : "Previous (Left Arrow)"}
           >
@@ -185,7 +304,7 @@ export function ContentViewer({
             variant="ghost"
             size="icon"
             onClick={goToNext}
-            disabled={!nextItemId}
+            disabled={!effectiveNextId}
             className="h-8 w-8 rounded-lg"
             title={contentType === "VIDEO" ? "Next (Shift+Right)" : "Next (Right Arrow)"}
           >
@@ -213,17 +332,17 @@ export function ContentViewer({
       </div>
 
       <div
-        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center"
+        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center touch-pan-y"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        {contentType === "VIDEO" ? (
+        {effectiveContentType === "VIDEO" ? (
           <div className="w-full max-w-6xl">
-            <VideoPlayer contentItemId={contentItemId} />
+            <VideoPlayer contentItemId={effectiveItemId} />
           </div>
         ) : (
           <img
-            src={`/api/content/${contentItemId}/thumbnail`}
+            src={`/api/content/${effectiveItemId}/thumbnail`}
             alt=""
             className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
             onContextMenu={(e) => e.preventDefault()}
@@ -236,7 +355,7 @@ export function ContentViewer({
         <span className="hidden sm:inline">
           {contentType === "VIDEO" ? t("shiftArrowsToNavigate") : t("arrowsToNavigate")}
         </span>
-        <span className="sm:hidden">Swipe left / right to navigate</span>
+        <span className="sm:hidden">{t("swipeToNavigate")}</span>
       </p>
     </motion.div>
   );
