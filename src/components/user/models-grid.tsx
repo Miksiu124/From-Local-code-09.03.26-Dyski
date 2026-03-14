@@ -354,10 +354,10 @@ export function ModelsGrid({
             </div>
             {displayFeatured.length > 1 && (
               <div className="flex items-center gap-1.5">
-                <button onClick={goPrev} className="p-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer">
+                <button onClick={goPrev} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer" aria-label={t("carouselPrev")}>
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <button onClick={goNext} className="p-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer">
+                <button onClick={goNext} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer" aria-label={t("carouselNext")}>
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
@@ -373,6 +373,7 @@ export function ModelsGrid({
                     key={heroModel.id}
                     src={`/api/models/${heroModel.folderName}/header`}
                     alt={heroModel.name}
+                    loading="eager"
                     initial={{ opacity: 0, scale: 1.05 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
@@ -416,11 +417,14 @@ export function ModelsGrid({
                     {displayFeatured.map((_, i) => (
                       <button
                         key={i}
+                        type="button"
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveIndex(i); }}
                         className={cn(
-                          "rounded-full transition-all duration-300 cursor-pointer",
+                          "min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-all duration-300 cursor-pointer",
                           i === activeIndex ? "w-6 h-1.5 bg-white" : "w-1.5 h-1.5 bg-white/30 hover:bg-white/50"
                         )}
+                        aria-label={t("carouselSlide", { current: i + 1, total: displayFeatured.length })}
+                        aria-current={i === activeIndex ? "true" : undefined}
                       />
                     ))}
                   </div>

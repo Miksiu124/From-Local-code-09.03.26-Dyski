@@ -222,7 +222,7 @@ export function FavoritesGrid() {
 
                   {/* Remove favorite button */}
                   <button
-                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all z-10 cursor-pointer"
+                    className="absolute top-2 right-2 min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all z-10 cursor-pointer"
                     onClick={(e) => handleRemoveFavorite(e, item.contentItemId)}
                     disabled={removingId === item.contentItemId}
                   >

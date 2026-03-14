@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { emitSecurityEvent } from "@/lib/security-events";
 
 function getClientIp(request: NextRequest): string {
   // Prefer Cloudflare's verified header (cannot be spoofed behind CF)
@@ -48,19 +49,21 @@ export async function middleware(request: NextRequest) {
 
   const isAuthRoute = pathname.startsWith("/api/auth/");
   const safeOrigin = isSafeOrigin(request);
+  const ip = getClientIp(request);
 
   if (!isSafeMethod && !isAuthRoute && !safeOrigin) {
     const origin = request.headers.get("origin");
     const expected = request.nextUrl.origin;
-    console.error(`[Middleware] CSRF BLOCK: Path=${pathname}, Origin=${origin}, Expected=${expected}`);
+    emitSecurityEvent("csrf.blocked", ip, pathname, {
+      origin: origin ?? "(missing)",
+      expected,
+    });
     return new NextResponse("Invalid origin", { status: 403 });
   }
 
   // OPTIONS still gets rate-limited, but with a higher ceiling (300/min)
   // to avoid blocking legitimate CORS pre-flights while preventing abuse.
   const isOptions = request.method === "OPTIONS";
-
-  const ip = getClientIp(request);
   const key = `${ip}:${request.nextUrl.pathname}`;
   const result = await checkRateLimit(
     key,
@@ -69,7 +72,11 @@ export async function middleware(request: NextRequest) {
   );
 
   if (!result.allowed) {
-    console.warn(`[Middleware] RATE LIMIT: Path=${pathname}, IP=${ip}, Remaining=0`);
+    emitSecurityEvent("ratelimit.hit", ip, pathname, {
+      limit: result.limit,
+      remaining: 0,
+      reset_at: result.resetAt,
+    });
     const retryAfterSecs = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
     return new NextResponse("Too Many Requests", {
       status: 429,

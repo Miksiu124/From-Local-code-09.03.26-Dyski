@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { RefreshCw, Download, Search, Eye, EyeOff } from "lucide-react";
+import { RefreshCw, Download, Search, Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -22,10 +22,16 @@ interface Model {
 type SortKey = "name" | "folderName" | "countryName" | "contentCount" | "isActive" | "isFeatured" | "lastSyncedAt";
 type SortDir = "asc" | "desc";
 
+const PAGE_SIZE = 20;
+
 export default function AdminModelsPage() {
   const t = useTranslations("admin");
   const [models, setModels] = useState<Model[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [syncResult, setSyncResult] = useState<string>("");
@@ -34,27 +40,41 @@ export default function AdminModelsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  useEffect(() => {
-    fetchModels();
-  }, [sortKey, sortDir]);
-
-  const fetchModels = async () => {
+  const fetchModels = useCallback(async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams({
+        page: page.toString(),
+        limit: PAGE_SIZE.toString(),
         sortBy: sortKey,
         sortDir: sortDir,
       });
+      if (search) params.set("search", search);
       const res = await fetch(`/api/admin/models?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setModels(data);
+        setModels(data.models || []);
+        setTotal(data.total ?? 0);
+        setTotalPages(data.totalPages ?? 1);
       }
     } catch (error) {
       logger.error("Failed to fetch models", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, search, sortKey, sortDir]);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [searchInput]);
 
   const handleImport = async () => {
     const folderName = prompt("Nazwa folderu modelu w R2 (np. TEST):");
@@ -157,17 +177,14 @@ export default function AdminModelsPage() {
   };
 
 
-  const filteredModels = models.filter((m) =>
-    m.name.toLowerCase().includes(search.toLowerCase())
-  );
-
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-      return;
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
     }
-    setSortKey(key);
-    setSortDir("asc");
+    setPage(1);
   };
 
   const renderSortIndicator = (key: SortKey) => {
@@ -200,8 +217,8 @@ export default function AdminModelsPage() {
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search models..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-10"
           />
         </div>
@@ -210,7 +227,7 @@ export default function AdminModelsPage() {
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
       ) : (
-        <div className="rounded-xl border border-border overflow-x-auto">
+        <div className="rounded-xl border border-border overflow-hidden">
           <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted">
               <tr>
@@ -281,7 +298,7 @@ export default function AdminModelsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredModels.map((m) => (
+              {models.map((m) => (
                 <tr
                   key={m.id}
                   className={`border-t border-border hover:bg-muted/50 transition-colors ${!m.isActive ? "opacity-50" : ""}`}
@@ -334,6 +351,37 @@ export default function AdminModelsPage() {
               ))}
             </tbody>
           </table>
+          {/* Pagination */}
+          <div className="flex items-center justify-between border-t border-border px-4 py-3 bg-muted/30">
+            <span className="text-sm text-muted-foreground">
+              {total === 0
+                ? "No models"
+                : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm tabular-nums min-w-[6rem] text-center">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

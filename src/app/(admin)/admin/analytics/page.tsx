@@ -255,84 +255,93 @@ export default function AdminAnalyticsPage() {
       </div>
 
       {/* Top Sellers */}
-      <div className="bg-card rounded-xl border border-border p-5">
-        <h2 className="text-lg font-semibold mb-4">Top Selling Models</h2>
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="p-5 pb-0">
+          <h2 className="text-lg font-semibold mb-4">Top Selling Models</h2>
+        </div>
         {data.topSellers.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No model purchases yet.</p>
+          <p className="px-5 pb-5 text-muted-foreground text-sm">No model purchases yet.</p>
         ) : (
-          <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-2 pr-4">#</th>
-                  <th className="text-left py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleTopSort("modelName")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Model {renderTopSortIndicator("modelName")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2 pr-4">
-                    <button
-                      type="button"
-                      onClick={() => handleTopSort("purchaseCount")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Purchases {renderTopSortIndicator("purchaseCount")}
-                    </button>
-                  </th>
-                  <th className="text-right py-2">
-                    <button
-                      type="button"
-                      onClick={() => handleTopSort("creditsEarned")}
-                      className="inline-flex items-center gap-2 hover:text-foreground"
-                    >
-                      Credits Earned {renderTopSortIndicator("creditsEarned")}
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topSellers
-                  .slice(topPage * TOP_PAGE_SIZE, (topPage + 1) * TOP_PAGE_SIZE)
-                  .map((ts, i) => (
-                    <tr key={ts.modelId} className="border-b border-border/50">
-                      <td className="py-2.5 pr-4 text-muted-foreground">{topPage * TOP_PAGE_SIZE + i + 1}</td>
-                      <td className="py-2.5 pr-4 font-medium">{ts.modelName}</td>
-                      <td className="py-2.5 pr-4 text-right">{ts.purchaseCount}</td>
-                      <td className="py-2.5 text-right">{ts.creditsEarned}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="text-left py-3 px-4 w-12">#</th>
+                    <th className="text-left py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleTopSort("modelName")}
+                        className="inline-flex items-center gap-2 hover:text-foreground font-medium"
+                      >
+                        Model {renderTopSortIndicator("modelName")}
+                      </button>
+                    </th>
+                    <th className="text-right py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleTopSort("purchaseCount")}
+                        className="inline-flex items-center gap-2 hover:text-foreground font-medium"
+                      >
+                        Purchases {renderTopSortIndicator("purchaseCount")}
+                      </button>
+                    </th>
+                    <th className="text-right py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() => handleTopSort("creditsEarned")}
+                        className="inline-flex items-center gap-2 hover:text-foreground font-medium"
+                      >
+                        Credits Earned {renderTopSortIndicator("creditsEarned")}
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topSellers
+                    .slice(topPage * TOP_PAGE_SIZE, (topPage + 1) * TOP_PAGE_SIZE)
+                    .map((ts, i) => (
+                      <tr key={ts.modelId} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                        <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{topPage * TOP_PAGE_SIZE + i + 1}</td>
+                        <td className="py-2.5 px-4 font-medium">{ts.modelName}</td>
+                        <td className="py-2.5 px-4 text-right tabular-nums">{ts.purchaseCount}</td>
+                        <td className="py-2.5 px-4 text-right tabular-nums">{ts.creditsEarned}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
             {data.topSellers.length > TOP_PAGE_SIZE && (
-              <div className="flex items-center justify-between pt-3 border-t border-border mt-2">
-                <span className="text-xs text-muted-foreground">
-                  {topPage * TOP_PAGE_SIZE + 1}-{Math.min((topPage + 1) * TOP_PAGE_SIZE, data.topSellers.length)} of {data.topSellers.length}
+              <div className="flex items-center justify-between border-t border-border px-4 py-3 bg-muted/30">
+                <span className="text-sm text-muted-foreground">
+                  {topPage * TOP_PAGE_SIZE + 1}–{Math.min((topPage + 1) * TOP_PAGE_SIZE, data.topSellers.length)} of {data.topSellers.length}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={topPage === 0}
-                    onClick={() => setTopPage((p) => p - 1)}
+                    onClick={() => setTopPage((p) => Math.max(0, p - 1))}
+                    aria-label="Previous page"
                   >
                     Previous
                   </Button>
+                  <span className="text-sm tabular-nums min-w-[4rem] text-center">
+                    {topPage + 1} / {Math.ceil(data.topSellers.length / TOP_PAGE_SIZE)}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={(topPage + 1) * TOP_PAGE_SIZE >= data.topSellers.length}
                     onClick={() => setTopPage((p) => p + 1)}
+                    aria-label="Next page"
                   >
                     Next
                   </Button>
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
 

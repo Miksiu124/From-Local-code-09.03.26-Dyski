@@ -140,6 +140,16 @@ export function ModelDetail({
     };
   }, [model.folderName]);
 
+  // Close sort menu on Escape
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSortMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [sortMenuOpen]);
+
   // Lock body scroll when overlay is open
   useEffect(() => {
     if (selectedItemId) {
@@ -788,7 +798,7 @@ export function ModelDetail({
           </Button>
           {sortMenuOpen && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setSortMenuOpen(false)} />
+              <div className="fixed inset-0 z-40" onClick={() => setSortMenuOpen(false)} aria-hidden="true" />
               <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-white/[0.08] bg-card/95 backdrop-blur-xl p-1 shadow-2xl">
                 {([
                   { value: "newest", label: t("newest"), icon: <Clock className="h-3.5 w-3.5" /> },
@@ -845,17 +855,19 @@ export function ModelDetail({
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {displayItems.map((item, index) => (
-              <div
+              <button
                 key={item.id}
-                className={cn("cursor-pointer group animate-in fade-in", `stagger-${Math.min(index % 10 + 1, 10)}`)}
+                type="button"
+                className={cn("cursor-pointer group animate-in fade-in text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40", `stagger-${Math.min(index % 10 + 1, 10)}`)}
                 onClick={() => handleContentClick(item.id)}
+                aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
                   {hasAccess ? (
                     <>
                       <RetryImage
                         src={`/api/content/${item.id}/thumbnail`}
-                        alt=""
+                        alt={item.contentType === "VIDEO" ? t("video") : t("photo")}
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
                         loading="lazy"
                         fallback={
@@ -909,9 +921,11 @@ export function ModelDetail({
                   {isAuthenticated && (
                     <div className="absolute top-2 right-2 z-20">
                       <button
-                        className="p-1.5 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all cursor-pointer"
+                        type="button"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all cursor-pointer"
                         onClick={(e) => toggleFavorite(e, item.id)}
                         disabled={togglingFav === item.id}
+                        aria-label={favoritedIds.has(item.id) ? t("favorited") : t("favorite")}
                       >
                         <Heart
                           className={cn(
@@ -925,7 +939,7 @@ export function ModelDetail({
                     </div>
                   )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
 

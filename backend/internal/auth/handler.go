@@ -17,6 +17,7 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/security"
 
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
@@ -88,6 +89,7 @@ func (h *Handler) Register(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
+		security.Emit("auth.register.rate_limited", ip, "/api/auth/register", map[string]interface{}{"limit_type": "ip"})
 		retrySecs := retryAfterSeconds(rl.ResetAt)
 		return common.RateLimited(c, retrySecs, "Too many registration attempts. Please try again later.")
 	}
@@ -161,6 +163,7 @@ func (h *Handler) Register(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
+		security.Emit("auth.register.rate_limited", ip, "/api/auth/register", map[string]interface{}{"limit_type": "email", "email_hash": security.HashEmail(req.Email)})
 		retrySecs := retryAfterSeconds(rl.ResetAt)
 		return common.RateLimited(c, retrySecs, "Too many registration attempts. Please try again later.")
 	}
@@ -243,6 +246,7 @@ func (h *Handler) Login(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
+		security.Emit("auth.login.rate_limited", ip, "/api/auth/login", map[string]interface{}{"limit_type": "ip"})
 		retrySecs := retryAfterSeconds(rl.ResetAt)
 		return common.RateLimited(c, retrySecs, "Too many login attempts. Please try again later.")
 	}
@@ -253,12 +257,14 @@ func (h *Handler) Login(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
+		security.Emit("auth.login.rate_limited", ip, "/api/auth/login", map[string]interface{}{"limit_type": "email", "email_hash": security.HashEmail(req.Email)})
 		retrySecs := retryAfterSeconds(rl.ResetAt)
 		return common.RateLimited(c, retrySecs, "Too many login attempts. Please try again later.")
 	}
 
 	token, user, err := h.service.Login(c.Request().Context(), req.Email, req.Password)
 	if err != nil {
+		security.Emit("auth.login.failed", ip, "/api/auth/login", map[string]interface{}{"email_hash": security.HashEmail(req.Email)})
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
 	h.service.StoreSessionIP(c.Request().Context(), user.ID, ip)
@@ -389,6 +395,7 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
+		security.Emit("auth.forgot.rate_limited", ip, "/api/auth/forgot-password", map[string]interface{}{"limit_type": "ip"})
 		retrySecs := retryAfterSeconds(rl.ResetAt)
 		return common.RateLimited(c, retrySecs, "Too many requests. Please try again later.")
 	}
@@ -411,6 +418,7 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl2 != nil && !rl2.Allowed {
+		security.Emit("auth.forgot.rate_limited", ip, "/api/auth/forgot-password", map[string]interface{}{"limit_type": "email", "email_hash": security.HashEmail(req.Email)})
 		return common.Success(c, map[string]string{"message": "If an account exists, a reset link has been sent."})
 	}
 
@@ -448,6 +456,7 @@ func (h *Handler) ResetPassword(c echo.Context) error {
 		return common.InternalError(c)
 	}
 	if rl != nil && !rl.Allowed {
+		security.Emit("auth.reset.rate_limited", ip, "/api/auth/reset-password", map[string]interface{}{"limit_type": "ip"})
 		retrySecs := retryAfterSeconds(rl.ResetAt)
 		return common.RateLimited(c, retrySecs, "Too many reset attempts. Please try again later.")
 	}

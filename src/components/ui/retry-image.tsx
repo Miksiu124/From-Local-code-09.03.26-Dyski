@@ -22,6 +22,7 @@ export function RetryImage({
   maxRetries = 2,
   retryDelayMs = 400,
   onError,
+  loading,
   ...props
 }: RetryImageProps) {
   const [retryCount, setRetryCount] = useState(0);
@@ -59,6 +60,7 @@ export function RetryImage({
       className={className}
       onError={handleError}
       key={retryCount}
+      loading={loading ?? "lazy"}
       {...props}
     />
   );

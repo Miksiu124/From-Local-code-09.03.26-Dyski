@@ -495,12 +495,20 @@ func (h *Handler) ListUsers(c echo.Context) error {
 	ctx := c.Request().Context()
 	search := c.QueryParam("search")
 	limitStr := c.QueryParam("limit")
-	limit := 50
+	limit := 20
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l >= 1 && l <= 200 {
 			limit = l
 		}
 	}
+	pageStr := c.QueryParam("page")
+	page := 1
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
+			page = p
+		}
+	}
+	offset := (page - 1) * limit
 
 	sortBy := c.QueryParam("sortBy")
 	sortDir := c.QueryParam("sortDir")
@@ -520,19 +528,9 @@ func (h *Handler) ListUsers(c echo.Context) error {
 		orderCol = col
 	}
 
-	query := `
-		SELECT u.id, u.email, u.name, u.role, u.credit_balance,
-		       COALESCE(u.is_banned, false), COALESCE(u.email_verified, false),
-		       u.created_at::text, u.last_login_at::text,
-		       (SELECT COUNT(*) FROM purchases WHERE user_id = u.id) as purchases_count,
-		       (SELECT COUNT(*) FROM credit_purchases WHERE user_id = u.id) as credit_purchases_count,
-		       (SELECT COUNT(*) FROM user_access WHERE user_id = u.id) as user_access_count
-		FROM users u
-	`
+	whereClause := ""
 	args := []interface{}{}
 	argIdx := 1
-
-	whereClause := ""
 	if search != "" {
 		whereClause = ` WHERE (u.email ILIKE $` + strconv.Itoa(argIdx) + ` OR u.name ILIKE $` + strconv.Itoa(argIdx) + `)`
 		args = append(args, "%"+search+"%")
@@ -545,10 +543,28 @@ func (h *Handler) ListUsers(c echo.Context) error {
 			whereClause = ` WHERE COALESCE(u.email_verified, false) = true`
 		}
 	}
-	query += whereClause
 
-	query += ` ORDER BY ` + orderCol + ` ` + sortDir + ` LIMIT $` + strconv.Itoa(argIdx)
-	args = append(args, limit)
+	// Count total
+	countQuery := `SELECT COUNT(*) FROM users u` + whereClause
+	var total int
+	if err := h.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return common.InternalError(c)
+	}
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	query := `
+		SELECT u.id, u.email, u.name, u.role, u.credit_balance,
+		       COALESCE(u.is_banned, false), COALESCE(u.email_verified, false),
+		       u.created_at::text, u.last_login_at::text,
+		       (SELECT COUNT(*) FROM purchases WHERE user_id = u.id) as purchases_count,
+		       (SELECT COUNT(*) FROM credit_purchases WHERE user_id = u.id) as credit_purchases_count,
+		       (SELECT COUNT(*) FROM user_access WHERE user_id = u.id) as user_access_count
+		FROM users u
+	` + whereClause + ` ORDER BY ` + orderCol + ` ` + sortDir + ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+	args = append(args, limit, offset)
 
 	rows, err := h.db.Query(ctx, query, args...)
 	if err != nil {
@@ -579,7 +595,11 @@ func (h *Handler) ListUsers(c echo.Context) error {
 	if users == nil {
 		users = []map[string]interface{}{}
 	}
-	return common.Success(c, users)
+	return common.Success(c, map[string]interface{}{
+		"users":      users,
+		"total":      total,
+		"totalPages": totalPages,
+	})
 }
 
 func (h *Handler) GetUser(c echo.Context) error {
@@ -1463,6 +1483,29 @@ func (h *Handler) ListModels(c echo.Context) error {
 		sortDir = "asc"
 	}
 
+	limitStr := c.QueryParam("limit")
+	pageStr := c.QueryParam("page")
+	usePagination := limitStr != "" || pageStr != ""
+	limit := 20
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l >= 1 && l <= 200 {
+			limit = l
+		}
+	}
+	page := 1
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
+			page = p
+		}
+	}
+	offset := (page - 1) * limit
+	if !usePagination {
+		limit = 10000
+		offset = 0
+	}
+
+	search := c.QueryParam("search")
+
 	validSorts := map[string]string{
 		"name":         "m.name",
 		"folderName":   "m.folder_name",
@@ -1477,15 +1520,41 @@ func (h *Handler) ListModels(c echo.Context) error {
 		orderCol = col
 	}
 
+	whereClause := ""
+	args := []interface{}{}
+	argIdx := 1
+	if search != "" {
+		whereClause = ` WHERE (m.name ILIKE $` + strconv.Itoa(argIdx) + ` OR m.folder_name ILIKE $` + strconv.Itoa(argIdx) + `)`
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+
+	baseFrom := `FROM models m LEFT JOIN countries c ON c.id = m.country_id` + whereClause
+
+	var total int
+	var totalPages int
+	if usePagination {
+		countQuery := `SELECT COUNT(*) ` + baseFrom
+		if err := h.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+			return common.InternalError(c)
+		}
+		totalPages = (total + limit - 1) / limit
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
+
 	query := `
 		SELECT m.id, m.name, m.folder_name, m.last_synced_at::text, m.is_active, m.is_featured,
 			   (SELECT COUNT(*) FROM content_items WHERE model_id = m.id) as content_count,
 			   c.name AS country_name
-		FROM models m
-		LEFT JOIN countries c ON c.id = m.country_id
-		ORDER BY ` + orderCol + ` ` + sortDir
+		` + baseFrom + ` ORDER BY ` + orderCol + ` ` + sortDir
+	if usePagination {
+		query += ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+		args = append(args, limit, offset)
+	}
 
-	rows, err := h.db.Query(ctx, query)
+	rows, err := h.db.Query(ctx, query, args...)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -1518,6 +1587,13 @@ func (h *Handler) ListModels(c echo.Context) error {
 	}
 	if models == nil {
 		models = []map[string]interface{}{}
+	}
+	if usePagination {
+		return common.Success(c, map[string]interface{}{
+			"models":     models,
+			"total":      total,
+			"totalPages": totalPages,
+		})
 	}
 	return common.Success(c, models)
 }

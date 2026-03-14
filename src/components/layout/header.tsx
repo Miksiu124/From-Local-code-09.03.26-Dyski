@@ -175,6 +175,9 @@ export function Header() {
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
+                aria-label={t("nav.userMenu")}
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
                 className={cn(
                   "flex items-center gap-2 rounded-xl px-2.5 py-1.5 transition-all cursor-pointer",
                   userMenuOpen ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"
@@ -254,25 +257,28 @@ export function Header() {
 
           {/* Mobile menu toggle */}
           <button
-            className="md:hidden cursor-pointer p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors"
+            type="button"
+            className="md:hidden cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-white/[0.05] transition-colors"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* Mobile Navigation - grid-template-rows avoids layout thrashing from height animation */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ gridTemplateRows: "0fr", opacity: 0 }}
+            animate={{ gridTemplateRows: "1fr", opacity: 1 }}
+            exit={{ gridTemplateRows: "0fr", opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-            className="md:hidden border-t border-white/[0.06] bg-background/95 backdrop-blur-xl overflow-hidden"
+            className="grid md:hidden border-t border-white/[0.06] bg-background/95 backdrop-blur-xl"
           >
-            <nav className="flex flex-col p-3 gap-0.5">
+            <nav className="flex flex-col p-3 gap-0.5 min-h-0 overflow-hidden">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
