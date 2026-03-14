@@ -100,6 +100,7 @@ model User {
   emailVerified Boolean   @default(false) @map("email_verified")
   referralCode  String?   @unique @map("referral_code")
   customLinkId  String?   @map("custom_link_id")
+  country       String?   @map("country") // User locale (from geo/IP); used by Go backend
   lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -116,6 +117,8 @@ model User {
   favorites            Favorite[]
   referralsAsReferrer  Referral[]          @relation("Referrer")
   referralsAsReferee   Referral[]          @relation("Referee")
+  referralLinkVisits   ReferralLinkVisit[]
+  referralLinkVariants ReferralLinkVariant[]
   customLink           CustomLink?         @relation(fields: [customLinkId], references: [id], onDelete: SetNull)
 
   @@index([email])
@@ -140,6 +143,38 @@ model Referral {
   @@index([referrerId])
   @@index([refereeId])
   @@map("referrals")
+}
+
+model ReferralLinkVisit {
+  id         String   @id @default(cuid())
+  referrerId String   @map("referrer_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  referer    String?
+  variantKey String   @default("default") @map("variant_key")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  referrer User @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId])
+  @@index([referrerId, createdAt])
+  @@index([referrerId, variantKey])
+  @@index([createdAt])
+  @@map("referral_link_visits")
+}
+
+model ReferralLinkVariant {
+  id         String   @id @default(cuid())
+  referrerId String   @map("referrer_id")
+  variantKey String   @map("variant_key")
+  name       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  referrer User @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+
+  @@unique([referrerId, variantKey])
+  @@index([referrerId])
+  @@map("referral_link_variants")
 }
 
 // ─── NextAuth required tables ───────────────────────────────────────────────
@@ -400,14 +435,14 @@ model UserAccess {
   id         String    @id @default(cuid())
   userId     String    @map("user_id")
   modelId    String?   @map("model_id") // null = bundle (all models)
-  purchaseId String    @map("purchase_id")
+  purchaseId String?   @map("purchase_id") // null = admin-granted access
   expiresAt  DateTime? @map("expires_at") // null = lifetime
   createdAt  DateTime  @default(now()) @map("created_at")
 
   // Relations
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  model    Model?   @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model    Model?    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
   @@unique([userId, modelId, purchaseId])
   @@index([userId])

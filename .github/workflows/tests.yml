@@ -5,6 +5,20 @@ on:
   pull_request:
 
 jobs:
+  # Fail if .env (secrets) is committed — SECURITY_AUDIT_2026-03
+  secrets-check:
+    name: No secrets in repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Ensure .env (secrets) is not tracked
+        run: |
+          TRACKED=$(git ls-files | grep '\.env' | grep -v '\.example' || true)
+          if [ -n "$TRACKED" ]; then
+            echo "::error::CRITICAL: Secret files committed: $TRACKED — Remove from git and rotate all secrets."
+            exit 1
+          fi
+
   backend:
     name: Go Backend
     runs-on: ubuntu-latest

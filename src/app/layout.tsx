@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: "%s | Dyskiof",
   },
   description:
-    "Browse exclusive premium content from top creators. Instant access, multiple payment methods, and a curated library updated daily.",
+    "Browse exclusive premium content from top creators. Instant access, secure payments, and a curated library updated daily. Join Dyskiof today.",
   keywords: ["Dyskiof", "dyskiof.net", "premium content", "creators", "exclusive", "videos", "photos"],
   metadataBase: new URL(baseUrl),
   alternates: {
@@ -37,12 +37,14 @@ export const metadata: Metadata = {
     locale: "en_US",
     alternateLocale: ["pl_PL"],
     url: baseUrl,
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Dyskiof – Premium Content Platform" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Dyskiof – Premium Content Platform",
     description:
       "Browse exclusive premium content from top creators.",
+    images: ["/og-image.png"],
   },
   robots: {
     index: true,
