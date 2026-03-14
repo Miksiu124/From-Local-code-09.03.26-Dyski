@@ -109,6 +109,7 @@ export default function AdminUsersPage() {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
+        limit: "20",
         sortBy: sortKey,
         sortDir: sortDir,
       });
@@ -118,17 +119,9 @@ export default function AdminUsersPage() {
       const res = await fetch(`/api/admin/users?${params}`);
       const data = await res.json();
 
-      // Backend returns array directly or object? 
-      // Based on handler code: return common.Success(c, users) -> returns users array.
-      if (Array.isArray(data)) {
-        setUsers(data);
-        setTotal(data.length);
-        setTotalPages(1);
-      } else {
-        setUsers(data.users || []);
-        setTotal(data.total || 0);
-        setTotalPages(data.totalPages || 1);
-      }
+      setUsers(data.users || []);
+      setTotal(data.total ?? 0);
+      setTotalPages(data.totalPages ?? 1);
     } catch (error) {
       console.error("Failed to fetch users:", error);
       setUsers([]);
@@ -394,33 +387,39 @@ export default function AdminUsersPage() {
               </tbody>
             </table>
           </div>
+          {/* Pagination */}
+          <div className="flex items-center justify-between border-t border-border px-4 py-3 bg-muted/30">
+            <span className="text-sm text-muted-foreground">
+              {total === 0
+                ? "No users"
+                : `Showing ${(page - 1) * 20 + 1}–${Math.min(page * 20, total)} of ${total}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm tabular-nums min-w-[6rem] text-center">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage(page + 1)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
 
       {/* User Detail Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
