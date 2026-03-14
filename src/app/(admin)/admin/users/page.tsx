@@ -429,52 +429,69 @@ export default function AdminUsersPage() {
               <DialogTitle>{t("userDetails")}</DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-6 max-h-[60vh] overflow-y-auto">
-              {/* User Info */}
-              <div className="flex items-center gap-4 p-4 rounded-lg bg-secondary">
-                <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-primary" />
+            <div className="space-y-6 max-h-[60vh] overflow-y-auto overscroll-contain pr-1 -mr-1">
+              {/* User Info - responsive stack, touch-friendly */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-secondary/80 border border-border/50">
+                <div className="h-14 w-14 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Users className="h-7 w-7 text-primary" aria-hidden />
                 </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-semibold">{selectedUser.name || "No name"}</p>
-                      <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{selectedUser.name || "—"}</p>
+                      <p className="text-sm text-muted-foreground truncate">{selectedUser.email}</p>
                     </div>
-                    <Badge variant={selectedUser.isBanned ? "destructive" : "success"}>
-                      {selectedUser.isBanned ? "Banned" : "Active"}
+                    <Badge variant={selectedUser.isBanned ? "destructive" : "success"} className="shrink-0 w-fit">
+                      {selectedUser.isBanned ? t("banned") : t("active")}
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-4 mt-2">
-                    <div className="flex items-center gap-1">
-                      <Coins className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-sm">{formatCredits(selectedUser.creditBalance)} credits</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-3">
+                    <div className="flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-primary shrink-0" aria-hidden />
+                      <span className="text-sm">{formatCredits(selectedUser.creditBalance)} {t("credits")}</span>
                     </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCreditsOpen(true)}>
-                        Adjust Credits
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="min-h-[44px] sm:min-h-0 sm:h-9 px-4"
+                        onClick={() => setCreditsOpen(true)}
+                      >
+                        {t("adjustCredits")}
                       </Button>
-                      <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleToggleBan}>
-                        {selectedUser.isBanned ? "Unban User" : "Ban User"}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="min-h-[44px] sm:min-h-0 sm:h-9 px-4"
+                        onClick={handleToggleBan}
+                      >
+                        {selectedUser.isBanned ? t("unbanUser") : t("banUser")}
                       </Button>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Active Access */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-sm">{t("accessHistory")}</h3>
-                  <Button size="sm" variant="outline" onClick={() => setGrantOpen(true)}>
-                    <Plus className="h-3.5 w-3.5 mr-1" />
+              {/* Access History - virtualized-friendly, touch targets */}
+              <section aria-labelledby="access-history-heading">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                  <h3 id="access-history-heading" className="font-semibold text-sm text-foreground">
+                    {t("accessHistory")}
+                  </h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="min-h-[44px] sm:min-h-9 w-full sm:w-auto justify-center"
+                    onClick={() => setGrantOpen(true)}
+                  >
+                    <Plus className="h-4 w-4 sm:mr-1.5 shrink-0" aria-hidden />
                     {t("grantAccess")}
                   </Button>
                 </div>
                 {selectedUser.userAccess.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No access records</p>
+                  <p className="text-sm text-muted-foreground py-2">{t("noAccessRecords")}</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2" role="list">
                     {selectedUser.userAccess.map((access) => {
                       const isExpired = access.expiresAt && new Date(access.expiresAt) < new Date();
                       const isBundle = !access.modelId;
@@ -482,28 +499,29 @@ export default function AdminUsersPage() {
                       return (
                         <div
                           key={access.id}
-                          className={`flex items-center justify-between p-3 rounded-lg border ${isExpired ? "border-border opacity-50" : "border-primary/20 bg-primary/5"
-                            }`}
+                          role="listitem"
+                          className={`grid-item-contain flex items-center justify-between gap-3 p-3 rounded-lg border min-h-[52px] ${isExpired ? "border-border opacity-60" : "border-primary/20 bg-primary/5"}`}
                         >
-                          <div>
-                            <p className="text-sm font-medium">
-                              {isBundle ? "Bundle (All Models)" : access.model?.name || "Unknown"}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">
+                              {isBundle ? t("bundleAllModels") : access.model?.name || "—"}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {access.expiresAt
-                                ? `Expires: ${new Date(access.expiresAt).toLocaleDateString()}`
-                                : "No expiration"}
-                              {isExpired && " (Expired)"}
+                                ? `${t("expires")}: ${new Date(access.expiresAt).toLocaleDateString()}`
+                                : t("noExpiration")}
+                              {isExpired && ` (${t("expired")})`}
                             </p>
                           </div>
                           {!isExpired && (
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="text-destructive"
+                              size="icon"
+                              className="shrink-0 h-11 w-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => handleRevokeAccess(access.id)}
+                              aria-label={t("revokeAccess")}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-4 w-4" aria-hidden />
                             </Button>
                           )}
                         </div>
@@ -511,52 +529,64 @@ export default function AdminUsersPage() {
                     })}
                   </div>
                 )}
-              </div>
+              </section>
 
               {/* Recent Purchases */}
-              <div>
-                <h3 className="font-semibold text-sm mb-2">Recent Purchases</h3>
+              <section aria-labelledby="recent-purchases-heading">
+                <h3 id="recent-purchases-heading" className="font-semibold text-sm text-foreground mb-3">
+                  {t("recentPurchases")}
+                </h3>
                 {!selectedUser.purchases || selectedUser.purchases.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No purchases</p>
+                  <p className="text-sm text-muted-foreground py-2">{t("noPurchasesYet")}</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2" role="list">
                     {selectedUser.purchases.slice(0, 5).map((purchase) => (
-                      <div key={purchase.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50 text-sm">
-                        <span>
+                      <div
+                        key={purchase.id}
+                        role="listitem"
+                        className="grid-item-contain flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg bg-secondary/50 text-sm"
+                      >
+                        <span className="truncate">
                           {purchase.purchaseType === "BUNDLE"
-                            ? "Bundle"
-                            : purchase.model?.name || "Model"}
+                            ? t("bundleAllModels")
+                            : purchase.model?.name || "—"}
                         </span>
-                        <span className="text-muted-foreground">
-                          {purchase.creditsSpent} credits
+                        <span className="text-muted-foreground shrink-0">
+                          {purchase.creditsSpent} {t("credits")}
                         </span>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
 
-              {/* Recent Credit Purchases */}
-              <div>
-                <h3 className="font-semibold text-sm mb-2">Credit Purchases</h3>
+              {/* Credit Purchases */}
+              <section aria-labelledby="credit-purchases-heading">
+                <h3 id="credit-purchases-heading" className="font-semibold text-sm text-foreground mb-3">
+                  {t("creditPurchases")}
+                </h3>
                 {!selectedUser.creditPurchases || selectedUser.creditPurchases.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No credit purchases</p>
+                  <p className="text-sm text-muted-foreground py-2">{t("noCreditPurchasesYet")}</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2" role="list">
                     {selectedUser.creditPurchases.slice(0, 5).map((cp) => (
-                      <div key={cp.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50 text-sm">
-                        <div>
-                          <span>{cp.creditPackage?.name || "Package"}</span>
-                          <span className="text-muted-foreground ml-2">({cp.paymentMethod})</span>
+                      <div
+                        key={cp.id}
+                        role="listitem"
+                        className="grid-item-contain flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg bg-secondary/50 text-sm"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <span className="truncate">{cp.creditPackage?.name || "—"}</span>
+                          <span className="text-muted-foreground text-xs ml-2">({cp.paymentMethod})</span>
                         </div>
-                        <Badge variant={cp.status === "APPROVED" ? "success" : cp.status === "PENDING" ? "default" : "destructive"}>
+                        <Badge variant={cp.status === "APPROVED" ? "success" : cp.status === "PENDING" ? "default" : "destructive"} className="shrink-0">
                           {cp.status}
                         </Badge>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
             </div>
           </>
         )}
@@ -564,20 +594,20 @@ export default function AdminUsersPage() {
 
       {/* Credits Dialog */}
       <Dialog open={creditsOpen} onOpenChange={setCreditsOpen}>
-        <DialogHeader><DialogTitle>Adjust Credits</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t("adjustCredits")}</DialogTitle></DialogHeader>
         <div className="space-y-4 my-4">
           <div>
-            <label className="text-sm font-medium">Amount (positive to add, negative to remove)</label>
+            <label className="text-sm font-medium">{t("creditsAmountLabel")}</label>
             <Input type="number" value={creditsAmount} onChange={(e) => setCreditsAmount(Number(e.target.value))} />
           </div>
           <div>
-            <label className="text-sm font-medium">Reason</label>
-            <Input value={creditsReason} onChange={(e) => setCreditsReason(e.target.value)} placeholder="e.g. Bonus via Admin" />
+            <label className="text-sm font-medium">{t("creditsReasonLabel")}</label>
+            <Input value={creditsReason} onChange={(e) => setCreditsReason(e.target.value)} placeholder={t("creditsReasonPlaceholder")} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setCreditsOpen(false)}>Cancel</Button>
-          <Button onClick={handleUpdateCredits}>Save</Button>
+          <Button variant="outline" onClick={() => setCreditsOpen(false)}>{t("cancel")}</Button>
+          <Button onClick={handleUpdateCredits}>{t("save")}</Button>
         </DialogFooter>
       </Dialog>
 
@@ -588,13 +618,13 @@ export default function AdminUsersPage() {
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1 block">Model (empty = all models)</label>
+            <label className="text-sm font-medium mb-1 block">{t("modelLabel")}</label>
             <select
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm min-h-[44px] sm:min-h-0"
               value={grantModelId}
               onChange={(e) => setGrantModelId(e.target.value)}
             >
-              <option value="">All models (bundle)</option>
+              <option value="">{t("allModelsOption")}</option>
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -603,7 +633,7 @@ export default function AdminUsersPage() {
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Duration (days)</label>
+            <label className="text-sm font-medium mb-1 block">{t("durationDaysLabel")}</label>
             <Input
               placeholder="30"
               type="number"
@@ -614,7 +644,7 @@ export default function AdminUsersPage() {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setGrantOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setGrantOpen(false)}>{t("cancel")}</Button>
           <Button onClick={handleGrantAccess}>{t("grantAccess")}</Button>
         </DialogFooter>
       </Dialog>
