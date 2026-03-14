@@ -34,16 +34,28 @@ func (h *Handler) List(c echo.Context) error {
 		}
 	}
 
-	// Build query dynamically
+	// Build query: use CTE to aggregate content_items once instead of 4 correlated subqueries per row.
+	// This avoids N*4 subqueries (e.g. 80 for limit=20) and replaces with a single scan + hash join.
 	query := `
+		WITH model_stats AS (
+			SELECT model_id,
+				COUNT(*)::int AS content_count,
+				COUNT(*) FILTER (WHERE content_type = 'VIDEO')::int AS video_count,
+				COUNT(*) FILTER (WHERE content_type = 'PHOTO')::int AS image_count,
+				(array_agg(id ORDER BY created_at ASC))[1]::text AS first_content_item_id
+			FROM content_items
+			WHERE is_active = true AND is_hidden = false
+			GROUP BY model_id
+		)
 		SELECT m.id, m.name, m.folder_name, m.description,
 			   c.name AS country_name, c.flag_emoji,
-			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false) AS content_count,
-			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false AND ci.content_type = 'VIDEO') AS video_count,
-			   (SELECT COUNT(*) FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false AND ci.content_type = 'PHOTO') AS image_count,
-			   (SELECT ci.id FROM content_items ci WHERE ci.model_id = m.id AND ci.is_active = true AND ci.is_hidden = false ORDER BY ci.created_at ASC LIMIT 1) AS first_content_item_id
+			   COALESCE(ms.content_count, 0) AS content_count,
+			   COALESCE(ms.video_count, 0) AS video_count,
+			   COALESCE(ms.image_count, 0) AS image_count,
+			   ms.first_content_item_id
 		FROM models m
 		LEFT JOIN countries c ON c.id = m.country_id
+		LEFT JOIN model_stats ms ON ms.model_id = m.id
 		WHERE m.is_active = true
 	`
 	args := []interface{}{}

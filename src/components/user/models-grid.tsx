@@ -95,6 +95,7 @@ export function ModelsGrid({
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupModelId, setPopupModelId] = useState<string | undefined>();
   const [popupModelName, setPopupModelName] = useState<string | undefined>();
+  const [popupModelSlug, setPopupModelSlug] = useState<string | undefined>();
   const [popupIsBundle, setPopupIsBundle] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(initialModels.length > 0);
 
@@ -302,6 +303,7 @@ export function ModelsGrid({
       setPopupIsBundle(false);
       setPopupModelId(model.id);
       setPopupModelName(model.name);
+      setPopupModelSlug(model.folderName);
       setPopupOpen(true);
     } else {
       // Save scroll position so we can restore it when user returns
@@ -313,6 +315,7 @@ export function ModelsGrid({
     setPopupIsBundle(true);
     setPopupModelId(undefined);
     setPopupModelName(undefined);
+    setPopupModelSlug(undefined);
     setPopupOpen(true);
   };
 
@@ -685,6 +688,7 @@ export function ModelsGrid({
         onOpenChange={setPopupOpen}
         modelId={popupModelId}
         modelName={popupModelName}
+        redirectPath={popupModelSlug ? `/models/${popupModelSlug}` : popupIsBundle ? "/" : undefined}
         cost7d={cost7d}
         cost30d={cost30d}
         isBundle={popupIsBundle}

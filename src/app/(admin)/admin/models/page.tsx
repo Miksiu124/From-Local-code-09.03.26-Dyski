@@ -57,14 +57,21 @@ export default function AdminModelsPage() {
   };
 
   const handleImport = async () => {
+    const folderName = prompt("Nazwa folderu modelu w R2 (np. TEST):");
+    if (!folderName?.trim()) return;
+
     setImporting(true);
     setSyncResult("");
     try {
-      const res = await fetch("/api/admin/r2/import", { method: "POST" });
+      const res = await fetch("/api/admin/r2/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderName: folderName.trim() }),
+      });
       const data = await res.json();
       if (res.ok) {
         setSyncResult(
-          `Import complete: ${data.modelsImported} new models, ${data.contentItemsImported} new items (${data.totalModels} total folders scanned)`
+          `Import complete: ${data.imported} items imported (${data.totalObjects} objects scanned)`
         );
         fetchModels();
       } else {
@@ -85,14 +92,9 @@ export default function AdminModelsPage() {
       const res = await fetch("/api/admin/r2/sync", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        const parts = [
-          `${data.newModels} new models`,
-          `${data.newContentItems} new items`,
-          `${data.updatedContentItems || 0} updated`,
-        ];
-        if (data.deactivatedContentItems > 0) parts.push(`${data.deactivatedContentItems} items deactivated`);
-        if (data.deactivatedModels > 0) parts.push(`${data.deactivatedModels} models deactivated`);
-        setSyncResult(`Sync complete: ${parts.join(", ")}`);
+        setSyncResult(
+          `Sync complete: ${data.syncedModels} models synced, ${data.newContentItems} new items (${data.totalObjects} objects scanned)`
+        );
         fetchModels();
       } else {
         const errorMessage = data.message || data.error || "Unknown error";

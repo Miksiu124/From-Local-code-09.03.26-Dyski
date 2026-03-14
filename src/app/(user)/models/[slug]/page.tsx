@@ -45,6 +45,7 @@ type AccessResponse = {
 
 type MeResponse = {
   creditBalance: number;
+  role?: string;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -55,6 +56,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: data.model.name,
     description: data.model.description || `Exclusive content from ${data.model.name} on Dyskiof`,
+    alternates: {
+      canonical: `${baseUrl}/models/${slug}`,
+    },
     openGraph: {
       title: `${data.model.name} | Dyskiof`,
       description: data.model.description || `Exclusive content from ${data.model.name}`,
@@ -118,6 +122,7 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
         totalContentCount={contentPage.totalCount}
         hasAccess={hasAccess}
         isAuthenticated={!!me}
+        isAdmin={me?.role === "ADMIN"}
         cost7d={cost7d}
         cost30d={cost30d}
         creditBalance={realCreditBalance}

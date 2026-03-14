@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,6 +56,22 @@ func sanitizeFilename(name string) (string, error) {
 		return "", fmt.Errorf("invalid filename")
 	}
 	return clean, nil
+}
+
+// slugPattern allows only safe characters for model folder_name/slug (prevents path traversal in R2 keys).
+var slugPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+func sanitizeSlug(slug string) (string, error) {
+	if slug == "" || len(slug) > 128 {
+		return "", fmt.Errorf("invalid slug")
+	}
+	if strings.Contains(slug, "..") || strings.ContainsAny(slug, `/\`) {
+		return "", fmt.Errorf("invalid slug")
+	}
+	if !slugPattern.MatchString(slug) {
+		return "", fmt.Errorf("invalid slug")
+	}
+	return slug, nil
 }
 
 type Handler struct {
@@ -430,7 +447,10 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 
 // ModelAvatar proxies model avatar images from R2, or redirects to CDN if R2PublicURL is set
 func (h *Handler) ModelAvatar(c echo.Context) error {
-	slug := c.Param("slug")
+	slug, err := sanitizeSlug(c.Param("slug"))
+	if err != nil {
+		return common.BadRequest(c, "Invalid slug")
+	}
 
 	if base := strings.TrimRight(h.cfg.R2PublicURL, "/"); base != "" {
 		cdnURL := base + "/avatars/" + slug + "_avatar.webp"
@@ -441,7 +461,7 @@ func (h *Handler) ModelAvatar(c echo.Context) error {
 
 	// 1. Get avatar path from models table
 	var avatarPath *string
-	err := h.db.QueryRow(ctx, `
+	err = h.db.QueryRow(ctx, `
 		SELECT avatar_path FROM models WHERE folder_name = $1 AND is_active = true
 	`, slug).Scan(&avatarPath)
 
@@ -490,7 +510,10 @@ func (h *Handler) ModelAvatar(c echo.Context) error {
 
 // ModelHeader proxies model header images from R2, or redirects to CDN if R2PublicURL is set
 func (h *Handler) ModelHeader(c echo.Context) error {
-	slug := c.Param("slug")
+	slug, err := sanitizeSlug(c.Param("slug"))
+	if err != nil {
+		return common.BadRequest(c, "Invalid slug")
+	}
 
 	if base := strings.TrimRight(h.cfg.R2PublicURL, "/"); base != "" {
 		cdnURL := base + "/avatars/" + slug + "_header.webp"

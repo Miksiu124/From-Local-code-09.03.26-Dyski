@@ -159,6 +159,29 @@ func (r *R2Client) PutObject(ctx context.Context, key string, body io.Reader, co
 	return err
 }
 
+// DeleteObject removes a single object from R2
+func (r *R2Client) DeleteObject(ctx context.Context, key string) error {
+	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
+// DeleteObjectsUnderPrefix lists all objects under prefix and deletes each one
+func (r *R2Client) DeleteObjectsUnderPrefix(ctx context.Context, prefix string) error {
+	objects, err := r.ListObjects(ctx, prefix)
+	if err != nil {
+		return err
+	}
+	for _, obj := range objects {
+		if err := r.DeleteObject(ctx, obj.Key); err != nil {
+			return fmt.Errorf("failed to delete %s: %w", obj.Key, err)
+		}
+	}
+	return nil
+}
+
 type ObjectInfo struct {
 	Key  string `json:"key"`
 	Size int64  `json:"size"`

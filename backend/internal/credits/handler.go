@@ -225,19 +225,33 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		cryptoCurrencyStr = &req.CryptoCurrency
 	}
 
+	// Custom link attribution: user's link from registration, or ref_link_id cookie as fallback
+	var customLinkID interface{}
+	var userCustomLinkID *string
+	_ = tx.QueryRow(ctx, `SELECT custom_link_id FROM users WHERE id = $1`, userID).Scan(&userCustomLinkID)
+	if userCustomLinkID != nil && *userCustomLinkID != "" {
+		customLinkID = *userCustomLinkID
+	} else if cookie, err := c.Cookie("ref_link_id"); err == nil && cookie.Value != "" {
+		linkID := strings.TrimSpace(cookie.Value)
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM custom_links WHERE id = $1 AND is_active = true)`, linkID).Scan(&exists); err == nil && exists {
+			customLinkID = linkID
+		}
+	}
+
 	insertQuery := `
 		INSERT INTO credit_purchases (
 			user_id, credit_package_id, credits, amount, payment_method,
 			transaction_code, blik_code, crypto_currency,
-			expiration_time, status, promo_code_id
+			expiration_time, status, promo_code_id, custom_link_id
 		) VALUES ($1, $2, $3, $4, $5::payment_method, $6, $7, $8::crypto_currency, 
-				  now() + ($9 || ' minutes')::interval, 'PENDING', $10)
+				  now() + ($9 || ' minutes')::interval, 'PENDING', $10, $11)
 		RETURNING id, expiration_time::text
 	`
 	err = tx.QueryRow(ctx, insertQuery,
 		userID, pkgID, pkgCredits, pkgPrice, req.PaymentMethod,
 		txCode, blikCode, cryptoCurrencyStr,
-		strconv.Itoa(expirationMinutes), promoCodeID).Scan(&purchaseID, &expirationTime)
+		strconv.Itoa(expirationMinutes), promoCodeID, customLinkID).Scan(&purchaseID, &expirationTime)
 	if err != nil {
 		log.Printf("[Credits] Failed to insert purchase: %v", err)
 		return common.InternalError(c)

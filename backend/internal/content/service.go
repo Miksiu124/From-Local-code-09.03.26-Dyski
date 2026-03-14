@@ -2,6 +2,7 @@ package content
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,8 +12,11 @@ import (
 
 	"content-platform-backend/internal/config"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrContentNotFound = errors.New("content item not found")
 
 type Service struct {
 	db  *pgxpool.Pool
@@ -325,6 +329,66 @@ func (s *Service) UploadAvatar(ctx context.Context, modelID string, data []byte,
 	_, _ = s.db.Exec(ctx, `UPDATE models SET avatar_path = $1 WHERE id = $2`, r2Key, modelID)
 
 	return r2Key, nil
+}
+
+// DeleteContentItem removes a content item from R2 and the database.
+// For PHOTO: deletes thumbnail_path. For VIDEO: deletes HLS folder, original .mp4, and thumbnail.
+func (s *Service) DeleteContentItem(ctx context.Context, contentItemID string) error {
+	var contentType, thumbnailPath, sourceVideoPath, hlsFolderPath string
+	err := s.db.QueryRow(ctx, `
+		SELECT content_type, COALESCE(thumbnail_path, ''), COALESCE(source_video_path, ''), COALESCE(hls_folder_path, '')
+		FROM content_items WHERE id = $1
+	`, contentItemID).Scan(&contentType, &thumbnailPath, &sourceVideoPath, &hlsFolderPath)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrContentNotFound
+		}
+		return err
+	}
+
+	// Delete from R2 first (log errors but don't block DB delete if file is missing)
+	deleteR2 := func(key string) {
+		if key == "" {
+			return
+		}
+		if err := s.r2.DeleteObject(ctx, key); err != nil {
+			log.Printf("[DeleteContent] R2 DeleteObject %s: %v", key, err)
+		}
+	}
+
+	if contentType == "PHOTO" {
+		if thumbnailPath != "" {
+			deleteR2(thumbnailPath)
+		}
+	} else if contentType == "VIDEO" {
+		if hlsFolderPath != "" {
+			prefix := hlsFolderPath + "/"
+			if err := s.r2.DeleteObjectsUnderPrefix(ctx, prefix); err != nil {
+				log.Printf("[DeleteContent] R2 DeleteObjectsUnderPrefix %s: %v", prefix, err)
+			}
+			deleteR2(hlsFolderPath + ".mp4")
+			deleteR2(hlsFolderPath + "_thumbnail.webp")
+		}
+		if sourceVideoPath != "" {
+			deleteR2(sourceVideoPath)
+		}
+		if thumbnailPath != "" {
+			deleteR2(thumbnailPath)
+		}
+	}
+
+	return s.deleteContentItemFromDB(ctx, contentItemID)
+}
+
+func (s *Service) deleteContentItemFromDB(ctx context.Context, contentItemID string) error {
+	result, err := s.db.Exec(ctx, `DELETE FROM content_items WHERE id = $1`, contentItemID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrContentNotFound
+	}
+	return nil
 }
 
 // RunFullSync orchestrates the sync of all models and their content.

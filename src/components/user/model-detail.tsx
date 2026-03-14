@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import {
   Lock, Play, Image, Coins, ArrowLeft, Loader2,
   Heart, Film, Camera, ArrowUpDown, Clock, ShoppingCart, X,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ interface ModelDetailProps {
   totalContentCount: number;
   hasAccess: boolean;
   isAuthenticated: boolean;
+  isAdmin?: boolean;
   cost7d: number;
   cost30d: number;
   creditBalance: number;
@@ -60,6 +61,7 @@ export function ModelDetail({
   totalContentCount,
   hasAccess,
   isAuthenticated,
+  isAdmin = false,
   cost7d,
   cost30d,
   creditBalance,
@@ -108,6 +110,7 @@ export function ModelDetail({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [overlayFavorited, setOverlayFavorited] = useState(false);
   const [overlayTogglingFav, setOverlayTogglingFav] = useState(false);
+  const [overlayDeleting, setOverlayDeleting] = useState(false);
   const savedScrollY = useRef(0);
 
   // Persist filter/sort to sessionStorage (for content-viewer back link) — sync from URL on mount
@@ -236,6 +239,37 @@ export function ModelDetail({
     finally { setOverlayTogglingFav(false); }
   }, [selectedItemId, overlayTogglingFav, activeFilter]);
 
+  const handleDeleteContent = useCallback(async () => {
+    if (!selectedItemId || overlayDeleting) return;
+    if (!confirm(t("deleteContentConfirm"))) return;
+    setOverlayDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/content/${selectedItemId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const id = selectedItemId;
+        setContentItems((prev) => prev.filter((i) => i.id !== id));
+        setFavoritesItems((prev) => prev.filter((i) => i.id !== id));
+        setFavoritedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        setFilteredTotal((prev) => Math.max(0, prev - 1));
+        if (activeFilter === "FAVORITES") setFavoritesTotal((prev) => Math.max(0, prev - 1));
+        setSelectedItemId(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || data.error || t("contentDeleteFailed"));
+      }
+    } catch {
+      alert(t("contentDeleteFailed"));
+    } finally {
+      setOverlayDeleting(false);
+    }
+  }, [selectedItemId, overlayDeleting, activeFilter, t]);
 
   const updateUrlParams = useCallback((filter: ContentFilter, sort: SortOrder) => {
     sessionStorage.setItem(`filter_model_${model.folderName}`, filter);
@@ -999,6 +1033,26 @@ export function ModelDetail({
                   {overlayFavorited ? t("favorited") : t("favorite")}
                 </span>
               </Button>
+
+              {isAdmin && (
+                <>
+                  <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDeleteContent}
+                    disabled={overlayDeleting}
+                    className="gap-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10"
+                  >
+                    {overlayDeleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    <span className="hidden sm:inline">{t("deleteContent")}</span>
+                  </Button>
+                </>
+              )}
 
               <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
 

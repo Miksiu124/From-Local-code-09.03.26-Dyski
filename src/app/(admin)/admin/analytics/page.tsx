@@ -12,6 +12,8 @@ import {
   Package,
   RefreshCw,
   BarChart3,
+  UserPlus,
+  MousePointerClick,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +36,11 @@ interface Analytics {
     purchaseCount: number;
     creditsEarned: number;
   }[];
+  referral?: {
+    clicks: number;
+    registrations: number;
+    revenue: number;
+  };
 }
 
 type SortDir = "asc" | "desc";
@@ -165,6 +172,30 @@ export default function AdminAnalyticsPage() {
         <StatCard icon={ShoppingCart} label="Model Purchases" value={data.purchases.total} sub={`${data.purchases.bundles} bundles, ${data.purchases.individual} individual`} />
         <StatCard icon={TrendingUp} label="Conversion" value={data.users.total > 0 ? `${Math.round((data.purchases.total / data.users.total) * 100)}%` : "0%"} sub="Users who purchased" />
         <StatCard icon={Package} label="Avg Purchase" value={data.purchases.total > 0 ? fmtCurrency(data.revenue.total / data.purchases.total) : fmtCurrency(0)} />
+        {data.referral && (
+          <div className="bg-card rounded-xl border border-border p-5 col-span-2 md:col-span-1">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <UserPlus className="h-5 w-5 text-primary" />
+              </div>
+              <span className="text-sm text-muted-foreground">Referral Program</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="text-lg font-bold">{data.referral.clicks}</p>
+                <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-1"><MousePointerClick className="h-3 w-3" /> Clicks</p>
+              </div>
+              <div>
+                <p className="text-lg font-bold">{data.referral.registrations}</p>
+                <p className="text-[10px] text-muted-foreground">Registrations</p>
+              </div>
+              <div>
+                <p className="text-lg font-bold">{fmtCurrency(data.referral.revenue)}</p>
+                <p className="text-[10px] text-muted-foreground">Revenue</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Two-column row: Payment Status Breakdown + Payment Method Breakdown */}
