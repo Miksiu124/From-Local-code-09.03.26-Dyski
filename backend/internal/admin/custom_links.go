@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -11,13 +13,20 @@ import (
 // ─── Custom Links ────────────────────────────────────────────────────────────
 
 type CustomLink struct {
-	ID          string    `json:"id"`
-	Slug        string    `json:"slug"`
-	Destination string    `json:"destination"`
-	Description *string   `json:"description"`
-	IsActive    bool      `json:"isActive"`
-	CreatedAt   time.Time `json:"createdAt"`
-	VisitsCount int       `json:"visitsCount"`
+	ID                 string    `json:"id"`
+	Slug               string    `json:"slug"`
+	Destination        string    `json:"destination"`
+	Description        *string   `json:"description"`
+	IsActive           bool      `json:"isActive"`
+	CreatedAt          time.Time `json:"createdAt"`
+	VisitsCount        int       `json:"visitsCount"`
+	RegistrationsCount int       `json:"registrationsCount"`
+	PurchasesCount     int       `json:"purchasesCount"`
+	Revenue            float64   `json:"revenue"`
+	DailyClicks        []struct {
+		Date  string `json:"date"`
+		Count int    `json:"count"`
+	} `json:"dailyClicks,omitempty"`
 }
 
 func (h *Handler) ListCustomLinks(c echo.Context) error {
@@ -26,13 +35,17 @@ func (h *Handler) ListCustomLinks(c echo.Context) error {
 	query := `
 		SELECT
 			cl.id, cl.slug, cl.destination, cl.description, cl.is_active, cl.created_at,
-			(SELECT COUNT(*) FROM link_visits lv WHERE lv.custom_link_id = cl.id) as visits_count
+			(SELECT COUNT(*) FROM link_visits lv WHERE lv.custom_link_id = cl.id) as visits_count,
+			(SELECT COUNT(*) FROM users u WHERE u.custom_link_id = cl.id) as registrations_count,
+			(SELECT COUNT(*) FROM credit_purchases cp WHERE cp.custom_link_id = cl.id AND cp.status = 'APPROVED') as purchases_count,
+			(SELECT COALESCE(SUM(amount), 0) FROM credit_purchases cp WHERE cp.custom_link_id = cl.id AND cp.status = 'APPROVED') as revenue
 		FROM custom_links cl
 		ORDER BY cl.created_at DESC
 	`
 
 	rows, err := h.db.Query(ctx, query)
 	if err != nil {
+		log.Printf("[CustomLinks] ListCustomLinks query error: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to query custom links")
 	}
 	defer rows.Close()
@@ -40,8 +53,29 @@ func (h *Handler) ListCustomLinks(c echo.Context) error {
 	var links []CustomLink
 	for rows.Next() {
 		var l CustomLink
-		if err := rows.Scan(&l.ID, &l.Slug, &l.Destination, &l.Description, &l.IsActive, &l.CreatedAt, &l.VisitsCount); err != nil {
+		if err := rows.Scan(&l.ID, &l.Slug, &l.Destination, &l.Description, &l.IsActive, &l.CreatedAt, &l.VisitsCount, &l.RegistrationsCount, &l.PurchasesCount, &l.Revenue); err != nil {
 			return err
+		}
+		// Fetch 7-day daily clicks (same as referrals)
+		rowsDaily, _ := h.db.Query(ctx, `
+			SELECT date_trunc('day', created_at)::date AS date, COUNT(*)::int as count
+			FROM link_visits
+			WHERE custom_link_id = $1 AND created_at >= NOW() - INTERVAL '7 days'
+			GROUP BY date
+			ORDER BY date ASC
+		`, l.ID)
+		if rowsDaily != nil {
+			for rowsDaily.Next() {
+				var date time.Time
+				var count int
+				if err := rowsDaily.Scan(&date, &count); err == nil {
+					l.DailyClicks = append(l.DailyClicks, struct {
+						Date  string `json:"date"`
+						Count int    `json:"count"`
+					}{Date: date.Format("2006-01-02"), Count: count})
+				}
+			}
+			rowsDaily.Close()
 		}
 		links = append(links, l)
 	}
@@ -49,6 +83,7 @@ func (h *Handler) ListCustomLinks(c echo.Context) error {
 		links = []CustomLink{}
 	}
 
+	log.Printf("[CustomLinks] ListCustomLinks: returned %d links", len(links))
 	return c.JSON(http.StatusOK, links)
 }
 
@@ -79,11 +114,16 @@ func (h *Handler) CreateCustomLink(c echo.Context) error {
 		&l.ID, &l.Slug, &l.Destination, &l.Description, &l.IsActive, &l.CreatedAt,
 	)
 	if err != nil {
-		// usually unique constraint violation gives an error
-		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to create custom link, slug might already exist")
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+			return echo.NewHTTPError(http.StatusConflict, "A link with this slug already exists. Choose a different slug.")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to create custom link")
 	}
 
 	l.VisitsCount = 0
+	l.RegistrationsCount = 0
+	l.PurchasesCount = 0
+	l.Revenue = 0
 
 	return c.JSON(http.StatusCreated, l)
 }
@@ -229,8 +269,17 @@ func (h *Handler) GetCustomLinkAnalytics(c echo.Context) error {
 		referers = []RefererStat{}
 	}
 
+	// 3. Registrations, purchases, revenue
+	var registrationsCount, purchasesCount int
+	var revenue float64
+	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE custom_link_id = $1`, id).Scan(&registrationsCount)
+	_ = h.db.QueryRow(ctx, `SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM credit_purchases WHERE custom_link_id = $1 AND status = 'APPROVED'`, id).Scan(&purchasesCount, &revenue)
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"daily":    daily,
-		"referers": referers,
+		"daily":               daily,
+		"referers":            referers,
+		"registrationsCount":  registrationsCount,
+		"purchasesCount":      purchasesCount,
+		"revenue":             revenue,
 	})
 }
