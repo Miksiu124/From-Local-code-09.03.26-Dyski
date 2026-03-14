@@ -175,7 +175,7 @@ func main() {
 	api.GET("/user/access", modelsHandler.GetUserAccess, authMW.OptionalAuth)
 
 	// Public Custom Links
-	linksHandler := links.NewHandler(pgPool)
+	linksHandler := links.NewHandler(pgPool, cfg)
 	api.GET("/public/links/:slug", linksHandler.TrackAndResolveLink)
 
 	// Content streaming (requires auth + access)
@@ -241,8 +241,11 @@ func main() {
 	api.GET("/user/preferences", userHandler.GetPreferences, authMW.Authenticate)
 
 	// Referral (requires auth)
-	referralHandler := referral.NewHandler(pgPool, cfg)
+	referralHandler := referral.NewHandler(pgPool, cfg, rateLimiter)
 	api.GET("/referral/me", referralHandler.GetMe, authMW.Authenticate)
+
+	// Public referral link tracking (no auth) - /r/[code] redirects here
+	api.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
@@ -277,6 +280,7 @@ func main() {
 	adminGroup.GET("/models", adminHandler.ListModels)
 	adminGroup.PATCH("/models", adminHandler.UpdateModel)
 	adminGroup.PATCH("/content/hidden", adminHandler.ToggleContentHidden)
+	adminGroup.DELETE("/content/:id", adminHandler.DeleteContent)
 	adminGroup.GET("/settings", adminHandler.GetSettings)
 	adminGroup.PUT("/settings", adminHandler.UpdateSettings)
 	adminGroup.POST("/r2/sync", adminHandler.SyncR2)

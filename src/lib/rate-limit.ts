@@ -17,16 +17,23 @@ const DEFAULT_LIMIT = 120;
 
 // ── Upstash-backed limiter (preferred) ───────────────────────────────────────
 
+const OPTIONS_LIMIT = 300;
+
 let upstashRatelimit: Ratelimit | null = null;
+let upstashRatelimitOptions: Ratelimit | null = null;
 let upstashReady = false;
 
-async function getUpstashLimiter() {
-  if (upstashReady) return upstashRatelimit;
+async function getUpstashLimiters(): Promise<{
+  standard: Ratelimit | null;
+  options: Ratelimit | null;
+}> {
+  if (upstashReady)
+    return { standard: upstashRatelimit, options: upstashRatelimitOptions };
   upstashReady = true;
 
   const url = getOptionalEnv("UPSTASH_REDIS_REST_URL");
   const token = getOptionalEnv("UPSTASH_REDIS_REST_TOKEN");
-  if (!url || !token) return null;
+  if (!url || !token) return { standard: null, options: null };
 
   try {
     const { Ratelimit } = await import("@upstash/ratelimit");
@@ -39,9 +46,15 @@ async function getUpstashLimiter() {
       analytics: true,
       prefix: "ratelimit",
     });
-    return upstashRatelimit;
+    upstashRatelimitOptions = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(OPTIONS_LIMIT, `${DEFAULT_WINDOW_MS / 1000} s`),
+      analytics: true,
+      prefix: "ratelimit:opt",
+    });
+    return { standard: upstashRatelimit, options: upstashRatelimitOptions };
   } catch {
-    return null;
+    return { standard: null, options: null };
   }
 }
 
@@ -116,7 +129,9 @@ export async function checkRateLimit(
   limit: number = DEFAULT_LIMIT,
   windowMs: number = DEFAULT_WINDOW_MS
 ): Promise<RateLimitResult> {
-  const upstash = await getUpstashLimiter();
+  const { standard, options } = await getUpstashLimiters();
+  const isOptionsRequest = limit === OPTIONS_LIMIT;
+  const upstash = isOptionsRequest ? options : standard;
 
   if (upstash) {
     try {

@@ -22,6 +22,8 @@ interface AccessRequiredPopupProps {
   bundleCost30d?: number;
   isAuthenticated: boolean;
   initialCreditBalance?: number;
+  /** Path to redirect after login (e.g. /models/xyz). Used when user signs in from popup. */
+  redirectPath?: string;
 }
 
 export function AccessRequiredPopup({
@@ -36,6 +38,7 @@ export function AccessRequiredPopup({
   bundleCost30d = 0,
   isAuthenticated,
   initialCreditBalance = 0,
+  redirectPath,
 }: AccessRequiredPopupProps) {
   const t = useTranslations("popup");
   const router = useRouter();
@@ -57,12 +60,19 @@ export function AccessRequiredPopup({
     onOpenChange(v);
   };
 
+  const loginRedirect = redirectPath
+    ? `/login?redirect=${encodeURIComponent(redirectPath)}`
+    : "/login";
+  const registerRedirect = redirectPath
+    ? `/register?redirect=${encodeURIComponent(redirectPath)}`
+    : "/register";
+
   const handleConfirmPurchase = async () => {
     if (!selectedDuration) return;
 
     if (!isAuthenticated) {
       onOpenChange(false);
-      router.push("/login");
+      router.push(loginRedirect);
       return;
     }
 
@@ -130,13 +140,13 @@ export function AccessRequiredPopup({
         </DialogHeader>
         <DialogFooter>
           <div className="flex w-full flex-col gap-2 sm:flex-row">
-            <Link href="/login" className="flex-1" onClick={() => onOpenChange(false)}>
+            <Link href={loginRedirect} className="flex-1" onClick={() => onOpenChange(false)}>
               <Button variant="outline" className="w-full">
                 <UserPlus className="h-4 w-4 mr-2" />
                 {t("signIn")}
               </Button>
             </Link>
-            <Link href="/register" className="flex-1" onClick={() => onOpenChange(false)}>
+            <Link href={registerRedirect} className="flex-1" onClick={() => onOpenChange(false)}>
               <Button className="w-full">
                 {t("createAccount")}
               </Button>
