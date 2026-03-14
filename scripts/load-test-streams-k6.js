@@ -31,6 +31,10 @@ export const options = {
       startTime: '0s',
     },
   },
+  thresholds: {
+    http_req_duration: ['p(95)<2000'], // 95% of requests under 2s
+    http_req_failed: ['rate<0.01'],    // Error rate under 1%
+  },
 };
 
 export default function () {
