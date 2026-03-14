@@ -63,18 +63,18 @@ export default async function HomePage() {
     access,
   ] = await Promise.all([
     withTimeout(
-      fetchApi<ModelsResponse>("/models?limit=20").catch(() => ({ models: [], nextCursor: null })),
+      fetchApi<ModelsResponse>("/models?limit=20", { revalidate: 60 }).catch(() => ({ models: [], nextCursor: null })),
       5000,
       { models: [], nextCursor: null }
     ),
     withTimeout(
-      fetchApi<ModelsResponse>("/models?featured=true&limit=10").catch(() => ({ models: [], nextCursor: null })),
+      fetchApi<ModelsResponse>("/models?featured=true&limit=10", { revalidate: 60 }).catch(() => ({ models: [], nextCursor: null })),
       5000,
       { models: [], nextCursor: null }
     ),
-    withTimeout(fetchApi<Country[]>("/countries").catch(() => []), 5000, []),
-    withTimeout(fetchApi<any>("/settings/public").catch(() => ({})), 5000, {}),
-    withTimeout(fetchApi<StatsResponse>("/models/stats").catch(() => ({ totalModels: 0 })), 5000, { totalModels: 0 }),
+    withTimeout(fetchApi<Country[]>("/countries", { revalidate: 60 }).catch(() => []), 5000, []),
+    withTimeout(fetchApi<any>("/settings/public", { revalidate: 60 }).catch(() => ({})), 5000, {}),
+    withTimeout(fetchApi<StatsResponse>("/models/stats", { revalidate: 60 }).catch(() => ({ totalModels: 0 })), 5000, { totalModels: 0 }),
     withTimeout(fetchApi<MeResponse>("/auth/me").catch(() => null), 5000, null),
     withTimeout(fetchApi<AccessResponse>("/user/access").catch(() => ({ hasBundle: false, modelIds: [] })), 5000, { hasBundle: false, modelIds: [] }),
   ]);

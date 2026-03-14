@@ -374,6 +374,7 @@ export function ModelsGrid({
                     src={`/api/models/${heroModel.folderName}/header`}
                     alt={heroModel.name}
                     loading="eager"
+                    fetchPriority="high"
                     initial={{ opacity: 0, scale: 1.05 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
@@ -593,7 +594,7 @@ export function ModelsGrid({
             {displayModels.map((model, index) => (
               <div
                 key={model.id}
-                className={cn("animate-in fade-in", `stagger-${Math.min(index % 10 + 1, 10)}`)}
+                className={cn("animate-in fade-in grid-item-contain", `stagger-${Math.min(index % 10 + 1, 10)}`)}
               >
                 <Link
                   href={`/models/${model.folderName}`}

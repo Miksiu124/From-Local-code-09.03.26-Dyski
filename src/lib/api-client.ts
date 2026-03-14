@@ -2,7 +2,14 @@ import { headers } from "next/headers";
 
 const BASE_URL = process.env.API_URL || "http://localhost:8080/api";
 
-export async function fetchApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+export type FetchApiOptions = RequestInit & {
+  /** Revalidate cache after N seconds. Use for public data (models, countries, settings, stats). */
+  revalidate?: number;
+};
+
+export async function fetchApi<T>(path: string, options: FetchApiOptions = {}): Promise<T> {
+    const { revalidate, ...fetchOptions } = options;
+
     // Extract cookies from the incoming request (Next.js Server Component)
     const headersList = await headers();
     const cookie = headersList.get("cookie") || "";
@@ -22,15 +29,14 @@ export async function fetchApi<T>(path: string, options: RequestInit = {}): Prom
 
     try {
         const res = await fetch(url, {
-            ...options,
+            ...fetchOptions,
             headers: {
                 "Content-Type": "application/json",
-                // Forward the session cookie so the Go backend knows who is logged in
                 Cookie: cookie,
-                ...options.headers,
+                ...(fetchOptions.headers as Record<string, string>),
             },
-            // Ensure we always get fresh data by default
-            cache: options.cache || "no-store",
+            cache: revalidate == null ? "no-store" : undefined,
+            next: revalidate != null ? { revalidate } : undefined,
         });
 
         if (!res.ok) {

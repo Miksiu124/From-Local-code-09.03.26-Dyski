@@ -200,7 +200,7 @@ export function FavoritesGrid() {
             {filteredItems.map((item, index) => (
               <div
                 key={item.id}
-                className={cn("cursor-pointer group animate-in fade-in", `stagger-${Math.min(index % 10 + 1, 10)}`)}
+                className={cn("cursor-pointer group animate-in fade-in grid-item-contain", `stagger-${Math.min(index % 10 + 1, 10)}`)}
                 onClick={() => handleItemClick(item)}
               >
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
@@ -222,9 +222,11 @@ export function FavoritesGrid() {
 
                   {/* Remove favorite button */}
                   <button
+                    type="button"
                     className="absolute top-2 right-2 min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all z-10 cursor-pointer"
                     onClick={(e) => handleRemoveFavorite(e, item.contentItemId)}
                     disabled={removingId === item.contentItemId}
+                    aria-label={t("removeFromFavorites")}
                   >
                     <Heart
                       className={cn(
