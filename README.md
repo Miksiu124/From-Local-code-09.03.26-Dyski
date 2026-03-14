@@ -408,6 +408,13 @@ npm run db:seed        # Seed default data
 npm run db:studio      # Open Prisma Studio GUI
 ```
 
+**Pending migrations (existing DB):** If the DB was created before new migrations were added, run:
+```bash
+./scripts/run-pending-migrations.sh   # Creates referral_link_visits etc.
+# Or on Windows:
+.\scripts\run-pending-migrations.ps1
+```
+
 ---
 
 ## Tests
