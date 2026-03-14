@@ -254,8 +254,11 @@ export function Header() {
 
           {/* Mobile menu toggle */}
           <button
-            className="md:hidden cursor-pointer p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors"
+            type="button"
+            className="md:hidden cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-white/[0.05] transition-colors"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>

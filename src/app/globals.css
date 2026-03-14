@@ -30,7 +30,7 @@
 
 @layer utilities {
   .glass-panel {
-    @apply bg-black/40 backdrop-blur-xl border border-white/[0.08] shadow-2xl;
+    @apply bg-card border border-white/[0.08] shadow-lg shadow-black/20;
   }
 
   .hero-gradient {
@@ -89,6 +89,12 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 /* Animations */
@@ -192,11 +198,26 @@ img {
   outline: none;
 }
 
+/* Reduced motion for users with vestibular sensitivity */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Mobile touch improvements */
 @media (hover: none) {
   .card-hover:hover {
     transform: none;
     box-shadow: none;
+  }
+  .card-hover:active {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.4);
   }
 }
 

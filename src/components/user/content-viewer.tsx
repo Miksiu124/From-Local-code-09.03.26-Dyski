@@ -343,7 +343,7 @@ export function ContentViewer({
         ) : (
           <img
             src={`/api/content/${effectiveItemId}/thumbnail`}
-            alt=""
+            alt={effectiveContentType === "VIDEO" ? t("video") : t("photo")}
             className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
             onContextMenu={(e) => e.preventDefault()}
             draggable={false}

@@ -26,6 +26,8 @@
     "logout": "Wyloguj się",
     "myPurchases": "Moje zakupy",
     "favorites": "Ulubione",
+    "openMenu": "Otwórz menu",
+    "closeMenu": "Zamknij menu",
     "referral": "Referral",
     "settings": "Ustawienia"
   },
@@ -71,7 +73,9 @@
     "emailVerifiedSuccess": "Twój email został zweryfikowany! Możesz się teraz zalogować.",
     "resendVerification": "Wyślij ponownie email weryfikacyjny",
     "verifyEmailRequired": "Zweryfikuj swój email, aby kontynuować.",
-    "referredByFriend": "Polecony przez znajomego"
+    "referredByFriend": "Polecony przez znajomego",
+    "showPassword": "Pokaż hasło",
+    "hidePassword": "Ukryj hasło"
   },
   "models": {
     "title": "Modele",
@@ -129,8 +133,23 @@
     "deleteContentConfirm": "Czy na pewno usunąć ten element?",
     "contentDeleteFailed": "Nie udało się usunąć elementu",
     "featured": "Wyróżnione",
+    "carouselPrev": "Poprzedni slajd",
+    "carouselNext": "Następny slajd",
+    "carouselSlide": "Slajd {current} z {total}",
     "purchasedTab": "Kupione",
     "modelsCount": "modeli"
+  },
+  "videoPlayer": {
+    "seekBack": "Cofnij 10 sekund",
+    "seekForward": "Przewiń 10 sekund",
+    "play": "Odtwórz",
+    "pause": "Wstrzymaj",
+    "mute": "Wycisz",
+    "unmute": "Włącz dźwięk",
+    "volume": "Głośność",
+    "quality": "Ustawienia jakości",
+    "fullscreen": "Pełny ekran",
+    "exitFullscreen": "Wyjdź z pełnego ekranu"
   },
   "credits": {
     "title": "Kup kredyty",

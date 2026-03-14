@@ -146,10 +146,11 @@ export default function RegisterPage() {
               )}
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Name</label>
+                <label htmlFor="register-name" className="text-sm font-medium text-muted-foreground">Name</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
                   <Input
+                    id="register-name"
                     type="text"
                     placeholder="Your name"
                     value={name}
@@ -162,10 +163,11 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">{t("email")}</label>
+                <label htmlFor="register-email" className="text-sm font-medium text-muted-foreground">{t("email")}</label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
                   <Input
+                    id="register-email"
                     type="email"
                     placeholder="you@example.com"
                     value={email}
@@ -177,10 +179,11 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">{t("password")}</label>
+                <label htmlFor="register-password" className="text-sm font-medium text-muted-foreground">{t("password")}</label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
                   <Input
+                    id="register-password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Min. 8 characters"
                     value={password}
@@ -192,7 +195,8 @@ export default function RegisterPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+                    aria-label={showPassword ? t("hidePassword") : t("showPassword")}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -200,10 +204,11 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">{t("confirmPassword")}</label>
+                <label htmlFor="register-confirmPassword" className="text-sm font-medium text-muted-foreground">{t("confirmPassword")}</label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
                   <Input
+                    id="register-confirmPassword"
                     type={showPassword ? "text" : "password"}
                     placeholder="Confirm your password"
                     value={confirmPassword}

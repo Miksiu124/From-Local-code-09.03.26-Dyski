@@ -121,10 +121,11 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">{t("email")}</label>
+                <label htmlFor="login-email" className="text-sm font-medium text-muted-foreground">{t("email")}</label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
                   <Input
+                    id="login-email"
                     type="email"
                     placeholder="you@example.com"
                     value={email}
@@ -136,10 +137,11 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">{t("password")}</label>
+                <label htmlFor="login-password" className="text-sm font-medium text-muted-foreground">{t("password")}</label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
                   <Input
+                    id="login-password"
                     type={showPassword ? "text" : "password"}
                     placeholder="********"
                     value={password}
@@ -150,7 +152,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+                    aria-label={showPassword ? t("hidePassword") : t("showPassword")}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>

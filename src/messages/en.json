@@ -26,6 +26,8 @@
     "logout": "Sign Out",
     "myPurchases": "My Purchases",
     "favorites": "Favorites",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
     "referral": "Referral",
     "settings": "Settings"
   },
@@ -71,7 +73,9 @@
     "emailVerifiedSuccess": "Your email has been verified! You can now sign in.",
     "resendVerification": "Resend verification email",
     "verifyEmailRequired": "Please verify your email to continue.",
-    "referredByFriend": "Referred by a friend"
+    "referredByFriend": "Referred by a friend",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "models": {
     "title": "Models",
@@ -129,8 +133,23 @@
     "deleteContentConfirm": "Are you sure you want to delete this item?",
     "contentDeleteFailed": "Failed to delete item",
     "featured": "Featured",
+    "carouselPrev": "Previous slide",
+    "carouselNext": "Next slide",
+    "carouselSlide": "Slide {current} of {total}",
     "purchasedTab": "Purchased",
     "modelsCount": "models"
+  },
+  "videoPlayer": {
+    "seekBack": "Seek back 10 seconds",
+    "seekForward": "Seek forward 10 seconds",
+    "play": "Play",
+    "pause": "Pause",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "volume": "Volume",
+    "quality": "Quality settings",
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen"
   },
   "credits": {
     "title": "Buy Credits",

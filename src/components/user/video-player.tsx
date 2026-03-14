@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { useTranslations } from "next-intl";
 import {
   Play,
   Pause,
@@ -28,6 +29,7 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
+  const t = useTranslations("videoPlayer");
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -683,7 +685,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
             className="absolute left-3 sm:left-[12%] top-1/2 -translate-y-1/2 z-[6] opacity-60 hover:opacity-90 transition-opacity cursor-pointer bg-black/40 rounded-full p-3 min-w-[48px] min-h-[48px] sm:p-0 sm:w-9 sm:h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center"
             style={{ touchAction: "manipulation" } as React.CSSProperties}
             onClick={(e) => { e.stopPropagation(); handleSeekBack(); }}
-            aria-label="Cofnij 10 sekund"
+            aria-label={t("seekBack")}
           >
             <img src="/icons/seek-back-10.png" alt="" className="h-8 w-8 sm:h-9 sm:w-9 object-contain invert" />
           </button>
@@ -692,7 +694,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
             className="absolute right-3 sm:right-[12%] top-1/2 -translate-y-1/2 z-[6] opacity-60 hover:opacity-90 transition-opacity cursor-pointer bg-black/40 rounded-full p-3 min-w-[48px] min-h-[48px] sm:p-0 sm:w-9 sm:h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center"
             style={{ touchAction: "manipulation" } as React.CSSProperties}
             onClick={(e) => { e.stopPropagation(); handleSeekForward(); }}
-            aria-label="Przewiń 10 sekund"
+            aria-label={t("seekForward")}
           >
             <img src="/icons/seek-forward-10.png" alt="" className="h-8 w-8 sm:h-9 sm:w-9 object-contain invert" />
           </button>
@@ -747,7 +749,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
             onClick={(e) => { e.stopPropagation(); togglePlay(); }}
             className="shrink-0 text-white hover:text-white/80 transition-colors p-1.5 min-w-[48px] min-h-[48px] flex items-center justify-center -m-1"
             style={{ touchAction: "manipulation" } as React.CSSProperties}
-            aria-label={playing ? "Pause" : "Play"}
+            aria-label={playing ? t("pause") : t("play")}
           >
             {playing ? (
               <Pause className="h-6 w-6 fill-white" />
@@ -761,7 +763,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
             <button
               onClick={(e) => { e.stopPropagation(); toggleMute(); }}
               className="text-white hover:text-white/80 transition-colors p-1.5"
-              aria-label={muted ? "Unmute" : "Mute"}
+              aria-label={muted ? t("unmute") : t("mute")}
             >
               <VolumeIcon className="h-6 w-6" />
             </button>
@@ -774,7 +776,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
               onChange={(e) => { e.stopPropagation(); handleVolumeChange(e); }}
               onClick={(e) => e.stopPropagation()}
               className="w-12 sm:w-20 accent-white h-1 cursor-pointer shrink-0"
-              aria-label="Volume"
+              aria-label={t("volume")}
             />
           </div>
 
@@ -795,7 +797,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
                 onMouseEnter={openQualityMenu}
                 onMouseLeave={scheduleQualityMenuClose}
                 className="flex items-center gap-1.5 text-white hover:text-white/80 transition-colors p-1.5 text-sm min-w-[44px] min-h-[44px] justify-center"
-                aria-label="Quality settings"
+                aria-label={t("quality")}
                 aria-expanded={showQualityMenu}
               >
                 <Settings className="h-5 w-5" />
@@ -839,7 +841,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
             onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
             className="min-w-[48px] min-h-[48px] flex items-center justify-center -m-2 text-white hover:text-white/80 transition-colors p-2"
             style={{ touchAction: "manipulation" } as React.CSSProperties}
-            aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            aria-label={isFullscreen ? t("exitFullscreen") : t("fullscreen")}
           >
             {isFullscreen ? (
               <Minimize className="h-6 w-6" />

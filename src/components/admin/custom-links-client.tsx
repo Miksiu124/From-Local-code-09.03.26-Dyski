@@ -368,7 +368,7 @@ export function CustomLinksClient({ initialLinks }: CustomLinksClientProps) {
                                 <Button variant="ghost" onClick={() => setDialogOpen(false)} disabled={saving} className="flex-1 border border-white/20 hover:bg-white/10">
                                     Cancel
                                 </Button>
-                                <Button onClick={handleSave} disabled={saving} className="flex-1 bg-white text-black hover:bg-neutral-200">
+                                <Button onClick={handleSave} disabled={saving} className="flex-1 bg-foreground text-background hover:bg-foreground/90">
                                     {saving ? "Saving..." : "Save"}
                                 </Button>
                             </DialogFooter>

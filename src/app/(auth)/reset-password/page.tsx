@@ -90,10 +90,11 @@ function ResetPasswordForm() {
       )}
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-muted-foreground">{t("newPassword")}</label>
+        <label htmlFor="reset-newPassword" className="text-sm font-medium text-muted-foreground">{t("newPassword")}</label>
         <div className="relative">
           <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
           <Input
+            id="reset-newPassword"
             type={showPassword ? "text" : "password"}
             placeholder="Min. 8 characters"
             value={password}
@@ -105,7 +106,8 @@ function ResetPasswordForm() {
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+            className="absolute right-3 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer"
+            aria-label={showPassword ? t("hidePassword") : t("showPassword")}
           >
             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -113,10 +115,11 @@ function ResetPasswordForm() {
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-muted-foreground">{t("confirmPassword")}</label>
+        <label htmlFor="reset-confirmPassword" className="text-sm font-medium text-muted-foreground">{t("confirmPassword")}</label>
         <div className="relative">
           <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
           <Input
+            id="reset-confirmPassword"
             type={showPassword ? "text" : "password"}
             placeholder="Confirm your password"
             value={confirmPassword}

@@ -42,6 +42,38 @@ main                    ← produkcja (VPS deploy z tej gałęzi)
 
 ---
 
+## 2b. Main = stabilna gałąź + rollback
+
+**Cel:** `main` zawsze działa; możesz wrócić do poprzedniej wersji, gdy coś się zepsuje.
+
+### Zasady
+1. **Merge do main tylko po testach** — deploy lokalnie lub na staging, sprawdź, że działa.
+2. **Deploy z main** — `.\scripts\deploy-vps.ps1 -Build` uruchamiaj z gałęzi `main`.
+3. **Rollback** — gdy nowe zmiany nie działają:
+
+```powershell
+# Opcja A: Revert ostatniego commita (bezpieczne, zachowuje historię)
+git checkout main
+git pull origin main
+git revert HEAD --no-edit
+git push origin main
+
+# Opcja B: Cofnij do konkretnego commita (np. 2 commity wstecz)
+git checkout main
+git reset --hard HEAD~2
+git push origin main --force   # UWAGA: force push, używaj ostrożnie
+```
+
+### Zalecany flow
+```
+[develop / feature] → testuj lokalnie → merge do main → deploy z main
+                         ↓
+                    jeśli OK → main = nowa stabilna
+                    jeśli NIE → revert / reset na main
+```
+
+---
+
 ## 3. Plan commitów (krok po kroku)
 
 ### Krok 0: Backup (opcjonalnie)
