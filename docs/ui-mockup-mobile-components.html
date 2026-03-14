@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dyskiof — Mobile & Component Redesign Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #020202;
+      --surface: #0a0a0f;
+      --primary: #8b5cf6;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --border: #27272a;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: #1a1a1a;
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .controls {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #0f0f0f;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .controls .group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .controls .group span { color: var(--muted); font-size: 12px; }
+    .controls button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .controls button:hover { background: rgba(255,255,255,0.05); }
+    .controls button.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    /* Phone frame for mobile preview */
+    .phone-frame {
+      width: 375px;
+      min-height: 667px;
+      margin: 16px auto;
+      border: 12px solid #1a1a1a;
+      border-radius: 36px;
+      overflow: hidden;
+      background: var(--bg);
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── MOBILE: Current ───────────────────────────────────────── */
+    .mobile-current .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .mobile-current .logo {
+      font-size: 16px;
+      font-weight: 700;
+      background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .mobile-current .header-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .mobile-current .credits {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+    }
+    .mobile-current .hamburger { padding: 8px; cursor: pointer; }
+
+    .mobile-current .content { padding: 12px 16px; padding-bottom: 80px; }
+    .mobile-current .page-title { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+
+    /* Featured: horizontal scroll side cards (current) */
+    .mobile-current .featured-hero {
+      height: 200px;
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 12px;
+      background: var(--surface);
+    }
+    .mobile-current .featured-side {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-current .featured-side::-webkit-scrollbar { display: none; }
+    .mobile-current .featured-side .card {
+      flex: 0 0 140px;
+      height: 100px;
+      border-radius: 12px;
+      background: var(--surface);
+      display: flex;
+      align-items: flex-end;
+      padding: 12px;
+    }
+    .mobile-current .featured-side .card h4 { font-size: 12px; margin: 0; }
+
+    /* Filters: inline pills (current) */
+    .mobile-current .filters {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 12px 0;
+      -webkit-overflow-scrolling: touch;
+    }
+    .mobile-current .filters::-webkit-scrollbar { display: none; }
+    .mobile-current .filter-pill {
+      flex-shrink: 0;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+    }
+    .mobile-current .filter-pill.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+    /* Grid: 2 columns (current) */
+    .mobile-current .models-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .mobile-current .model-card {
+      aspect-ratio: 3/4;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+      position: relative;
+    }
+    .mobile-current .model-card .thumb {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #1e1e24, #2a2a32);
+    }
+    .mobile-current .model-card .info {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    }
+    .mobile-current .model-card .meta { font-size: 10px; color: var(--muted); display: block; }
+
+    /* Bundle: full width (current) */
+    .mobile-current .bundle {
+      margin: 16px 0;
+      padding: 16px;
+      border-radius: 16px;
+      background: linear-gradient(90deg, rgba(139,92,246,0.15), rgba(168,85,247,0.1));
+      border: 1px solid rgba(139,92,246,0.2);
+    }
+    .mobile-current .bundle h3 { font-size: 14px; margin: 0 0 4px 0; }
+    .mobile-current .bundle p { font-size: 11px; color: var(--muted); margin: 0 0 12px 0; }
+    .mobile-current .bundle .btns { display: flex; gap: 8px; }
+    .mobile-current .bundle button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+    }
+    .mobile-current .bundle button.primary { background: var(--primary); border-color: var(--primary); }
+
+    /* ── MOBILE: Improved ──────────────────────────────────────── */
+    .mobile-improved .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .mobile-improved .logo { font-size: 17px; font-weight: 700; color: var(--text); }
+    .mobile-improved .header-right { display: flex; align-items: center; gap: 12px; }
+    .mobile-improved .credits {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .mobile-improved .menu-btn {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+
+    .mobile-improved .content { padding: 16px; padding-bottom: 24px; }
+    .mobile-improved .page-title { font-size: 24px; font-weight: 700; margin-bottom: 16px; }
+
+    /* Featured: full-width carousel with dots */
+    .mobile-improved .featured-carousel {
+      position: relative;
+      height: 220px;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .mobile-improved .featured-carousel .slide {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #1e293b, #334155);
+    }
+    .mobile-improved .featured-carousel .slide-content {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 20px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    }
+    .mobile-improved .featured-carousel h3 { font-size: 20px; margin: 0 0 4px 0; }
+    .mobile-improved .featured-carousel p { font-size: 12px; color: var(--muted); margin: 0; }
+    .mobile-improved .carousel-dots {
+      position: absolute;
+      bottom: 12px;
+      right: 16px;
+      display: flex;
+      gap: 6px;
+    }
+    .mobile-improved .carousel-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.3);
+    }
+    .mobile-improved .carousel-dots span.active { background: white; width: 16px; }
+
+    /* Filter: single row with "Filter" button → opens sheet */
+    .mobile-improved .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .mobile-improved .search-box {
+      flex: 1;
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      color: var(--text);
+    }
+    .mobile-improved .filter-btn {
+      flex-shrink: 0;
+      height: 40px;
+      padding: 0 16px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .mobile-improved .filter-btn .count {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--primary);
+      color: white;
+    }
+
+    /* List view option */
+    .mobile-improved .view-toggle {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .mobile-improved .view-toggle button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .mobile-improved .view-toggle button.active {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* List layout (improved) */
+    .mobile-improved .models-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mobile-improved .model-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .mobile-improved .model-row .thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      flex-shrink: 0;
+    }
+    .mobile-improved .model-row .info { flex: 1; min-width: 0; }
+    .mobile-improved .model-row h4 { font-size: 14px; font-weight: 600; margin: 0 0 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mobile-improved .model-row .meta { font-size: 12px; color: var(--muted); }
+    .mobile-improved .model-row .chevron { color: var(--muted); font-size: 14px; }
+
+    /* Sticky CTA (improved) */
+    .mobile-improved .sticky-cta {
+      position: sticky;
+      bottom: 0;
+      margin: 0 -16px -16px -16px;
+      padding: 12px 16px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .mobile-improved .sticky-cta button {
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* ── COMPONENTS: Current ───────────────────────────────────── */
+    .comp-section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+    .comp-section h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .components-current .model-card {
+      aspect-ratio: 3/4;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: var(--surface);
+      position: relative;
+    }
+    .components-current .model-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px -8px rgba(0,0,0,0.5);
+    }
+    .components-current .model-card .thumb {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #1e1e24, #2a2a32);
+    }
+    .components-current .model-card .overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 16px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    }
+    .components-current .model-card .overlay h3 { font-size: 14px; margin: 0; }
+    .components-current .model-card .overlay span { font-size: 11px; color: var(--muted); }
+
+    .components-current .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .components-current .filter-pill {
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+    }
+    .components-current .filter-pill.active { background: var(--primary); color: white; }
+
+    .components-current .search-wrap {
+      position: relative;
+      margin-bottom: 16px;
+    }
+    .components-current .search-wrap input {
+      width: 100%;
+      padding: 12px 16px 12px 44px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .components-current .search-wrap .icon {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .components-current .bundle {
+      padding: 24px;
+      border-radius: 20px;
+      background: linear-gradient(90deg, rgba(139,92,246,0.1), rgba(168,85,247,0.1));
+      border: 1px solid rgba(139,92,246,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .components-current .bundle .badge {
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: rgba(251,191,36,0.9);
+      color: #000;
+      font-size: 10px;
+      font-weight: 800;
+      transform: rotate(12deg);
+    }
+
+    /* ── COMPONENTS: Improved ───────────────────────────────────── */
+    .components-improved .model-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .components-improved .model-card .thumb {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      flex-shrink: 0;
+    }
+    .components-improved .model-card .info { flex: 1; min-width: 0; }
+    .components-improved .model-card h3 { font-size: 15px; margin: 0 0 4px 0; }
+    .components-improved .model-card .meta { font-size: 12px; color: var(--muted); }
+    .components-improved .model-card .badge {
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .components-improved .model-card .badge.locked { background: rgba(239,68,68,0.2); color: #f87171; }
+    .components-improved .model-card .badge.unlocked { background: rgba(34,197,94,0.2); color: #4ade80; }
+
+    .components-improved .filter-dropdown {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .components-improved .filter-dropdown::after { content: '▾'; margin-left: 4px; font-size: 10px; color: var(--muted); }
+
+    .components-improved .search-wrap {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .components-improved .search-wrap input {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .components-improved .search-wrap .filter-btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .components-improved .bundle {
+      padding: 20px 24px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .components-improved .bundle .options {
+      display: flex;
+      gap: 12px;
+    }
+    .components-improved .bundle .opt {
+      padding: 12px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+    }
+    .components-improved .bundle .opt .label { font-size: 11px; color: var(--muted); }
+    .components-improved .bundle .opt .price { font-weight: 600; }
+    .components-improved .bundle .opt.recommended {
+      border-color: var(--primary);
+      background: rgba(139,92,246,0.1);
+    }
+
+    /* Grid for component comparison */
+    .comp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 700px) { .comp-grid { grid-template-columns: 1fr; } }
+
+    .comp-card-wrap {
+      padding: 16px;
+      border-radius: 12px;
+      background: #0f0f0f;
+      border: 1px solid var(--border);
+    }
+    .comp-card-wrap h3 { font-size: 12px; color: var(--muted); margin: 0 0 12px 0; }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <div class="group">
+      <span>Section:</span>
+      <button id="btnMobile" class="active">Mobile</button>
+      <button id="btnComponents">Components</button>
+    </div>
+    <div class="group">
+      <span>Compare:</span>
+      <button id="btnCurrent" class="active">Current</button>
+      <button id="btnImproved">Improved</button>
+    </div>
+  </div>
+
+  <!-- MOBILE SECTION -->
+  <div id="sectionMobile" class="section active">
+    <div id="mobileCurrent" class="mobile-current">
+      <div class="phone-frame">
+        <div class="header">
+          <span class="logo">Dyskiof</span>
+          <div class="header-right">
+            <span class="credits">1,250</span>
+            <div class="hamburger">☰</div>
+          </div>
+        </div>
+        <div class="content">
+          <h1 class="page-title">Browse models</h1>
+
+          <div class="featured-hero"></div>
+          <div class="featured-side">
+            <div class="card"><h4>Model 2</h4></div>
+            <div class="card"><h4>Model 3</h4></div>
+            <div class="card"><h4>Model 4</h4></div>
+          </div>
+
+          <div class="bundle">
+            <div>
+              <h3>Purchase bundle</h3>
+              <p>Access all 50+ models</p>
+              <div class="btns">
+                <button>14d — 100</button>
+                <button class="primary">30d — 180 ★</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="filters">
+            <span class="filter-pill active">All</span>
+            <span class="filter-pill">🇵🇱 Poland</span>
+            <span class="filter-pill">🇺🇸 USA</span>
+            <span class="filter-pill">🇩🇪 Germany</span>
+            <span class="filter-pill">Purchased</span>
+          </div>
+
+          <div class="models-grid">
+            <div class="model-card"><div class="thumb"></div><div class="info">Model A<span class="meta"> · 24 videos</span></div></div>
+            <div class="model-card"><div class="thumb"></div><div class="info">Model B<span class="meta"> · 18 videos</span></div></div>
+            <div class="model-card"><div class="thumb"></div><div class="info">Model C<span class="meta"> · 31 videos</span></div></div>
+            <div class="model-card"><div class="thumb"></div><div class="info">Model D<span class="meta"> · 12 videos</span></div></div>
+          </div>
+        </div>
+      </div>
+      <p style="text-align: center; font-size: 12px; color: var(--muted); margin-top: -8px;">Current: 2-col grid, horizontal scroll, inline pills, no list view</p>
+    </div>
+
+    <div id="mobileImproved" class="mobile-improved" style="display: none;">
+      <div class="phone-frame">
+        <div class="header">
+          <span class="logo">Dyskiof</span>
+          <div class="header-right">
+            <span class="credits">1,250 credits</span>
+            <div class="menu-btn">☰</div>
+          </div>
+        </div>
+        <div class="content">
+          <h1 class="page-title">Browse models</h1>
+
+          <div class="featured-carousel">
+            <div class="slide"></div>
+            <div class="slide-content">
+              <h3>Model Name</h3>
+              <p>120 videos · 45 photos</p>
+            </div>
+            <div class="carousel-dots">
+              <span class="active"></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <input type="text" class="search-box" placeholder="Search models..." />
+            <button class="filter-btn">Filter <span class="count">2</span></button>
+          </div>
+
+          <div class="view-toggle">
+            <button class="active">List</button>
+            <button>Grid</button>
+          </div>
+
+          <div class="models-list">
+            <div class="model-row">
+              <div class="thumb"></div>
+              <div class="info">
+                <h4>Model A</h4>
+                <span class="meta">24 videos · 8 photos</span>
+              </div>
+              <span class="chevron">›</span>
+            </div>
+            <div class="model-row">
+              <div class="thumb"></div>
+              <div class="info">
+                <h4>Model B</h4>
+                <span class="meta">18 videos · 12 photos</span>
+              </div>
+              <span class="chevron">›</span>
+            </div>
+            <div class="model-row">
+              <div class="thumb"></div>
+              <div class="info">
+                <h4>Model C</h4>
+                <span class="meta">31 videos · 5 photos</span>
+              </div>
+              <span class="chevron">›</span>
+            </div>
+          </div>
+
+          <div class="sticky-cta">
+            <button>Get bundle — 180 credits for 30 days</button>
+          </div>
+        </div>
+      </div>
+      <p style="text-align: center; font-size: 12px; color: var(--muted); margin-top: -8px;">Improved: full-width carousel, filter sheet, list/grid toggle, sticky CTA</p>
+    </div>
+  </div>
+
+  <!-- COMPONENTS SECTION -->
+  <div id="sectionComponents" class="section">
+    <div id="compCurrent" class="comp-section components-current">
+      <h2>Current components</h2>
+
+      <div class="comp-grid">
+        <div class="comp-card-wrap">
+          <h3>Model card (grid)</h3>
+          <div class="model-card" style="position: relative;">
+            <div class="thumb"></div>
+            <div class="overlay">
+              <h3>Model Name</h3>
+              <span>24 videos · 8 photos</span>
+            </div>
+          </div>
+        </div>
+        <div class="comp-card-wrap">
+          <h3>Filters</h3>
+          <div class="filters">
+            <span class="filter-pill active">All</span>
+            <span class="filter-pill">🇵🇱 Poland</span>
+            <span class="filter-pill">🇺🇸 USA</span>
+            <span class="filter-pill">🇩🇪 Germany</span>
+          </div>
+        </div>
+        <div class="comp-card-wrap">
+          <h3>Bundle banner</h3>
+          <div class="bundle">
+            <div>
+              <h3 style="margin: 0 0 4px 0;">Purchase bundle</h3>
+              <p style="margin: 0; font-size: 12px; color: var(--muted);">Access all 50+ models</p>
+            </div>
+            <div>
+              <button style="padding: 8px 16px; border-radius: 8px; background: var(--primary); color: white; border: none; font-size: 12px;">14d — 100</button>
+              <button style="padding: 8px 16px; border-radius: 8px; background: var(--primary); color: white; border: none; font-size: 12px; position: relative;"><span class="badge">Best</span> 30d — 180</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="margin-top: 32px;">Search</h2>
+      <div class="search-wrap">
+        <span class="icon">🔍</span>
+        <input placeholder="Search all models..." />
+      </div>
+    </div>
+
+    <div id="compImproved" class="comp-section components-improved" style="display: none;">
+      <h2>Improved components</h2>
+
+      <div class="comp-grid">
+        <div class="comp-card-wrap">
+          <h3>Model row (list)</h3>
+          <div class="model-card">
+            <div class="thumb"></div>
+            <div class="info">
+              <h3>Model Name</h3>
+              <span class="meta">24 videos · 8 photos · 🇵🇱</span>
+            </div>
+            <span class="badge unlocked">Unlocked</span>
+          </div>
+          <div class="model-card" style="margin-top: 8px;">
+            <div class="thumb"></div>
+            <div class="info">
+              <h3>Model B</h3>
+              <span class="meta">18 videos · 12 photos · 🇺🇸</span>
+            </div>
+            <span class="badge locked">Locked</span>
+          </div>
+        </div>
+        <div class="comp-card-wrap">
+          <h3>Filter dropdown</h3>
+          <div class="filter-dropdown">Country: All ▾</div>
+          <div class="filter-dropdown" style="margin-top: 8px;">Sort: Newest ▾</div>
+        </div>
+        <div class="comp-card-wrap">
+          <h3>Bundle banner</h3>
+          <div class="bundle">
+            <div>
+              <h3 style="margin: 0 0 4px 0;">Bundle access</h3>
+              <p style="margin: 0; font-size: 12px; color: var(--muted);">All 50+ models, one price</p>
+            </div>
+            <div class="options">
+              <button class="opt">
+                <div class="label">14 days</div>
+                <div class="price">100 credits</div>
+              </button>
+              <button class="opt recommended">
+                <div class="label">30 days</div>
+                <div class="price">180 credits</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="margin-top: 32px;">Search + filter</h2>
+      <div class="search-wrap">
+        <input placeholder="Search models..." />
+        <button class="filter-btn">Filters</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const btnMobile = document.getElementById('btnMobile');
+    const btnComponents = document.getElementById('btnComponents');
+    const sectionMobile = document.getElementById('sectionMobile');
+    const sectionComponents = document.getElementById('sectionComponents');
+
+    const btnCurrent = document.getElementById('btnCurrent');
+    const btnImproved = document.getElementById('btnImproved');
+    const mobileCurrent = document.getElementById('mobileCurrent');
+    const mobileImproved = document.getElementById('mobileImproved');
+    const compCurrent = document.getElementById('compCurrent');
+    const compImproved = document.getElementById('compImproved');
+
+    btnMobile.addEventListener('click', () => {
+      btnMobile.classList.add('active');
+      btnComponents.classList.remove('active');
+      sectionMobile.classList.add('active');
+      sectionComponents.classList.remove('active');
+    });
+
+    btnComponents.addEventListener('click', () => {
+      btnComponents.classList.add('active');
+      btnMobile.classList.remove('active');
+      sectionComponents.classList.add('active');
+      sectionMobile.classList.remove('active');
+    });
+
+    btnCurrent.addEventListener('click', () => {
+      btnCurrent.classList.add('active');
+      btnImproved.classList.remove('active');
+      mobileCurrent.style.display = 'block';
+      mobileImproved.style.display = 'none';
+      compCurrent.style.display = 'block';
+      compImproved.style.display = 'none';
+    });
+
+    btnImproved.addEventListener('click', () => {
+      btnImproved.classList.add('active');
+      btnCurrent.classList.remove('active');
+      mobileImproved.style.display = 'block';
+      mobileCurrent.style.display = 'none';
+      compImproved.style.display = 'block';
+      compCurrent.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
