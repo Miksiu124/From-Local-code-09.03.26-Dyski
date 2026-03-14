@@ -292,6 +292,38 @@ export function ModelsGrid({
     return () => { observerRef.current?.disconnect(); };
   }, []);
 
+  // Fix: When scroll is already at bottom and more models can load, trigger load more.
+  // IntersectionObserver only fires on visibility *changes* — if user is at bottom from the start,
+  // the sentinel may already be visible and no callback fires. Check on content updates AND on scroll.
+  const BOTTOM_THRESHOLD = 250;
+  const checkAtBottomAndLoad = useCallback(() => {
+    if (loading || !cursor || displayModels.length === 0) return;
+    const scrollBottom = window.scrollY + window.innerHeight;
+    const docBottom = document.documentElement.scrollHeight - BOTTOM_THRESHOLD;
+    if (scrollBottom >= docBottom) loadMoreRef.current();
+  }, [displayModels.length, cursor, loading]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(checkAtBottomAndLoad);
+    return () => cancelAnimationFrame(raf);
+  }, [checkAtBottomAndLoad]);
+
+  useEffect(() => {
+    let scrollRaf: number | null = null;
+    const onScroll = () => {
+      if (scrollRaf != null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        checkAtBottomAndLoad();
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
+    };
+  }, [checkAtBottomAndLoad]);
+
   const hasAccess = (modelId: string) => {
     if (userAccessModelIds === "all") return true;
     return userAccessModelIds.includes(modelId);

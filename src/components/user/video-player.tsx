@@ -628,7 +628,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     <div
       ref={containerRef}
       data-video-player
-      className="relative bg-black rounded-xl sm:rounded-2xl overflow-hidden aspect-video group select-none"
+      className="relative bg-black rounded-xl sm:rounded-2xl overflow-hidden aspect-video group select-none min-w-0 w-full"
       style={{ touchAction: "manipulation" } as React.CSSProperties}
       onMouseMove={resetHideTimer}
       onMouseLeave={() => { if (playing) setShowControls(false); }}
@@ -639,7 +639,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     >
       <video
         ref={videoRef}
-        className="w-full h-full"
+        className="w-full h-full object-contain"
         playsInline
         controls={isIOS}
         controlsList="nodownload"
@@ -739,10 +739,9 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           )}
         </div>
 
-        {/* Controls row — scrollable on mobile when many buttons overflow (scrollbar hidden) */}
+        {/* Controls row — no overflow/scrollbars; compact layout fits viewport */}
         <div
-          className="flex items-center gap-2 sm:gap-3 flex-nowrap overflow-x-auto overflow-y-visible min-w-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-          style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+          className="flex items-center gap-2 sm:gap-3 flex-nowrap min-w-0 overflow-hidden"
         >
           {/* Play / Pause — min 48px touch target na mobile (Android) */}
           <button

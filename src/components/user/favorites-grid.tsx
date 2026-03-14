@@ -7,7 +7,7 @@ import { Heart, Play, Image, Loader2, Film, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { RetryImage } from "@/components/ui/retry-image";
+import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
 
 interface FavoriteItem {
   id: string;
@@ -104,6 +104,38 @@ export function FavoritesGrid() {
   useEffect(() => {
     return () => { observerRef.current?.disconnect(); };
   }, []);
+
+  // Fix: When scroll is already at bottom and more items can load, trigger load more.
+  // IntersectionObserver only fires on visibility *changes* — if user is at bottom from the start,
+  // the sentinel may already be visible and no callback fires. Check on content updates AND on scroll.
+  const BOTTOM_THRESHOLD = 250;
+  const checkAtBottomAndLoad = useCallback(() => {
+    if (loadingMore || !cursor || items.length === 0) return;
+    const scrollBottom = window.scrollY + window.innerHeight;
+    const docBottom = document.documentElement.scrollHeight - BOTTOM_THRESHOLD;
+    if (scrollBottom >= docBottom) loadMoreRef.current();
+  }, [items.length, cursor, loadingMore]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(checkAtBottomAndLoad);
+    return () => cancelAnimationFrame(raf);
+  }, [checkAtBottomAndLoad]);
+
+  useEffect(() => {
+    let scrollRaf: number | null = null;
+    const onScroll = () => {
+      if (scrollRaf != null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        checkAtBottomAndLoad();
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
+    };
+  }, [checkAtBottomAndLoad]);
 
   const handleRemoveFavorite = async (e: React.MouseEvent, contentItemId: string) => {
     e.stopPropagation();
@@ -204,11 +236,11 @@ export function FavoritesGrid() {
                 onClick={() => handleItemClick(item)}
               >
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
-                  <RetryImage
+                  <LazyRetryImage
                     src={`/api/content/${item.contentItemId}/thumbnail`}
                     alt=""
                     className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
-                    loading="lazy"
+                    rootMargin="600px"
                     fallback={
                       <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-secondary">
                         {item.contentType === "VIDEO" ? (
