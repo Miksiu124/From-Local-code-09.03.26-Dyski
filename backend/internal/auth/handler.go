@@ -51,6 +51,26 @@ var (
 	digitRegex = regexp.MustCompile(`[0-9]`)
 )
 
+// turnstileErrorMessage maps Cloudflare error-codes to user-friendly messages.
+// See https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
+func turnstileErrorMessage(codes []string, ip string) string {
+	for _, c := range codes {
+		switch c {
+		case "timeout-or-duplicate":
+			// Token expired (>5 min) or already used (double-submit)
+			log.Printf("[Turnstile] Token expired or duplicate for IP: %s", ip)
+			return "Verification expired. Please complete the challenge again and submit."
+		case "missing-input-secret", "invalid-input-secret":
+			log.Printf("[Turnstile] Secret misconfigured (codes: %v)", codes)
+			return "Verification failed. Please try again or contact support."
+		case "missing-input-response", "invalid-input-response":
+			return "Verification expired. Please complete the challenge again and submit."
+		}
+	}
+	log.Printf("[Turnstile] Verification failed for IP: %s (codes: %v)", ip, codes)
+	return "Verification expired. Please complete the challenge again and submit."
+}
+
 // retryAfterSeconds returns seconds until ResetAt (ms), min 1.
 func retryAfterSeconds(resetAtMs int64) int {
 	secs := int((resetAtMs - time.Now().UnixMilli()) / 1000)
@@ -61,9 +81,9 @@ func retryAfterSeconds(resetAtMs int64) int {
 }
 
 func (h *Handler) Register(c echo.Context) error {
-	// Rate limit by IP
+	// Rate limit by IP (10/15min to avoid blocking shared IPs: offices, mobile carriers)
 	ip := c.RealIP()
-	rl, err := h.rateLimiter.Check("register:"+ip, 5, 15*60*1000)
+	rl, err := h.rateLimiter.Check("register:"+ip, 10, 15*60*1000)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -80,7 +100,7 @@ func (h *Handler) Register(c echo.Context) error {
 	// 1. Verify Turnstile token first if configured
 	if h.cfg.TurnstileSecretKey != "" {
 		if req.TurnstileToken == "" {
-			return common.BadRequest(c, "Turnstile verification missing")
+			return common.BadRequest(c, "Verification expired. Please complete the challenge again and submit.")
 		}
 
 		resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", url.Values{
@@ -90,16 +110,22 @@ func (h *Handler) Register(c echo.Context) error {
 		})
 		if err != nil {
 			log.Printf("[Turnstile] HTTP error: %v", err)
-			return common.BadRequest(c, "Failed to verify captcha")
+			return common.BadRequest(c, "Verification failed. Please complete the challenge again and submit.")
 		}
 		defer resp.Body.Close()
 
 		var result struct {
-			Success bool `json:"success"`
+			Success    bool     `json:"success"`
+			ErrorCodes []string `json:"error-codes"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || !result.Success {
-			log.Printf("[Turnstile] Verification failed for IP: %s", ip)
-			return common.BadRequest(c, "Captcha verification failed. Are you a robot?")
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			log.Printf("[Turnstile] Decode error: %v", err)
+			return common.BadRequest(c, "Verification failed. Please complete the challenge again and submit.")
+		}
+		if !result.Success {
+			// Map Cloudflare error-codes to user-friendly messages
+			msg := turnstileErrorMessage(result.ErrorCodes, ip)
+			return common.BadRequest(c, msg)
 		}
 	}
 
@@ -129,8 +155,8 @@ func (h *Handler) Register(c echo.Context) error {
 		return common.BadRequest(c, "Password must contain at least one number")
 	}
 
-	// Rate limit by email
-	rl, err = h.rateLimiter.Check("register-email:"+req.Email, 5, 15*60*1000)
+	// Rate limit by email (6/15min for retries)
+	rl, err = h.rateLimiter.Check("register-email:"+req.Email, 6, 15*60*1000)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -153,7 +179,15 @@ func (h *Handler) Register(c echo.Context) error {
 	if refCode == "" {
 		refCode = c.QueryParam("ref")
 	}
-	if err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password, refCode); err != nil {
+
+	// Custom link attribution (from ref_link_id cookie set when visiting /l/slug)
+	var customLinkID string
+	if cookie, err := c.Cookie("ref_link_id"); err == nil && cookie.Value != "" {
+		customLinkID = strings.TrimSpace(cookie.Value)
+	}
+
+	refereeIP := c.RealIP()
+	if err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password, refCode, customLinkID, refereeIP); err != nil {
 		log.Printf("[Register] Service error: %v", err)
 		return common.JSONError(c, http.StatusInternalServerError, "registration_failed", "Registration failed. Please try again later.")
 	}
@@ -202,8 +236,19 @@ func (h *Handler) Login(c echo.Context) error {
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 
-	// Rate limit
-	rl, err := h.rateLimiter.Check("login:"+req.Email, 10, 5*60*1000)
+	// Rate limit by IP (prevents brute force across many accounts from same IP)
+	ip := c.RealIP()
+	rl, err := h.rateLimiter.Check("login-ip:"+ip, 20, 5*60*1000)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if rl != nil && !rl.Allowed {
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many login attempts. Please try again later.")
+	}
+
+	// Rate limit by email (prevents brute force on a single account)
+	rl, err = h.rateLimiter.Check("login:"+req.Email, 10, 5*60*1000)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -216,6 +261,7 @@ func (h *Handler) Login(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
+	h.service.StoreSessionIP(c.Request().Context(), user.ID, ip)
 
 	cookie := new(http.Cookie)
 	cookie.Name = "session_token"
@@ -376,7 +422,7 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 	}
 
 	if token != "" {
-		resetURL := h.cfg.FrontendURL + "/reset-password?token=" + token
+		resetURL := h.cfg.FrontendURL + "/reset-password?token=" + url.QueryEscape(token)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -395,6 +441,17 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 // ── Reset Password ──────────────────────────────────────────────────────────
 
 func (h *Handler) ResetPassword(c echo.Context) error {
+	// Rate limit by IP to prevent brute force (5 attempts per 15 min)
+	ip := c.RealIP()
+	rl, err := h.rateLimiter.Check("reset-password:"+ip, 5, 15*60*1000)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if rl != nil && !rl.Allowed {
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many reset attempts. Please try again later.")
+	}
+
 	var req struct {
 		Token    string `json:"token"`
 		Password string `json:"password"`
@@ -410,7 +467,7 @@ func (h *Handler) ResetPassword(c echo.Context) error {
 		return common.BadRequest(c, "Password is too long")
 	}
 
-	err := h.service.ResetPassword(c.Request().Context(), req.Token, req.Password)
+	err = h.service.ResetPassword(c.Request().Context(), req.Token, req.Password)
 	if err != nil {
 		return common.BadRequest(c, "Invalid or expired reset token")
 	}
@@ -518,12 +575,19 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	ctx := c.Request().Context()
 	email := strings.ToLower(dUser.Email)
 
+	var customLinkID string
+	if cookie, err := c.Cookie("ref_link_id"); err == nil && cookie.Value != "" {
+		customLinkID = strings.TrimSpace(cookie.Value)
+	}
+
 	// Find or create user
-	token, user, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar)
+	token, user, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID)
 	if err != nil {
 		log.Printf("[Discord] FindOrCreate failed: %v", err)
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
+
+	h.service.StoreSessionIP(ctx, user.ID, c.RealIP())
 
 	// Set session cookie
 	cookie := new(http.Cookie)

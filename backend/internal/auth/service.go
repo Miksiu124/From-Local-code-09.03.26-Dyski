@@ -42,8 +42,18 @@ type UserRow struct {
 	EmailVerified bool
 }
 
-// Register creates a new user with hashed password and optionally saves referral
-func (s *Service) Register(ctx context.Context, name, email, password, refCode string) error {
+// StoreSessionIP saves the user's IP for anti-gaming (referral same-person check). TTL matches session.
+func (s *Service) StoreSessionIP(ctx context.Context, userID, ip string) {
+	if userID == "" || ip == "" || s.redis == nil {
+		return
+	}
+	key := fmt.Sprintf("session:ip:%s", userID)
+	s.redis.Set(ctx, key, ip, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
+}
+
+// Register creates a new user with hashed password and optionally saves referral and custom link attribution.
+// refereeIP is used for anti-gaming: if referrer and referee share the same IP, referral is rejected.
+func (s *Service) Register(ctx context.Context, name, email, password, refCode, customLinkID, refereeIP string) error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
@@ -54,19 +64,41 @@ func (s *Service) Register(ctx context.Context, name, email, password, refCode s
 		namePtr = &name
 	}
 
+	var customLinkIDArg interface{}
+	if customLinkID != "" {
+		// Validate link exists and is active
+		var exists bool
+		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM custom_links WHERE id = $1 AND is_active = true)`, customLinkID).Scan(&exists); err == nil && exists {
+			customLinkIDArg = customLinkID
+		}
+	}
+
 	var userID string
 	err = s.db.QueryRow(ctx, `
-		INSERT INTO users (email, password, name, role, credit_balance, email_verified)
-		VALUES ($1, $2, $3, 'USER', 0, false)
+		INSERT INTO users (email, password, name, role, credit_balance, email_verified, custom_link_id)
+		VALUES ($1, $2, $3, 'USER', 0, false, $4)
 		RETURNING id
-	`, email, string(hashedPassword), namePtr).Scan(&userID)
+	`, email, string(hashedPassword), namePtr, customLinkIDArg).Scan(&userID)
 
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
 	if refCode != "" {
-		_ = referral.SaveReferralFromCode(ctx, s.db, userID, refCode)
+		// Anti-gaming: reject if referrer and referee have same IP (same person)
+		if s.redis != nil && refereeIP != "" {
+			var referrerID string
+			if err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE referral_code = $1 AND id != $2`, strings.TrimSpace(strings.ToUpper(refCode)), userID).Scan(&referrerID); err == nil {
+				referrerIP, _ := s.redis.Get(ctx, fmt.Sprintf("session:ip:%s", referrerID)).Result()
+				if referrerIP != "" && referrerIP == refereeIP {
+					// Same IP = likely same person; skip referral
+					refCode = ""
+				}
+			}
+		}
+		if refCode != "" {
+			_ = referral.SaveReferralFromCode(ctx, s.db, userID, refCode)
+		}
 	}
 	return nil
 }
@@ -185,7 +217,7 @@ func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) (s
 }
 
 // FindOrCreateDiscordUser links a Discord account to an existing user or creates a new one
-func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar string) (string, *UserRow, error) {
+func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar, customLinkID string) (string, *UserRow, error) {
 	var user UserRow
 
 	// Try to find existing user by discord_id
@@ -220,11 +252,19 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 				avatarURL = &url
 			}
 
+			var customLinkIDArg interface{}
+			if customLinkID != "" {
+				var exists bool
+				if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM custom_links WHERE id = $1 AND is_active = true)`, customLinkID).Scan(&exists); err == nil && exists {
+					customLinkIDArg = customLinkID
+				}
+			}
+
 			err = s.db.QueryRow(ctx, `
-				INSERT INTO users (email, name, role, credit_balance, discord_id, avatar_url, email_verified)
-				VALUES ($1, $2, 'USER', 0, $3, $4, true)
+				INSERT INTO users (email, name, role, credit_balance, discord_id, avatar_url, email_verified, custom_link_id)
+				VALUES ($1, $2, 'USER', 0, $3, $4, true, $5)
 				RETURNING id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
-			`, email, namePtr, discordID, avatarURL).Scan(
+			`, email, namePtr, discordID, avatarURL, customLinkIDArg).Scan(
 				&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified,
 			)
 			if err != nil {

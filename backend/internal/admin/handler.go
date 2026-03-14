@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
+	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/mailer"
 
@@ -202,9 +204,14 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 		return common.BadRequest(c, "Purchase is not pending")
 	}
 
+	adminID := middleware.GetUserID(c)
+	var adminIDArg interface{} = adminID
+	if adminID == "" {
+		adminIDArg = nil
+	}
 	_, err = tx.Exec(ctx, `
-		UPDATE credit_purchases SET status = 'APPROVED', admin_verified_at = now() WHERE id = $1
-	`, purchaseID)
+		UPDATE credit_purchases SET status = 'APPROVED', admin_verified_at = now(), admin_id = $2 WHERE id = $1
+	`, purchaseID, adminIDArg)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -232,7 +239,7 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	}
 
 	// Referral: if referee's first purchase, award referrer and bonus to referee
-	h.awardReferralCredits(ctx, tx, userID, credits, amount, purchaseID)
+	referrerID, referralCredits := h.awardReferralCredits(ctx, tx, userID, credits, amount, purchaseID)
 
 	approveMsg := fmt.Sprintf("Your purchase of %d credits has been approved.", credits)
 	_, _ = tx.Exec(ctx, `
@@ -246,6 +253,9 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 
 	h.publishBlikAction(ctx, purchaseID, "APPROVED")
 	h.publishNotification(ctx, userID, "PAYMENT_APPROVED", "Payment Approved", approveMsg)
+	if referrerID != "" && referralCredits > 0 {
+		h.publishNotification(ctx, referrerID, "REFERRAL_BONUS", "Referral bonus!", fmt.Sprintf("Someone you referred made a purchase. You earned %d credits!", referralCredits))
+	}
 
 	// Discord notification
 	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
@@ -299,9 +309,14 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 		return common.BadRequest(c, "Purchase is not pending")
 	}
 
+	adminID := middleware.GetUserID(c)
+	var adminIDArg interface{} = adminID
+	if adminID == "" {
+		adminIDArg = nil
+	}
 	_, err = tx.Exec(ctx, `
-		UPDATE credit_purchases SET status = 'REJECTED', admin_notes = $1, admin_verified_at = now() WHERE id = $2
-	`, req.Reason, purchaseID)
+		UPDATE credit_purchases SET status = 'REJECTED', admin_notes = $1, admin_verified_at = now(), admin_id = $3 WHERE id = $2
+	`, req.Reason, purchaseID, adminIDArg)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -320,11 +335,6 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 
 	h.publishBlikAction(ctx, purchaseID, "REJECTED")
 	h.publishNotification(ctx, userID, "PAYMENT_REJECTED", "Payment Rejected", msg)
-
-	// Discord notification
-	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
-	info.Status = "REJECTED"
-	h.discord.NotifyPurchaseRejected(ctx, info, req.Reason)
 
 	return common.Success(c, map[string]bool{"success": true})
 }
@@ -358,14 +368,14 @@ func (h *Handler) GetPurchaseProof(c echo.Context) error {
 }
 
 // awardReferralCredits runs inside the approval tx: if referee has a referral and credits_awarded_at is null,
-// awards referrer credits and referee bonus per settings.
-func (h *Handler) awardReferralCredits(ctx context.Context, tx pgx.Tx, userID string, credits int, amount float64, purchaseID string) {
-	var referrerID, referralID string
+// awards referrer credits and referee bonus per settings. Returns (referrerID, creditsAwarded) for notification.
+func (h *Handler) awardReferralCredits(ctx context.Context, tx pgx.Tx, userID string, credits int, amount float64, purchaseID string) (referrerID string, creditsAwarded int) {
+	var referralID string
 	err := tx.QueryRow(ctx, `
 		SELECT id, referrer_id FROM referrals WHERE referee_id = $1 AND credits_awarded_at IS NULL
 	`, userID).Scan(&referralID, &referrerID)
 	if err != nil {
-		return // no referral or already awarded
+		return "", 0 // no referral or already awarded
 	}
 
 	// Get settings (defaults if not set) - read from db (settings are global, not in tx)
@@ -392,13 +402,13 @@ func (h *Handler) awardReferralCredits(ctx context.Context, tx pgx.Tx, userID st
 	}
 
 	if amount < minAmount {
-		return
+		return "", 0
 	}
 
 	var awardedCount int
 	_ = tx.QueryRow(ctx, `SELECT COUNT(*) FROM referrals WHERE referrer_id = $1 AND credits_awarded_at IS NOT NULL`, referrerID).Scan(&awardedCount)
 	if awardedCount >= maxPerUser {
-		return
+		return "", 0
 	}
 
 	bonusCredits := credits * bonusPercent / 100
@@ -413,6 +423,7 @@ func (h *Handler) awardReferralCredits(ctx context.Context, tx pgx.Tx, userID st
 			referrerID, creditsReferrer, "Referral bonus - referred user purchased")
 	}
 	tx.Exec(ctx, `UPDATE referrals SET credits_awarded_at = now(), credits_amount = $1 WHERE id = $2`, creditsReferrer, referralID)
+	return referrerID, creditsReferrer
 }
 
 func (h *Handler) publishBlikAction(ctx context.Context, purchaseID, action string) {
@@ -1000,7 +1011,11 @@ func (h *Handler) UpdatePackage(c echo.Context) error {
 
 func (h *Handler) DeletePackage(c echo.Context) error {
 	ctx := c.Request().Context()
-	_, err := h.db.Exec(ctx, `DELETE FROM credit_packages WHERE id = $1`, c.Param("id"))
+	pkgID := c.Param("id")
+	if !common.IsValidUUID(pkgID) {
+		return common.BadRequest(c, "Invalid package ID format")
+	}
+	_, err := h.db.Exec(ctx, `DELETE FROM credit_packages WHERE id = $1`, pkgID)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -1234,7 +1249,11 @@ func (h *Handler) UpdatePromoCode(c echo.Context) error {
 
 func (h *Handler) DeletePromoCode(c echo.Context) error {
 	ctx := c.Request().Context()
-	_, err := h.db.Exec(ctx, `DELETE FROM promo_codes WHERE id = $1`, c.Param("id"))
+	promoID := c.Param("id")
+	if !common.IsValidUUID(promoID) {
+		return common.BadRequest(c, "Invalid promo code ID format")
+	}
+	_, err := h.db.Exec(ctx, `DELETE FROM promo_codes WHERE id = $1`, promoID)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -1310,7 +1329,7 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 		if entry.Key == "" {
 			continue
 		}
-		if !allowedSettingsKeys[entry.Key] && !strings.HasPrefix(entry.Key, "discord_") {
+		if !allowedSettingsKeys[entry.Key] {
 			log.Printf("[UpdateSettings] Skipping unknown key (not in whitelist): %s", entry.Key)
 			continue
 		}
@@ -1349,9 +1368,21 @@ func (h *Handler) SyncR2(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	var totalImported, totalObjects int
+	for _, folder := range synced {
+		imported, objects, err := h.contentService.ImportModelContent(ctx, folder)
+		if err != nil {
+			log.Printf("[Sync] Failed to import content for %s: %v", folder, err)
+			continue
+		}
+		totalImported += imported
+		totalObjects += objects
+	}
+
 	return common.Success(c, map[string]interface{}{
-		"synced": synced,
-		"count":  len(synced),
+		"syncedModels":   len(synced),
+		"newContentItems": totalImported,
+		"totalObjects":   totalObjects,
 	})
 }
 
@@ -1535,6 +1566,24 @@ func (h *Handler) ToggleContentHidden(c echo.Context) error {
 		return common.NotFound(c, "Content item not found")
 	}
 
+	return common.Success(c, map[string]bool{"success": true})
+}
+
+// DeleteContent deletes a content item (photo or video) from R2 and the database. Admin only.
+func (h *Handler) DeleteContent(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" || len(id) < 10 {
+		return common.BadRequest(c, "id is required")
+	}
+
+	err := h.contentService.DeleteContentItem(ctx, id)
+	if err != nil {
+		if errors.Is(err, content.ErrContentNotFound) {
+			return common.NotFound(c, "Content item not found")
+		}
+		return common.InternalError(c)
+	}
 	return common.Success(c, map[string]bool{"success": true})
 }
 
@@ -1732,6 +1781,18 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 		topSellers = []topSeller{}
 	}
 
+	// Referral program stats (referral_link_visits from migration 20260313120000)
+	var referralClicks, referralRegistrations int
+	var referralRevenue float64
+	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM referral_link_visits`).Scan(&referralClicks)
+	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM referrals`).Scan(&referralRegistrations)
+	_ = h.db.QueryRow(ctx, `
+		SELECT COALESCE(SUM(cp.amount), 0)
+		FROM credit_purchases cp
+		JOIN referrals r ON r.referee_id = cp.user_id
+		WHERE cp.status = 'APPROVED'
+	`).Scan(&referralRevenue)
+
 	return common.Success(c, map[string]interface{}{
 		"users": map[string]int{
 			"total": totalUsers,
@@ -1763,5 +1824,10 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 			"individual": individualPurchases,
 		},
 		"topSellers": topSellers,
+		"referral": map[string]interface{}{
+			"clicks":        referralClicks,
+			"registrations": referralRegistrations,
+			"revenue":       referralRevenue,
+		},
 	})
 }

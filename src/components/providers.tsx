@@ -1,7 +1,9 @@
 "use client";
 
+import { Suspense } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import { LazyMotion, domAnimation } from "framer-motion";
+import { ReferralCookieProvider } from "@/components/referral-cookie-provider";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -18,6 +20,9 @@ export function Providers({ children, locale, messages, timeZone }: ProvidersPro
       timeZone={timeZone || "UTC"}
     >
       <LazyMotion features={domAnimation}>
+        <Suspense fallback={null}>
+          <ReferralCookieProvider />
+        </Suspense>
         {children}
       </LazyMotion>
     </NextIntlClientProvider>

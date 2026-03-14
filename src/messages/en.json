@@ -70,7 +70,8 @@
     "checkEmailVerify": "Check your email to verify your account before signing in.",
     "emailVerifiedSuccess": "Your email has been verified! You can now sign in.",
     "resendVerification": "Resend verification email",
-    "verifyEmailRequired": "Please verify your email to continue."
+    "verifyEmailRequired": "Please verify your email to continue.",
+    "referredByFriend": "Referred by a friend"
   },
   "models": {
     "title": "Models",
@@ -124,6 +125,9 @@
     "arrowsToNavigate": "Arrow keys to navigate",
     "swipeToNavigate": "Swipe left or right to navigate through the gallery",
     "getAccess": "Get Access",
+    "deleteContent": "Delete",
+    "deleteContentConfirm": "Are you sure you want to delete this item?",
+    "contentDeleteFailed": "Failed to delete item",
     "featured": "Featured",
     "purchasedTab": "Purchased",
     "modelsCount": "models"
@@ -219,10 +223,14 @@
     "yourLink": "Your referral link",
     "shareLink": "Share this link with friends. When they register and buy credits, you both earn rewards.",
     "codeLabel": "Code",
+    "trackableLink": "Tracks clicks",
     "stats": "Your stats",
-    "totalReferred": "Referred",
-    "totalPurchased": "Purchased",
+    "clicks": "Clicks",
+    "clicksLast7Days": "Clicks (last 7 days)",
+    "totalReferred": "Registrations",
+    "totalPurchased": "Purchases",
     "totalCreditsEarned": "Credits earned",
+    "revenue": "Revenue",
     "recentCredits": "Recent earnings",
     "recentCreditsDesc": "Latest credits earned from referrals",
     "credits": "credits",

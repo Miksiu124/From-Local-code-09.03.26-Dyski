@@ -12,6 +12,9 @@ import {
   Users,
   ShoppingBag,
   Gift,
+  MousePointerClick,
+  Banknote,
+  TrendingUp,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,11 +25,15 @@ import { logger } from "@/lib/logger";
 type ReferralData = {
   referralCode: string;
   referralLink: string;
+  legacyLink?: string;
   stats: {
     totalReferred: number;
     totalPurchased: number;
     totalCreditsEarned: number;
+    clicks?: number;
+    revenue?: number;
   };
+  dailyClicks?: Array<{ date: string; count: number }>;
   recentCredits: Array<{ credits: number; email: string; at: string }>;
   bonuses?: {
     creditsReferrer: number;
@@ -135,6 +142,9 @@ export function ReferralPanel() {
           </div>
           <p className="text-xs text-muted-foreground">
             {t("codeLabel")}: <code className="bg-secondary px-1.5 py-0.5 rounded">{data.referralCode}</code>
+            {data.referralLink?.includes("/r/") && (
+              <span className="ml-2 text-primary/80">· {t("trackableLink")}</span>
+            )}
           </p>
         </CardContent>
       </Card>
@@ -144,23 +154,62 @@ export function ReferralPanel() {
           <CardTitle className="text-lg">{t("stats")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <div className="rounded-xl bg-card border border-white/[0.08] p-4">
-              <Users className="h-5 w-5 text-primary mb-2" />
-              <p className="text-2xl font-bold">{data.stats.totalReferred}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="rounded-lg border border-white/[0.08] p-4 bg-white/[0.02]">
+              <MousePointerClick className="h-4 w-4 text-muted-foreground mb-2" />
+              <p className="text-xl font-semibold">{data.stats.clicks ?? 0}</p>
+              <p className="text-xs text-muted-foreground">{t("clicks")}</p>
+            </div>
+            <div className="rounded-lg border border-white/[0.08] p-4 bg-white/[0.02]">
+              <Users className="h-4 w-4 text-muted-foreground mb-2" />
+              <p className="text-xl font-semibold">{data.stats.totalReferred}</p>
               <p className="text-xs text-muted-foreground">{t("totalReferred")}</p>
             </div>
-            <div className="rounded-xl bg-card border border-white/[0.08] p-4">
-              <ShoppingBag className="h-5 w-5 text-primary mb-2" />
-              <p className="text-2xl font-bold">{data.stats.totalPurchased}</p>
+            <div className="rounded-lg border border-white/[0.08] p-4 bg-white/[0.02]">
+              <ShoppingBag className="h-4 w-4 text-muted-foreground mb-2" />
+              <p className="text-xl font-semibold">{data.stats.totalPurchased}</p>
               <p className="text-xs text-muted-foreground">{t("totalPurchased")}</p>
             </div>
-            <div className="rounded-xl bg-card border border-white/[0.08] p-4">
-              <Coins className="h-5 w-5 text-primary mb-2" />
-              <p className="text-2xl font-bold">{formatCredits(data.stats.totalCreditsEarned)}</p>
+            <div className="rounded-lg border border-white/[0.08] p-4 bg-white/[0.02]">
+              <Coins className="h-4 w-4 text-muted-foreground mb-2" />
+              <p className="text-xl font-semibold">{formatCredits(data.stats.totalCreditsEarned)}</p>
               <p className="text-xs text-muted-foreground">{t("totalCreditsEarned")}</p>
             </div>
+            <div className="rounded-lg border border-white/[0.08] p-4 bg-white/[0.02]">
+              <Banknote className="h-4 w-4 text-muted-foreground mb-2" />
+              <p className="text-xl font-semibold">{(data.stats.revenue ?? 0).toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground">{t("revenue")} PLN</p>
+            </div>
           </div>
+
+          {data.dailyClicks && data.dailyClicks.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-white/[0.06]">
+              <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                <TrendingUp className="h-3.5 w-3" /> {t("clicksLast7Days")}
+              </p>
+              <div className="h-24 flex items-end gap-1 w-full">
+                {data.dailyClicks.map((d, i) => {
+                  const maxCount = Math.max(...data.dailyClicks!.map((x) => x.count), 1);
+                  const heightPct = Math.max((d.count / maxCount) * 100, 4);
+                  return (
+                    <div
+                      key={i}
+                      className="flex-1 flex flex-col justify-end items-center group"
+                      title={`${d.date}: ${d.count} ${t("clicks")}`}
+                    >
+                      <div
+                        className="w-full bg-primary/30 hover:bg-primary/50 transition-colors rounded-t"
+                        style={{ height: `${heightPct}%` }}
+                      />
+                      <span className="text-[10px] text-muted-foreground mt-1 truncate w-full text-center">
+                        {d.date.slice(5)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

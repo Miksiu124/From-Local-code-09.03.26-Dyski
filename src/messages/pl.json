@@ -70,7 +70,8 @@
     "checkEmailVerify": "Sprawdź swoją skrzynkę email, aby zweryfikować konto przed zalogowaniem.",
     "emailVerifiedSuccess": "Twój email został zweryfikowany! Możesz się teraz zalogować.",
     "resendVerification": "Wyślij ponownie email weryfikacyjny",
-    "verifyEmailRequired": "Zweryfikuj swój email, aby kontynuować."
+    "verifyEmailRequired": "Zweryfikuj swój email, aby kontynuować.",
+    "referredByFriend": "Polecony przez znajomego"
   },
   "models": {
     "title": "Modele",
@@ -124,6 +125,9 @@
     "arrowsToNavigate": "Strzałki do nawigacji",
     "swipeToNavigate": "Przesuń w lewo lub prawo, aby poruszać się po galerii",
     "getAccess": "Uzyskaj dostęp",
+    "deleteContent": "Usuń",
+    "deleteContentConfirm": "Czy na pewno usunąć ten element?",
+    "contentDeleteFailed": "Nie udało się usunąć elementu",
     "featured": "Wyróżnione",
     "purchasedTab": "Kupione",
     "modelsCount": "modeli"
@@ -219,10 +223,14 @@
     "yourLink": "Twój link polecający",
     "shareLink": "Udostępnij ten link znajomym. Gdy się zarejestrują i kupią kredyty, oboje otrzymacie nagrody.",
     "codeLabel": "Kod",
+    "trackableLink": "Śledzi kliknięcia",
     "stats": "Twoje statystyki",
-    "totalReferred": "Poleconych",
-    "totalPurchased": "Kupili",
+    "clicks": "Kliknięć",
+    "clicksLast7Days": "Kliknięcia (ostatnie 7 dni)",
+    "totalReferred": "Rejestracje",
+    "totalPurchased": "Zakupy",
     "totalCreditsEarned": "Zarobione kredyty",
+    "revenue": "Przychód",
     "recentCredits": "Ostatnie zarobki",
     "recentCreditsDesc": "Ostatnie kredyty z poleceń",
     "credits": "kredytów",
