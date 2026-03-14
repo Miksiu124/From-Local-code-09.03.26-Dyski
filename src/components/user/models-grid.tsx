@@ -297,11 +297,11 @@ export function ModelsGrid({
   // the sentinel may already be visible and no callback fires. Check on content updates AND on scroll.
   const BOTTOM_THRESHOLD = 250;
   const checkAtBottomAndLoad = useCallback(() => {
-    if (loading || !cursor || displayModels.length === 0) return;
+    if (loading || !cursor || models.length === 0) return;
     const scrollBottom = window.scrollY + window.innerHeight;
     const docBottom = document.documentElement.scrollHeight - BOTTOM_THRESHOLD;
     if (scrollBottom >= docBottom) loadMoreRef.current();
-  }, [displayModels.length, cursor, loading]);
+  }, [models.length, cursor, loading]);
 
   useEffect(() => {
     const raf = requestAnimationFrame(checkAtBottomAndLoad);
