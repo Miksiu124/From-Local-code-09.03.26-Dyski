@@ -1,30 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
-import { getOptionalEnv } from "@/lib/env";
 
 const isProd = process.env.NODE_ENV === "production";
-// Only use server-side DSN to avoid exposing it to the client
-const sentryDsn = getOptionalEnv("SENTRY_DSN");
 
-// ── Sentry initialization (lazy, once) ──────────────────────────────────────
-
-let sentryInitialized = false;
-
-function ensureSentry() {
-  if (sentryInitialized) return;
-  sentryInitialized = true;
-  if (!sentryDsn) return;
-
-  try {
-    Sentry.init({
-      dsn: sentryDsn,
-      tracesSampleRate: isProd ? 0.2 : 1.0,
-      environment: isProd ? "production" : "development",
-      enabled: !!sentryDsn,
-    });
-  } catch {
-    // Sentry init failure should never crash the app
-  }
-}
+// Sentry is initialized in sentry.server.config / sentry.edge.config / instrumentation-client.
+// We only capture here — no init. If DSN is unset, captureException no-ops.
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,15 +46,13 @@ function normalizeError(error: unknown) {
 }
 
 function captureToSentry(message: string, error?: unknown) {
-  if (!sentryDsn) return;
   try {
-    ensureSentry();
     if (error instanceof Error) {
       Sentry.captureException(error, { extra: { message } });
     } else {
       Sentry.captureMessage(message, {
         level: "error",
-        extra: error ? { detail: error } : undefined,
+        extra: error ? { detail: sanitize(error) } : undefined,
       });
     }
   } catch {
