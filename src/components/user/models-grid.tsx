@@ -26,6 +26,7 @@ interface ModelItem {
   imageCount?: number;
   isActive: boolean;
   firstContentItemId: string | null;
+  avatarUrl?: string;
 }
 
 interface CountryItem {
@@ -674,7 +675,7 @@ export function ModelsGrid({
                     {/* Model avatar */}
                     <div className="absolute bottom-12 sm:bottom-14 right-2.5">
                       <RetryImage
-                        src={`/api/models/${model.folderName}/avatar`}
+                        src={model.avatarUrl || `/api/models/${model.folderName}/avatar`}
                         alt=""
                         className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
                         loading="lazy"

@@ -1,9 +1,12 @@
 package models
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"content-platform-backend/internal/common"
+	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,11 +14,22 @@ import (
 )
 
 type Handler struct {
-	db *pgxpool.Pool
+	db  *pgxpool.Pool
+	cfg *config.Config
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
+	return &Handler{db: db, cfg: cfg}
+}
+
+// avatarURL returns direct CDN URL when R2PublicURL is set.
+// Format: https://files.dyskiof.net/avatars/{folderName}.webp
+func (h *Handler) avatarURL(folderName string) string {
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/avatars/%s.webp", base, folderName)
 }
 
 // List models with cursor pagination, search, and country filter
@@ -107,6 +121,7 @@ func (h *Handler) List(c echo.Context) error {
 		VideoCount         int     `json:"videoCount"`
 		ImageCount         int     `json:"imageCount"`
 		FirstContentItemID *string `json:"firstContentItemId"`
+		AvatarURL          string  `json:"avatarUrl,omitempty"`
 	}
 
 	var items []ModelItem
@@ -116,6 +131,7 @@ func (h *Handler) List(c echo.Context) error {
 			&m.CountryName, &m.CountryFlag, &m.ContentCount, &m.VideoCount, &m.ImageCount, &m.FirstContentItemID); err != nil {
 			continue
 		}
+		m.AvatarURL = h.avatarURL(m.FolderName)
 		items = append(items, m)
 	}
 
@@ -151,6 +167,7 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		Description *string `json:"description"`
 		CountryName *string `json:"countryName"`
 		CountryFlag *string `json:"countryFlag"`
+		AvatarURL   string  `json:"avatarUrl,omitempty"`
 	}
 
 	err := h.db.QueryRow(ctx, `
@@ -165,6 +182,7 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	if err != nil {
 		return common.NotFound(c, "Model not found")
 	}
+	model.AvatarURL = h.avatarURL(model.FolderName)
 
 	// Get content items
 	rows, err := h.db.Query(ctx, `

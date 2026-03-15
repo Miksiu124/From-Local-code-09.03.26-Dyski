@@ -14,6 +14,7 @@ type Model = {
   videoCount?: number;
   imageCount?: number;
   firstContentItemId: string | null;
+  avatarUrl?: string;
 };
 
 type ModelsResponse = {
@@ -108,6 +109,7 @@ export default async function HomePage() {
           imageCount: m.imageCount,
           isActive: m.isActive,
           firstContentItemId: m.firstContentItemId,
+          avatarUrl: m.avatarUrl,
         }))}
         featuredModels={featuredModelsData.models.map((m) => ({
           id: m.id,
@@ -122,6 +124,7 @@ export default async function HomePage() {
           imageCount: m.imageCount,
           isActive: m.isActive,
           firstContentItemId: m.firstContentItemId,
+          avatarUrl: m.avatarUrl,
         }))}
         initialCursor={modelsData.nextCursor}
         totalModelCount={resolvedTotalModelCount}

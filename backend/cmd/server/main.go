@@ -160,7 +160,7 @@ func main() {
 	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
 
 	// Models (public)
-	modelsHandler := models.NewHandler(pgPool)
+	modelsHandler := models.NewHandler(pgPool, cfg)
 	api.GET("/models", modelsHandler.List)
 	api.GET("/models/stats", modelsHandler.GetStats) // Added
 	api.GET("/models/:slug", modelsHandler.GetBySlug)
