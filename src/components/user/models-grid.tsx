@@ -27,6 +27,7 @@ interface ModelItem {
   isActive: boolean;
   firstContentItemId: string | null;
   avatarUrl?: string;
+  headerUrl?: string;
 }
 
 interface CountryItem {
@@ -404,7 +405,7 @@ export function ModelsGrid({
                 <AnimatePresence mode="wait">
                   <motion.img
                     key={heroModel.id}
-                    src={`/api/models/${heroModel.folderName}/header`}
+                    src={heroModel.headerUrl || `/api/models/${heroModel.folderName}/header`}
                     alt={heroModel.name}
                     loading="eager"
                     fetchPriority="high"

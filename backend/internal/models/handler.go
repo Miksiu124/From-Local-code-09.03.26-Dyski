@@ -23,13 +23,23 @@ func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
 }
 
 // avatarURL returns direct CDN URL when R2PublicURL is set.
-// Format: https://files.dyskiof.net/avatars/{folderName}.webp
+// Format: https://files.dyskiof.net/avatars/{folderName}_avatar.webp
 func (h *Handler) avatarURL(folderName string) string {
 	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
 	if base == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/avatars/%s.webp", base, folderName)
+	return fmt.Sprintf("%s/avatars/%s_avatar.webp", base, folderName)
+}
+
+// headerURL returns direct CDN URL for featured banner when R2PublicURL is set.
+// Format: https://files.dyskiof.net/avatars/{folderName}_header.webp
+func (h *Handler) headerURL(folderName string) string {
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/avatars/%s_header.webp", base, folderName)
 }
 
 // List models with cursor pagination, search, and country filter
@@ -122,6 +132,7 @@ func (h *Handler) List(c echo.Context) error {
 		ImageCount         int     `json:"imageCount"`
 		FirstContentItemID *string `json:"firstContentItemId"`
 		AvatarURL          string  `json:"avatarUrl,omitempty"`
+		HeaderURL          string  `json:"headerUrl,omitempty"`
 	}
 
 	var items []ModelItem
@@ -132,6 +143,7 @@ func (h *Handler) List(c echo.Context) error {
 			continue
 		}
 		m.AvatarURL = h.avatarURL(m.FolderName)
+		m.HeaderURL = h.headerURL(m.FolderName)
 		items = append(items, m)
 	}
 
@@ -168,6 +180,7 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		CountryName *string `json:"countryName"`
 		CountryFlag *string `json:"countryFlag"`
 		AvatarURL   string  `json:"avatarUrl,omitempty"`
+		HeaderURL   string  `json:"headerUrl,omitempty"`
 	}
 
 	err := h.db.QueryRow(ctx, `
@@ -183,6 +196,7 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		return common.NotFound(c, "Model not found")
 	}
 	model.AvatarURL = h.avatarURL(model.FolderName)
+	model.HeaderURL = h.headerURL(model.FolderName)
 
 	// Get content items
 	rows, err := h.db.Query(ctx, `
