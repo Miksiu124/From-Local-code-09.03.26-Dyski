@@ -1,6 +1,5 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
-import { withSentryConfig } from "@sentry/nextjs";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
@@ -17,7 +16,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com https://files.dyskiof.net",
       "font-src 'self' data:",
-      "connect-src 'self' https: wss: https://*.r2.cloudflarestorage.com https://*.ingest.sentry.io https://challenges.cloudflare.com",
+      "connect-src 'self' https: wss: https://*.r2.cloudflarestorage.com https://challenges.cloudflare.com",
       "media-src 'self' blob: https:",
       "object-src 'none'",
       "base-uri 'self'",
@@ -96,12 +95,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-const configWithIntl = withNextIntl(nextConfig);
-
-export default withSentryConfig(configWithIntl, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  tunnelRoute: "/monitoring",
-  silent: !process.env.CI,
-});
+export default withNextIntl(nextConfig);

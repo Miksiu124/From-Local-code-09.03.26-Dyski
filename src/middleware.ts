@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
   const key = `${ip}:${request.nextUrl.pathname}`;
   const result = await checkRateLimit(
     key,
-    isOptions ? 300 : 120,
+    isOptions ? 500 : 400,
     60_000
   );
 

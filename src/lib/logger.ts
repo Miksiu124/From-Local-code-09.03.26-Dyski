@@ -1,11 +1,4 @@
-import * as Sentry from "@sentry/nextjs";
-
 const isProd = process.env.NODE_ENV === "production";
-
-// Sentry is initialized in sentry.server.config / sentry.edge.config / instrumentation-client.
-// We only capture here — no init. If DSN is unset, captureException no-ops.
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Keys that may contain sensitive values and should never be logged. */
 const SENSITIVE_KEYS = new Set([
@@ -40,27 +33,9 @@ function normalizeError(error: unknown) {
       stack: isProd ? undefined : error.stack,
     };
   }
-  // Sanitize plain objects to prevent leaking secrets
   if (typeof error === "object") return sanitize(error);
   return { value: error };
 }
-
-function captureToSentry(message: string, error?: unknown) {
-  try {
-    if (error instanceof Error) {
-      Sentry.captureException(error, { extra: { message } });
-    } else {
-      Sentry.captureMessage(message, {
-        level: "error",
-        extra: error ? { detail: sanitize(error) } : undefined,
-      });
-    }
-  } catch {
-    // Never let Sentry crash the app
-  }
-}
-
-// ── Public logger ────────────────────────────────────────────────────────────
 
 export const logger = {
   info(message: string, meta?: unknown) {
@@ -82,12 +57,6 @@ export const logger = {
   },
 
   error(message: string, error?: unknown) {
-    // Always send to Sentry in production (if configured)
-    if (isProd) {
-      captureToSentry(message, error);
-      console.error(message);
-      return;
-    }
     const normalized = normalizeError(error);
     if (normalized) {
       console.error(message, normalized);

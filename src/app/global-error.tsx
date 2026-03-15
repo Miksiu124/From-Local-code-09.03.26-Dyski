@@ -2,24 +2,15 @@
 
 /**
  * Root error boundary for the App Router.
- * Captures errors to Sentry (scrubbed by beforeSend) and shows a safe fallback.
- * Never exposes error details to the client in production.
+ * Shows a safe fallback — never exposes error details to the client.
  */
 
-import * as Sentry from "@sentry/nextjs";
-import { useEffect } from "react";
-
 export default function GlobalError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    Sentry.captureException(error);
-  }, [error]);
-
   return (
     <html lang="en">
       <body className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-8">

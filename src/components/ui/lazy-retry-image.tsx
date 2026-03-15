@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { RetryImage } from "./retry-image";
 
 interface LazyRetryImageProps extends Omit<React.ComponentProps<typeof RetryImage>, "src"> {
@@ -16,6 +16,9 @@ interface LazyRetryImageProps extends Omit<React.ComponentProps<typeof RetryImag
  * Uses a generous rootMargin so images start loading before they enter the viewport,
  * reducing "blank thumbnails" when scrolling fast (browser native lazy loading can miss
  * elements or abort requests during rapid scroll).
+ *
+ * Includes a fallback check: when viewport changes (e.g. dev tools open) or during fast scroll,
+ * IntersectionObserver may not fire. We periodically check if the element is in view and load.
  */
 export function LazyRetryImage({
   src,
@@ -28,6 +31,22 @@ export function LazyRetryImage({
   const [shouldLoad, setShouldLoad] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const tryLoad = useCallback(() => {
+    setShouldLoad((prev) => {
+      if (prev) return prev;
+      const el = containerRef.current;
+      if (!el) return prev;
+      const rect = el.getBoundingClientRect();
+      const margin = parseInt(String(rootMargin), 10) || 600;
+      const inView =
+        rect.top < window.innerHeight + margin &&
+        rect.bottom > -margin &&
+        rect.left < window.innerWidth + margin &&
+        rect.right > -margin;
+      return inView || prev;
+    });
+  }, [rootMargin]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -38,18 +57,26 @@ export function LazyRetryImage({
           setShouldLoad(true);
         }
       },
-      { rootMargin, threshold: 0 }
+      { root: null, rootMargin, threshold: 0 }
     );
     observer.observe(el);
-    return () => observer.disconnect();
-  }, [rootMargin]);
+
+    // Fallback: viewport resize (e.g. dev tools open) can cause IO to miss elements.
+    const resizeHandler = () => tryLoad();
+    window.addEventListener("resize", resizeHandler);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", resizeHandler);
+    };
+  }, [rootMargin, tryLoad]);
 
   return (
     <div ref={containerRef} className="absolute inset-0">
       {shouldLoad ? (
         <RetryImage src={src} alt={alt} className={className} loading="eager" {...props} />
       ) : placeholder ?? (
-        <div className="absolute inset-0 bg-muted/20 animate-pulse" aria-hidden />
+        <div className="absolute inset-0 bg-gradient-to-br from-muted/50 via-muted/30 to-secondary/40 animate-pulse" aria-hidden />
       )}
     </div>
   );

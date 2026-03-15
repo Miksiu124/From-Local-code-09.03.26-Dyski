@@ -672,6 +672,37 @@ export function ModelDetail({
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
+  // Prevent empty state flash during fast scroll / dev tools viewport changes.
+  // Only show empty state after we're confident (debounced) to avoid brief "Pusto"-like glitches.
+  const [showEmptyState, setShowEmptyState] = useState(false);
+  const emptyStateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevDisplayCountRef = useRef(displayItems.length);
+  useEffect(() => {
+    const empty = displayItems.length === 0 && !loadingMore && !isFiltering;
+    if (!empty) {
+      if (emptyStateTimeoutRef.current) {
+        clearTimeout(emptyStateTimeoutRef.current);
+        emptyStateTimeoutRef.current = null;
+      }
+      setShowEmptyState(false);
+      prevDisplayCountRef.current = displayItems.length;
+      return;
+    }
+    if (prevDisplayCountRef.current > 0) {
+      // Had content, now empty — debounce 250ms to avoid flash during scroll/load race
+      emptyStateTimeoutRef.current = setTimeout(() => {
+        emptyStateTimeoutRef.current = null;
+        setShowEmptyState(true);
+      }, 250);
+    } else {
+      setShowEmptyState(true);
+    }
+    prevDisplayCountRef.current = 0;
+    return () => {
+      if (emptyStateTimeoutRef.current) clearTimeout(emptyStateTimeoutRef.current);
+    };
+  }, [displayItems.length, loadingMore, isFiltering]);
+
   const sentinelCallbackRef = useCallback((node: HTMLDivElement | null) => {
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -684,7 +715,7 @@ export function ModelDetail({
           loadMoreRef.current();
         }
       },
-      { rootMargin: "200px" }
+      { root: null, rootMargin: "200px" }
     );
     observer.observe(node);
     observerRef.current = observer;
@@ -922,7 +953,7 @@ export function ModelDetail({
       </div>
 
       {/* Content Grid */}
-      {displayItems.length === 0 && !loadingMore && !isFiltering ? (
+      {showEmptyState ? (
         <div className="text-center py-20 text-muted-foreground scale-in">
           {activeFilter === "FAVORITES" ? (
             <>
@@ -946,23 +977,32 @@ export function ModelDetail({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5">
             {displayItems.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                className={cn("cursor-pointer group animate-in fade-in text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 grid-item-contain", `stagger-${Math.min(index % 10 + 1, 10)}`)}
+                className={cn("cursor-pointer group animate-in fade-in text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", `stagger-${Math.min(index % 10 + 1, 10)}`)}
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
-                <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
+                <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300">
                   {hasAccess ? (
                     <>
                       <LazyRetryImage
                         src={`/api/content/${item.id}/thumbnail`}
                         alt={item.contentType === "VIDEO" ? t("video") : t("photo")}
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
-                        rootMargin="600px"
+                        rootMargin="2000px"
+                        placeholder={
+                          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted/40 to-secondary/50 animate-pulse">
+                            {item.contentType === "VIDEO" ? (
+                              <Play className="h-8 w-8 text-muted-foreground/40" />
+                            ) : (
+                              <Image className="h-8 w-8 text-muted-foreground/40" />
+                            )}
+                          </div>
+                        }
                         fallback={
                           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-secondary">
                             {item.contentType === "VIDEO" ? (
