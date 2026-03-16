@@ -29,7 +29,8 @@ interface NextImageWithFallbackProps {
 }
 
 /**
- * Uses next/image for CDN URLs (optimization, WebP/AVIF) with fallback to RetryImage on error.
+ * Uses next/image for CDN URLs. For files.dyskiof.net we use unoptimized=true — images are
+ * already WebP from R2, so bypassing _next/image avoids cache misses and 12s+ load times.
  * For non-CDN URLs (e.g. /api/... proxy), uses RetryImage directly.
  */
 export function NextImageWithFallback({
@@ -64,7 +65,7 @@ export function NextImageWithFallback({
     );
   }
 
-  // CDN URL: use next/image for optimization
+  // CDN URL: unoptimized — fetch directly from CDN, skip _next/image pipeline (avoids MISS, 12s lag)
   if (fill) {
     return (
       <Image
@@ -76,7 +77,7 @@ export function NextImageWithFallback({
         loading={priority ? undefined : loading}
         priority={priority}
         onError={handleError}
-        unoptimized={false}
+        unoptimized
       />
     );
   }
@@ -91,7 +92,7 @@ export function NextImageWithFallback({
       loading={priority ? undefined : loading}
       priority={priority}
       onError={handleError}
-      unoptimized={false}
+      unoptimized
     />
   );
 }

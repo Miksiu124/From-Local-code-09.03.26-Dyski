@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -69,6 +70,15 @@ func main() {
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
 	e.Use(echomw.BodyLimit("2M"))
+	// Gzip JSON responses — skip binary (thumbnails, segments)
+	e.Use(echomw.GzipWithConfig(echomw.GzipConfig{
+		Level: 5,
+		Skipper: func(c echo.Context) bool {
+			p := c.Path()
+			return strings.Contains(p, "/thumbnail") || strings.Contains(p, "/segment") ||
+				strings.Contains(p, "/avatar") || strings.Contains(p, "/header")
+		},
+	}))
 
 	// Custom HTTP Error Handler to ensure all errors are JSON
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
@@ -135,7 +145,7 @@ func main() {
 	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
 
 	// Models (public)
-	modelsHandler := models.NewHandler(pgPool, cfg)
+	modelsHandler := models.NewHandler(pgPool, cfg, redisClient)
 	api.GET("/models", modelsHandler.List)
 	api.GET("/models/stats", modelsHandler.GetStats) // Added
 	api.GET("/models/:slug", modelsHandler.GetBySlug)

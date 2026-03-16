@@ -76,8 +76,12 @@ func sanitizeSlug(slug string) (string, error) {
 	return slug, nil
 }
 
-const masterPlaylistCacheTTL = 30 * time.Minute
+const masterPlaylistCacheTTL = 2 * time.Hour // VPS 8GB — more aggressive cache
 const masterPlaylistCachePrefix = "master_playlist:"
+
+const thumbnailCacheTTL = 24 * time.Hour
+const thumbnailCachePrefix = "thumb:"
+const thumbnailCacheMaxBytes = 1024 * 1024 // 1MB — VPS 8GB, Redis 1GB
 
 type Handler struct {
 	db    *pgxpool.Pool
@@ -158,28 +162,56 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 		return common.NotFound(c, "No thumbnail configuration found")
 	}
 
-	var body io.ReadCloser
-	var contentType string
-	var accessErr error
-
-	// Try targets in order
-	for _, target := range targets {
-		body, contentType, accessErr = h.r2.GetObject(ctx, target)
-		if accessErr == nil {
-			break // Found it!
+	// 1. Check Redis cache (avoids R2 GetObject on hit)
+	cacheKey := thumbnailCachePrefix + contentItemID
+	ctKey := cacheKey + ":ct"
+	if h.redis != nil {
+		cached, err := h.redis.Get(ctx, cacheKey).Bytes()
+		if err == nil {
+			ct, _ := h.redis.Get(ctx, ctKey).Result()
+			if ct == "" {
+				ct = "image/webp"
+			}
+			c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+			c.Response().Header().Set("Content-Type", ct)
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
 		}
 	}
 
+	// 2. Fetch from R2
+	var body io.ReadCloser
+	var contentType string
+	var accessErr error
+	for _, target := range targets {
+		body, contentType, accessErr = h.r2.GetObject(ctx, target)
+		if accessErr == nil {
+			break
+		}
+	}
 	if accessErr != nil {
 		return common.NotFound(c, "Thumbnail not found in storage")
 	}
 	defer body.Close()
 
-	// Set cache headers for thumbnails
+	// 3. Read into memory (needed for Redis cache)
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return common.InternalError(c)
+	}
+
+	// 4. Serve to client
 	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
-	_, _ = io.Copy(c.Response().Writer, body)
+	_, _ = c.Response().Writer.Write(data)
+
+	// 5. Cache in Redis for next request (allkeys-lru evicts when full)
+	if h.redis != nil && len(data) <= thumbnailCacheMaxBytes {
+		_ = h.redis.Set(ctx, cacheKey, data, thumbnailCacheTTL).Err()
+		_ = h.redis.Set(ctx, ctKey, contentType, thumbnailCacheTTL).Err()
+	}
 	return nil
 }
 
