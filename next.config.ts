@@ -56,6 +56,10 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "**.r2.cloudflarestorage.com",
       },
+      {
+        protocol: "https",
+        hostname: "files.dyskiof.net",
+      },
     ],
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 60 * 60 * 24, // 24 hours
