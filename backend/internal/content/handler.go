@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 )
 
 // streamingBaseURL returns the base URL for HLS segment links (e.g. https://dyskiof.net/api).
@@ -74,14 +76,18 @@ func sanitizeSlug(slug string) (string, error) {
 	return slug, nil
 }
 
+const masterPlaylistCacheTTL = 30 * time.Minute
+const masterPlaylistCachePrefix = "master_playlist:"
+
 type Handler struct {
-	db  *pgxpool.Pool
-	r2  *R2Client
-	cfg *config.Config
+	db    *pgxpool.Pool
+	r2    *R2Client
+	cfg   *config.Config
+	redis *redis.Client
 }
 
-func NewHandler(db *pgxpool.Pool, r2 *R2Client, cfg *config.Config) *Handler {
-	return &Handler{db: db, r2: r2, cfg: cfg}
+func NewHandler(db *pgxpool.Pool, r2 *R2Client, cfg *config.Config, redis *redis.Client) *Handler {
+	return &Handler{db: db, r2: r2, cfg: cfg, redis: redis}
 }
 
 // Thumbnail proxies thumbnail images from R2 (optional auth — thumbnails can be public or restricted)
@@ -274,14 +280,27 @@ func (h *Handler) Playlist(c echo.Context) error {
 
 	// For master.m3u8, generate a multi-variant playlist from all resolution
 	// playlists in the folder (master-480p.m3u8, master-720p.m3u8, …).
+	// Cache in Redis to avoid ListObjects (Class A) on every request.
 	var playlistContent string
 
 	if filename == "master.m3u8" && hlsFolderPath != nil {
-		generated, genErr := h.generateMasterPlaylist(ctx, *hlsFolderPath)
-		if genErr == nil {
-			playlistContent = generated
-		} else {
-			log.Printf("[Playlist] Could not generate multi-variant master for %s: %v", contentItemID, genErr)
+		cacheKey := masterPlaylistCachePrefix + *hlsFolderPath
+		if h.redis != nil {
+			cached, err := h.redis.Get(ctx, cacheKey).Result()
+			if err == nil {
+				playlistContent = cached
+			}
+		}
+		if playlistContent == "" {
+			generated, genErr := h.generateMasterPlaylist(ctx, *hlsFolderPath)
+			if genErr == nil {
+				playlistContent = generated
+				if h.redis != nil {
+					_ = h.redis.Set(ctx, cacheKey, generated, masterPlaylistCacheTTL).Err()
+				}
+			} else {
+				log.Printf("[Playlist] Could not generate multi-variant master for %s: %v", contentItemID, genErr)
+			}
 		}
 	}
 

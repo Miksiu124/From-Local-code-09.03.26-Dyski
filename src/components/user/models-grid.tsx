@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { AccessRequiredPopup } from "@/components/access-required-popup";
 import { cn } from "@/lib/utils";
 import { RetryImage } from "@/components/ui/retry-image";
+import { NextImageWithFallback } from "@/components/ui/next-image-with-fallback";
 
 interface ModelItem {
   id: string;
@@ -26,6 +27,8 @@ interface ModelItem {
   imageCount?: number;
   isActive: boolean;
   firstContentItemId: string | null;
+  avatarUrl?: string;
+  headerUrl?: string;
 }
 
 interface CountryItem {
@@ -292,6 +295,38 @@ export function ModelsGrid({
     return () => { observerRef.current?.disconnect(); };
   }, []);
 
+  // Fix: When scroll is already at bottom and more models can load, trigger load more.
+  // IntersectionObserver only fires on visibility *changes* — if user is at bottom from the start,
+  // the sentinel may already be visible and no callback fires. Check on content updates AND on scroll.
+  const BOTTOM_THRESHOLD = 250;
+  const checkAtBottomAndLoad = useCallback(() => {
+    if (loading || !cursor || models.length === 0) return;
+    const scrollBottom = window.scrollY + window.innerHeight;
+    const docBottom = document.documentElement.scrollHeight - BOTTOM_THRESHOLD;
+    if (scrollBottom >= docBottom) loadMoreRef.current();
+  }, [models.length, cursor, loading]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(checkAtBottomAndLoad);
+    return () => cancelAnimationFrame(raf);
+  }, [checkAtBottomAndLoad]);
+
+  useEffect(() => {
+    let scrollRaf: number | null = null;
+    const onScroll = () => {
+      if (scrollRaf != null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        checkAtBottomAndLoad();
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
+    };
+  }, [checkAtBottomAndLoad]);
+
   const hasAccess = (modelId: string) => {
     if (userAccessModelIds === "all") return true;
     return userAccessModelIds.includes(modelId);
@@ -369,22 +404,24 @@ export function ModelsGrid({
             <div className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card min-h-[280px] sm:min-h-[340px]">
               <Link href={`/models/${heroModel.folderName}`} onClick={(e) => handleModelClick(heroModel, e)}>
                 <AnimatePresence mode="wait">
-                  <motion.img
+                  <motion.div
                     key={heroModel.id}
-                    src={`/api/models/${heroModel.folderName}/header`}
-                    alt={heroModel.name}
-                    loading="eager"
-                    fetchPriority="high"
                     initial={{ opacity: 0, scale: 1.05 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.6 }}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      img.style.display = "none";
-                    }}
-                  />
+                    className="absolute inset-0"
+                  >
+                    <NextImageWithFallback
+                      src={heroModel.headerUrl || `/api/models/${heroModel.folderName}/header`}
+                      alt={heroModel.name}
+                      className="object-cover"
+                      fill
+                      sizes="(max-width: 1024px) 100vw, 66vw"
+                      priority
+                      loading="eager"
+                    />
+                  </motion.div>
                 </AnimatePresence>
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
                 <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
@@ -443,11 +480,13 @@ export function ModelsGrid({
                   className="flex-shrink-0 w-[260px] lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
                 >
                   <div className="flex h-full min-h-[100px]">
-                    <div className="w-24 lg:w-1/3 relative shrink-0">
-                      <RetryImage
-                        src={`/api/models/${model.folderName}/thumbnail`}
+                    <div className="w-24 lg:w-1/3 relative shrink-0 min-h-[100px]">
+                      <NextImageWithFallback
+                        src={model.avatarUrl || `/api/models/${model.folderName}/thumbnail`}
                         alt={model.name}
-                        className="absolute inset-0 w-full h-full object-cover"
+                        className="object-cover"
+                        fill
+                        sizes="96px"
                         fallback={
                           <div className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground/50 text-2xl font-bold">
                             {model.name.charAt(0).toUpperCase()}
@@ -602,10 +641,12 @@ export function ModelsGrid({
                   className="group block"
                 >
                   <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
-                    <RetryImage
-                      src={`/api/models/${model.folderName}/thumbnail`}
+                    <NextImageWithFallback
+                      src={model.avatarUrl || `/api/models/${model.folderName}/thumbnail`}
                       alt={model.name}
-                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
+                      className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
+                      fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
                       loading="lazy"
                       fallback={
                         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
@@ -642,7 +683,7 @@ export function ModelsGrid({
                     {/* Model avatar */}
                     <div className="absolute bottom-12 sm:bottom-14 right-2.5">
                       <RetryImage
-                        src={`/api/models/${model.folderName}/avatar`}
+                        src={model.avatarUrl || `/api/models/${model.folderName}/avatar`}
                         alt=""
                         className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
                         loading="lazy"

@@ -1,13 +1,25 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Heart, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Heart, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { VideoPlayer } from "@/components/user/video-player";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+const VideoPlayer = dynamic(
+  () => import("@/components/user/video-player").then((m) => ({ default: m.VideoPlayer })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  }
+);
 
 interface ContentViewerProps {
   contentItemId: string;
@@ -277,6 +289,7 @@ export function ContentViewer({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
+      className="overflow-x-hidden min-w-0"
     >
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <a
@@ -332,12 +345,12 @@ export function ContentViewer({
       </div>
 
       <div
-        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center touch-pan-y"
+        className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center touch-pan-y min-w-0"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
         {effectiveContentType === "VIDEO" ? (
-          <div className="w-full max-w-6xl">
+          <div className="w-full max-w-6xl min-w-0 shrink">
             <VideoPlayer contentItemId={effectiveItemId} />
           </div>
         ) : (
@@ -351,7 +364,7 @@ export function ContentViewer({
         )}
       </div>
 
-      <p className="text-center text-[10px] sm:text-xs text-muted-foreground/50 mt-3">
+      <p className="text-center text-xs text-muted-foreground/50 mt-3">
         <span className="hidden sm:inline">
           {contentType === "VIDEO" ? t("shiftArrowsToNavigate") : t("arrowsToNavigate")}
         </span>

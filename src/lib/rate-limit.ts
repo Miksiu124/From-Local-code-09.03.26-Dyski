@@ -13,7 +13,7 @@ type RateLimitResult = {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const DEFAULT_WINDOW_MS = 60_000;
-const DEFAULT_LIMIT = 120;
+const DEFAULT_LIMIT = 400; // 120 was too low for galleries (264+ thumbnails + favorites/check)
 
 // ── Upstash-backed limiter (preferred) ───────────────────────────────────────
 

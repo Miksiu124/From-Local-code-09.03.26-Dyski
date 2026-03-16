@@ -1,0 +1,11 @@
+name = "avatars-cdn"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# R2 bucket binding — tylko odczyt z bucketa "files"
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "files"
+
+# Domena: avatars.twojadomena.com (ustaw w Cloudflare po deploy)
+# workers_dev = true  # tymczasowo: *.workers.dev

@@ -97,6 +97,17 @@ body {
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
+/* Hide scrollbar while keeping scroll (Firefox, WebKit, IE/Edge) */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -174,7 +185,8 @@ body {
 /* Content visibility for long grids - skip rendering off-screen items */
 .grid-item-contain {
   content-visibility: auto;
-  contain-intrinsic-size: 0 400px;
+  /* Use proper width×height (3:4 ratio) so grid stays multi-column; 0 width caused single-column layout */
+  contain-intrinsic-size: 200px 267px;
 }
 
 /* Grid card hover lift effect */

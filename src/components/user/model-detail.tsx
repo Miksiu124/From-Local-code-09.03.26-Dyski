@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/user/video-player";
 import { RetryImage } from "@/components/ui/retry-image";
+import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
 
 interface ContentItem {
   id: string;
@@ -77,6 +78,7 @@ export function ModelDetail({
 
   const initialFilter = (searchParams.get("filter") as ContentFilter) || "ALL";
   const initialSort = (searchParams.get("sort") as SortOrder) || "newest";
+  const initialView = searchParams.get("view") ?? null;
 
   const [contentItems, setContentItems] = useState<ContentItem[]>(
     initialFilter === "FAVORITES" ? [] : initialContentItems
@@ -106,8 +108,11 @@ export function ModelDetail({
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [togglingFav, setTogglingFav] = useState<string | null>(null);
 
-  // Overlay content viewer state
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  // Overlay content viewer state (persisted in URL ?view= for F5 refresh)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(
+    initialView && hasAccess && isAuthenticated ? initialView : null
+  );
+  const [viewItemFallback, setViewItemFallback] = useState<ContentItem | null>(null);
   const [overlayFavorited, setOverlayFavorited] = useState(false);
   const [overlayTogglingFav, setOverlayTogglingFav] = useState(false);
   const [overlayDeleting, setOverlayDeleting] = useState(false);
@@ -118,6 +123,39 @@ export function ModelDetail({
     sessionStorage.setItem(`filter_model_${model.folderName}`, activeFilter);
     sessionStorage.setItem(`sort_model_${model.folderName}`, activeSort);
   }, [model.folderName, activeFilter, activeSort]);
+
+  // Restore overlay from ?view= on mount (F5 refresh) — fetch item if not in displayItems
+  useEffect(() => {
+    if (!initialView || !hasAccess || !isAuthenticated) return;
+    const inDisplay = (activeFilter === "FAVORITES" ? favoritesItems : contentItems).some((i) => i.id === initialView);
+    if (inDisplay) return;
+    let cancelled = false;
+    fetch(`/api/content/${model.folderName}/${initialView}/details`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (cancelled || !data?.contentItem) return;
+        setViewItemFallback({
+          id: data.contentItem.id,
+          contentType: data.contentItem.contentType,
+          duration: data.contentItem.duration ?? null,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [initialView, hasAccess, isAuthenticated, model.folderName, activeFilter, contentItems, favoritesItems]);
+
+  // Clear invalid ?view= (e.g. no access, not authenticated)
+  useEffect(() => {
+    if (initialView && (!hasAccess || !isAuthenticated)) {
+      setSelectedItemId(null);
+      setViewItemFallback(null);
+      const params = new URLSearchParams();
+      if (activeFilter !== "ALL") params.set("filter", activeFilter);
+      if (activeSort !== "newest") params.set("sort", activeSort);
+      const qs = params.toString();
+      router.replace(`/models/${model.folderName}${qs ? `?${qs}` : ""}`, { scroll: false });
+    }
+  }, [initialView, hasAccess, isAuthenticated, router, model.folderName, activeFilter, activeSort]);
 
   // Restore scroll position when entering model folder (from list or from content viewer)
   useEffect(() => {
@@ -172,8 +210,9 @@ export function ModelDetail({
   const displayTotal = activeFilter === "FAVORITES" ? favoritesTotal : filteredTotal;
 
   // Compute overlay data — scope navigation to displayItems so FAVORITES boundary is respected
+  // viewItemFallback: when ?view= is in URL but item not in displayItems (e.g. after F5), we fetch and cache it
   const selectedItem = selectedItemId
-    ? displayItems.find((i) => i.id === selectedItemId) ?? null
+    ? displayItems.find((i) => i.id === selectedItemId) ?? (viewItemFallback?.id === selectedItemId ? viewItemFallback : null)
     : null;
   const displaySelectedIndex = selectedItemId
     ? displayItems.findIndex((i) => i.id === selectedItemId)
@@ -185,6 +224,17 @@ export function ModelDetail({
       : null;
 
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  const buildModelUrl = useCallback((opts: { filter?: ContentFilter; sort?: SortOrder; view?: string | null }) => {
+    const params = new URLSearchParams();
+    const filter = opts.filter ?? activeFilter;
+    const sort = opts.sort ?? activeSort;
+    if (filter !== "ALL") params.set("filter", filter);
+    if (sort !== "newest") params.set("sort", sort);
+    if (opts.view) params.set("view", opts.view);
+    const qs = params.toString();
+    return `/models/${model.folderName}${qs ? `?${qs}` : ""}`;
+  }, [model.folderName, activeFilter, activeSort]);
 
   const requestMobileFullscreen = useCallback((el: HTMLElement | null) => {
     if (!el || window.innerWidth >= 768) return;
@@ -210,10 +260,18 @@ export function ModelDetail({
   const closeOverlay = useCallback(() => {
     exitFullscreen();
     setSelectedItemId(null);
+    setViewItemFallback(null);
+    router.replace(buildModelUrl({ view: null }), { scroll: false });
     requestAnimationFrame(() => {
       window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
     });
-  }, [exitFullscreen]);
+  }, [exitFullscreen, router, buildModelUrl]);
+
+  const navigateToOverlayItem = useCallback((id: string | null) => {
+    setSelectedItemId(id);
+    if (id) setViewItemFallback(null);
+    router.replace(buildModelUrl({ view: id }), { scroll: false });
+  }, [router, buildModelUrl]);
 
   useEffect(() => {
     if (selectedItemId && overlayRef.current) {
@@ -281,15 +339,11 @@ export function ModelDetail({
     }
   }, [selectedItemId, overlayDeleting, activeFilter, t]);
 
-  const updateUrlParams = useCallback((filter: ContentFilter, sort: SortOrder) => {
+  const updateUrlParams = useCallback((filter: ContentFilter, sort: SortOrder, view?: string | null) => {
     sessionStorage.setItem(`filter_model_${model.folderName}`, filter);
     sessionStorage.setItem(`sort_model_${model.folderName}`, sort);
-    const params = new URLSearchParams();
-    if (filter !== "ALL") params.set("filter", filter);
-    if (sort !== "newest") params.set("sort", sort);
-    const qs = params.toString();
-    router.replace(`/models/${model.folderName}${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [router, model.folderName]);
+    router.replace(buildModelUrl({ filter, sort, view: view ?? undefined }), { scroll: false });
+  }, [router, model.folderName, buildModelUrl]);
 
   const checkFavorites = useCallback(async (itemIds: string[]) => {
     if (!isAuthenticated || itemIds.length === 0) return;
@@ -423,6 +477,8 @@ export function ModelDetail({
     savedScrollY.current = window.scrollY;
     sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
     setSelectedItemId(contentId);
+    setViewItemFallback(null);
+    router.replace(buildModelUrl({ view: contentId }), { scroll: false });
   };
 
   const toggleFavorite = async (e: React.MouseEvent, contentItemId: string) => {
@@ -526,12 +582,12 @@ export function ModelDetail({
       if (isVideo ? (e.key === "ArrowLeft" && e.shiftKey) : e.key === "ArrowLeft") {
         e.preventDefault();
         e.stopPropagation();
-        if (overlayPrevId) setSelectedItemId(overlayPrevId);
+        if (overlayPrevId) navigateToOverlayItem(overlayPrevId);
       } else if (isVideo ? (e.key === "ArrowRight" && e.shiftKey) : e.key === "ArrowRight") {
         e.preventDefault();
         e.stopPropagation();
         if (overlayNextId) {
-          setSelectedItemId(overlayNextId);
+          navigateToOverlayItem(overlayNextId);
         } else if (cursor || favoritesCursor) {
           pendingNextAfterLoadRef.current = true;
           triggerLoadMoreForNav();
@@ -540,7 +596,7 @@ export function ModelDetail({
     };
     document.addEventListener("keydown", handleKey, { capture: true });
     return () => document.removeEventListener("keydown", handleKey, { capture: true });
-  }, [selectedItemId, selectedItem, overlayPrevId, overlayNextId, closeOverlay, cursor, favoritesCursor, triggerLoadMoreForNav]);
+  }, [selectedItemId, selectedItem, overlayPrevId, overlayNextId, closeOverlay, navigateToOverlayItem, cursor, favoritesCursor, triggerLoadMoreForNav]);
 
   // Fix #2: Fetch-ahead — when keyboard-navigating close to end, pre-load more items (aggressive: 6 items)
   useEffect(() => {
@@ -562,18 +618,20 @@ export function ModelDetail({
       pendingNextAfterLoadRef.current = false;
       const nextIndex = displaySelectedIndex + 1;
       if (nextIndex < displayItems.length) {
-        setSelectedItemId(displayItems[nextIndex].id);
+        navigateToOverlayItem(displayItems[nextIndex].id);
       }
     }
     prevLoadingMoreRef.current = loadingMore;
-  }, [loadingMore, displaySelectedIndex, displayItems]);
+  }, [loadingMore, displaySelectedIndex, displayItems, navigateToOverlayItem]);
 
   const handleFilterChange = (filter: ContentFilter) => {
     if (filter === activeFilter) return;
+    setSelectedItemId(null);
+    setViewItemFallback(null);
     setActiveFilter(filter);
     setCursor(null);
     setFavoritesCursor(null);
-    updateUrlParams(filter, activeSort);
+    updateUrlParams(filter, activeSort, null);
     if (filter === "FAVORITES") {
       // Favorites tab uses dedicated API (photos + videos), loaded by useEffect
     } else {
@@ -586,11 +644,13 @@ export function ModelDetail({
       setSortMenuOpen(false);
       return;
     }
+    setSelectedItemId(null);
+    setViewItemFallback(null);
     setActiveSort(next);
     setSortMenuOpen(false);
     setCursor(null);
     setFavoritesCursor(null);
-    updateUrlParams(activeFilter, next);
+    updateUrlParams(activeFilter, next, null);
     if (activeFilter === "FAVORITES") {
       loadFavorites();
     } else {
@@ -612,6 +672,37 @@ export function ModelDetail({
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
+  // Prevent empty state flash during fast scroll / dev tools viewport changes.
+  // Only show empty state after we're confident (debounced) to avoid brief "Pusto"-like glitches.
+  const [showEmptyState, setShowEmptyState] = useState(false);
+  const emptyStateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevDisplayCountRef = useRef(displayItems.length);
+  useEffect(() => {
+    const empty = displayItems.length === 0 && !loadingMore && !isFiltering;
+    if (!empty) {
+      if (emptyStateTimeoutRef.current) {
+        clearTimeout(emptyStateTimeoutRef.current);
+        emptyStateTimeoutRef.current = null;
+      }
+      setShowEmptyState(false);
+      prevDisplayCountRef.current = displayItems.length;
+      return;
+    }
+    if (prevDisplayCountRef.current > 0) {
+      // Had content, now empty — debounce 250ms to avoid flash during scroll/load race
+      emptyStateTimeoutRef.current = setTimeout(() => {
+        emptyStateTimeoutRef.current = null;
+        setShowEmptyState(true);
+      }, 250);
+    } else {
+      setShowEmptyState(true);
+    }
+    prevDisplayCountRef.current = 0;
+    return () => {
+      if (emptyStateTimeoutRef.current) clearTimeout(emptyStateTimeoutRef.current);
+    };
+  }, [displayItems.length, loadingMore, isFiltering]);
+
   const sentinelCallbackRef = useCallback((node: HTMLDivElement | null) => {
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -624,7 +715,7 @@ export function ModelDetail({
           loadMoreRef.current();
         }
       },
-      { rootMargin: "200px" }
+      { root: null, rootMargin: "200px" }
     );
     observer.observe(node);
     observerRef.current = observer;
@@ -635,6 +726,39 @@ export function ModelDetail({
       observerRef.current?.disconnect();
     };
   }, []);
+
+  // Fix: When scroll is already at bottom and more content can load, trigger load more.
+  // IntersectionObserver only fires on visibility *changes* — if user is at bottom from the start,
+  // the sentinel may already be visible and no callback fires. Check on content updates AND on scroll.
+  const BOTTOM_THRESHOLD = 250;
+  const hasMoreCursor = activeFilter === "FAVORITES" ? favoritesCursor : cursor;
+  const checkAtBottomAndLoad = useCallback(() => {
+    if (loadingMore || displayItems.length === 0 || !hasMoreCursor) return;
+    const scrollBottom = window.scrollY + window.innerHeight;
+    const docBottom = document.documentElement.scrollHeight - BOTTOM_THRESHOLD;
+    if (scrollBottom >= docBottom) loadMoreRef.current();
+  }, [displayItems.length, hasMoreCursor, loadingMore]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(checkAtBottomAndLoad);
+    return () => cancelAnimationFrame(raf);
+  }, [checkAtBottomAndLoad]);
+
+  useEffect(() => {
+    let scrollRaf: number | null = null;
+    const onScroll = () => {
+      if (scrollRaf != null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        checkAtBottomAndLoad();
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
+    };
+  }, [checkAtBottomAndLoad]);
 
   // displayItems and displayTotal are hoisted above (near overlay nav computation)
 
@@ -829,7 +953,7 @@ export function ModelDetail({
       </div>
 
       {/* Content Grid */}
-      {displayItems.length === 0 && !loadingMore && !isFiltering ? (
+      {showEmptyState ? (
         <div className="text-center py-20 text-muted-foreground scale-in">
           {activeFilter === "FAVORITES" ? (
             <>
@@ -853,23 +977,32 @@ export function ModelDetail({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5">
             {displayItems.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                className={cn("cursor-pointer group animate-in fade-in text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40", `stagger-${Math.min(index % 10 + 1, 10)}`)}
+                className={cn("cursor-pointer group animate-in fade-in text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", `stagger-${Math.min(index % 10 + 1, 10)}`)}
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
-                <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
+                <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300">
                   {hasAccess ? (
                     <>
-                      <RetryImage
+                      <LazyRetryImage
                         src={`/api/content/${item.id}/thumbnail`}
                         alt={item.contentType === "VIDEO" ? t("video") : t("photo")}
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
-                        loading="lazy"
+                        rootMargin="2000px"
+                        placeholder={
+                          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted/40 to-secondary/50 animate-pulse">
+                            {item.contentType === "VIDEO" ? (
+                              <Play className="h-8 w-8 text-muted-foreground/40" />
+                            ) : (
+                              <Image className="h-8 w-8 text-muted-foreground/40" />
+                            )}
+                          </div>
+                        }
                         fallback={
                           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-secondary">
                             {item.contentType === "VIDEO" ? (
@@ -979,12 +1112,12 @@ export function ModelDetail({
             const dy = Math.abs(e.changedTouches[0].clientY - el.__touchStartY);
             if (Math.abs(dx) < 50 || dy > Math.abs(dx)) return;
             if (dx < 0) {
-              if (overlayNextId) setSelectedItemId(overlayNextId);
+              if (overlayNextId) navigateToOverlayItem(overlayNextId);
               else if (cursor || favoritesCursor) {
                 pendingNextAfterLoadRef.current = true;
                 triggerLoadMoreForNav();
               }
-            } else if (dx > 0 && overlayPrevId) setSelectedItemId(overlayPrevId);
+            } else if (dx > 0 && overlayPrevId) navigateToOverlayItem(overlayPrevId);
           }}
         >
           {/* Overlay top bar */}
@@ -1002,7 +1135,7 @@ export function ModelDetail({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => overlayPrevId && setSelectedItemId(overlayPrevId)}
+                onClick={() => overlayPrevId && navigateToOverlayItem(overlayPrevId)}
                 disabled={!overlayPrevId}
                 className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
@@ -1012,7 +1145,7 @@ export function ModelDetail({
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  if (overlayNextId) setSelectedItemId(overlayNextId);
+                  if (overlayNextId) navigateToOverlayItem(overlayNextId);
                   else if (cursor || favoritesCursor) {
                     pendingNextAfterLoadRef.current = true;
                     triggerLoadMoreForNav();
@@ -1083,7 +1216,7 @@ export function ModelDetail({
 
           {/* Content area — click on backdrop (outside media) closes overlay */}
           <div
-            className="flex-1 flex items-center justify-center overflow-auto px-4 pb-4 cursor-pointer"
+            className="flex-1 flex items-center justify-center overflow-y-auto overflow-x-hidden px-4 pb-4 cursor-pointer min-w-0 scrollbar-hide"
             onClick={(e) => {
               const target = e.target as HTMLElement;
               if (target.closest("[data-video-player], img, button")) return;
@@ -1091,11 +1224,11 @@ export function ModelDetail({
             }}
           >
             <div
-              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl cursor-default"
+              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl cursor-default min-w-0 shrink"
               onClick={(e) => e.stopPropagation()}
             >
               {selectedItem.contentType === "VIDEO" ? (
-                <div className="w-full">
+                <div className="w-full min-w-0 shrink">
                   {/* Fix #3 (real): No key prop — React keeps VideoPlayer mounted between video changes.
                     The HLS useEffect re-initializes on contentItemId change without unmounting the
                     container. This preserves the browser's native fullscreen state. */}
@@ -1113,7 +1246,7 @@ export function ModelDetail({
             </div>
           </div>
 
-          <p className="text-center text-[10px] sm:text-xs text-white/30 pb-3">
+          <p className="text-center text-xs text-white/30 pb-3">
             <span className="hidden sm:inline">
               {selectedItem.contentType === "VIDEO"
                 ? t("shiftArrowsToNavigate")

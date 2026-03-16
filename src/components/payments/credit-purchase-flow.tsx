@@ -480,13 +480,14 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
               ))}
             </div>
 
-            {/* Crypto selector */}
+            {/* Crypto selector - grid-template-rows avoids layout thrashing */}
             {selectedMethod === "CRYPTO" && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="mt-4"
+                initial={{ gridTemplateRows: "0fr", opacity: 0 }}
+                animate={{ gridTemplateRows: "1fr", opacity: 1 }}
+                className="grid mt-4"
               >
+                <div className="min-h-0 overflow-hidden">
                 <p className="text-sm font-medium mb-2">{t("selectCryptocurrency")}</p>
                 <div className="grid grid-cols-2 gap-2">
                   {cryptos.map((crypto) => (
@@ -501,6 +502,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                       {crypto.label}
                     </button>
                   ))}
+                </div>
                 </div>
               </motion.div>
             )}
@@ -687,13 +689,14 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                     </div>
                   )}
 
-                  {/* BLIK expired: enter new code */}
+                  {/* BLIK expired: enter new code - grid-template-rows avoids layout thrashing */}
                   {paymentResult.paymentMethod === "BLIK" && blikExpired && (
                     <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      className="space-y-3 border-t border-border pt-4"
+                      initial={{ gridTemplateRows: "0fr", opacity: 0 }}
+                      animate={{ gridTemplateRows: "1fr", opacity: 1 }}
+                      className="grid border-t border-border pt-4"
                     >
+                    <div className="min-h-0 overflow-hidden space-y-3">
                       {blikSubmitCount >= BLIK_MAX_RETRIES ? (
                         <p className="text-sm text-destructive font-medium">{t("blikMaxRetriesReached")}</p>
                       ) : (
@@ -727,6 +730,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                           )}
                         </>
                       )}
+                    </div>
                     </motion.div>
                   )}
 

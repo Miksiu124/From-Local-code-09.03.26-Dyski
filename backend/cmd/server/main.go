@@ -20,7 +20,6 @@ import (
 	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
-	"content-platform-backend/internal/jobs"
 	"content-platform-backend/internal/links"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
@@ -110,31 +109,7 @@ func main() {
 	authMW := middleware.NewAuthMiddleware(cfg, redisClient, pgPool)
 	adminMW := middleware.NewAdminMiddleware(cfg)
 
-    // ── Jobs ─────────────────────────────────────────────────────────────
-    scheduler := jobs.NewScheduler()
-    // Run sync immediately on startup
-    go func() {
-        defer func() {
-            if r := recover(); r != nil {
-                log.Printf("[PANIC] RunFullSync crashed: %v", r)
-            }
-        }()
-        contentService.RunFullSync()
-    }()
-    // Then run sync every hour
-    _, err = scheduler.AddJob("@hourly", func() {
-        defer func() {
-            if r := recover(); r != nil {
-                log.Printf("[PANIC] Scheduled RunFullSync crashed: %v", r)
-            }
-        }()
-        contentService.RunFullSync()
-    })
-    if err != nil {
-        log.Printf("Failed to schedule R2 sync: %v", err)
-    }
-    scheduler.Start()
-    defer scheduler.Stop()
+	// R2 sync: manual only via POST /api/admin/r2/sync (admin panel)
 
 	// ── Rate limiter ─────────────────────────────────────────────────────
 	rateLimiter := middleware.NewRateLimiter(redisClient)
@@ -160,7 +135,7 @@ func main() {
 	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
 
 	// Models (public)
-	modelsHandler := models.NewHandler(pgPool)
+	modelsHandler := models.NewHandler(pgPool, cfg)
 	api.GET("/models", modelsHandler.List)
 	api.GET("/models/stats", modelsHandler.GetStats) // Added
 	api.GET("/models/:slug", modelsHandler.GetBySlug)
@@ -179,7 +154,7 @@ func main() {
 	api.GET("/public/links/:slug", linksHandler.TrackAndResolveLink)
 
 	// Content streaming (requires auth + access)
-	contentHandler := content.NewHandler(pgPool, r2Client, cfg)
+	contentHandler := content.NewHandler(pgPool, r2Client, cfg, redisClient)
 	
 	// Model images (public)
 	api.GET("/models/:slug/avatar", contentHandler.ModelAvatar)

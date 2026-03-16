@@ -69,7 +69,7 @@ describe("API Middleware Security", () => {
       });
 
       const res = await middleware(req);
-      expect(res.headers.get("X-RateLimit-Limit")).toBe("120");
+      expect(res.headers.get("X-RateLimit-Limit")).toBe("400");
       expect(res.headers.get("X-RateLimit-Remaining")).toBeDefined();
       expect(res.headers.get("X-RateLimit-Reset")).toBeDefined();
     });
