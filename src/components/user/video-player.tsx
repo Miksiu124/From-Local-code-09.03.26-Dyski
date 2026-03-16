@@ -227,14 +227,21 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     setInitKey((k) => k + 1);
   }, []);
 
-  // Video event listeners
+  // Video event listeners — throttle timeupdate (fires ~4/sec) to reduce React re-renders
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    let timeupdateRaf: number | null = null;
+    const onTimeUpdate = () => {
+      if (timeupdateRaf != null) return;
+      timeupdateRaf = requestAnimationFrame(() => {
+        timeupdateRaf = null;
+        setCurrentTime(video.currentTime);
+      });
+    };
     const onDurationChange = () => setDuration(video.duration || 0);
     const onProgress = () => {
       if (video.buffered.length > 0) {
@@ -258,6 +265,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     video.addEventListener("volumechange", onVolumeChange);
 
     return () => {
+      if (timeupdateRaf != null) cancelAnimationFrame(timeupdateRaf);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onTimeUpdate);

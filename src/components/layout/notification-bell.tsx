@@ -59,11 +59,12 @@ export function NotificationBell({ dropdownAnchorRef }: NotificationBellProps = 
       sseConnected.current = false;
     };
 
+    /* Only poll when SSE is disconnected — avoid redundant fetches when stream is active */
     const interval = setInterval(() => {
       if (!sseConnected.current) {
         fetchNotifications();
       }
-    }, 30000);
+    }, 60000);
 
     return () => {
       es.close();

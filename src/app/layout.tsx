@@ -8,7 +8,10 @@ import { CookieBanner } from "@/components/cookie-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
 import "./globals.css";
 
-const outfit = Outfit({ subsets: ["latin"] });
+const outfit = Outfit({
+  subsets: ["latin"],
+  display: "swap", // Prevent FOIT, show text immediately with fallback font
+});
 
 const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
 

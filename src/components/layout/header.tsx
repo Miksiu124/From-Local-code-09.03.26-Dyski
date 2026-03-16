@@ -86,7 +86,7 @@ export function Header() {
       } catch {
         // Silent fail
       }
-    }, 15000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [user]);
 

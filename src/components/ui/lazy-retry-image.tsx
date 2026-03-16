@@ -9,6 +9,8 @@ interface LazyRetryImageProps extends Omit<React.ComponentProps<typeof RetryImag
   rootMargin?: string;
   /** Placeholder shown before image enters load zone. Keeps layout stable. */
   placeholder?: React.ReactNode;
+  /** Prioritize loading (above-fold items) — uses fetchPriority="high" */
+  priority?: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export function LazyRetryImage({
   alt,
   rootMargin = "600px",
   placeholder,
+  priority = false,
   className,
   ...props
 }: LazyRetryImageProps) {
@@ -61,20 +64,44 @@ export function LazyRetryImage({
     );
     observer.observe(el);
 
+    // Initial check: above-fold items may not trigger IO immediately; run once after layout
+    const raf = requestAnimationFrame(() => tryLoad());
+
     // Fallback: viewport resize (e.g. dev tools open) can cause IO to miss elements.
     const resizeHandler = () => tryLoad();
     window.addEventListener("resize", resizeHandler);
 
+    // Fallback: fast scroll can miss IO callbacks; throttle scroll check
+    let scrollTicking = false;
+    const scrollHandler = () => {
+      if (scrollTicking) return;
+      scrollTicking = true;
+      requestAnimationFrame(() => {
+        scrollTicking = false;
+        tryLoad();
+      });
+    };
+    window.addEventListener("scroll", scrollHandler, { passive: true });
+
     return () => {
+      cancelAnimationFrame(raf);
       observer.disconnect();
       window.removeEventListener("resize", resizeHandler);
+      window.removeEventListener("scroll", scrollHandler);
     };
   }, [rootMargin, tryLoad]);
 
   return (
     <div ref={containerRef} className="absolute inset-0">
       {shouldLoad ? (
-        <RetryImage src={src} alt={alt} className={className} loading="eager" {...props} />
+        <RetryImage
+          src={src}
+          alt={alt}
+          className={className}
+          loading="eager"
+          fetchPriority={priority ? "high" : undefined}
+          {...props}
+        />
       ) : placeholder ?? (
         <div className="absolute inset-0 bg-gradient-to-br from-muted/50 via-muted/30 to-secondary/40 animate-pulse" aria-hidden />
       )}

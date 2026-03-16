@@ -61,7 +61,8 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  /* Use auto for better scroll performance on long pages; smooth can cause jank */
+  scroll-behavior: auto;
 }
 
 body {
@@ -145,13 +146,13 @@ body {
 }
 
 .animate-in {
-  animation: fadeIn 0.4s ease-out both;
+  animation: fadeIn 0.3s ease-out both;
 }
 .fade-in {
   animation-name: fadeIn;
 }
 .slide-up {
-  animation: slideUp 0.5s ease-out both;
+  animation: slideUp 0.35s ease-out both;
 }
 .slide-down {
   animation: slideDown 0.3s ease-out both;
@@ -170,17 +171,18 @@ body {
   animation: float 3s ease-in-out infinite;
 }
 
-/* Staggered animation delays */
+/* Staggered animation delays — cap at 12 to reduce main-thread load on initial render */
 .stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.1s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.2s; }
-.stagger-5 { animation-delay: 0.25s; }
-.stagger-6 { animation-delay: 0.3s; }
-.stagger-7 { animation-delay: 0.35s; }
-.stagger-8 { animation-delay: 0.4s; }
-.stagger-9 { animation-delay: 0.45s; }
-.stagger-10 { animation-delay: 0.5s; }
+.stagger-2 { animation-delay: 0.08s; }
+.stagger-3 { animation-delay: 0.11s; }
+.stagger-4 { animation-delay: 0.14s; }
+.stagger-5 { animation-delay: 0.17s; }
+.stagger-6 { animation-delay: 0.2s; }
+.stagger-7 { animation-delay: 0.23s; }
+.stagger-8 { animation-delay: 0.26s; }
+.stagger-9 { animation-delay: 0.29s; }
+.stagger-10 { animation-delay: 0.32s; }
+/* Items beyond 10th skip animation (no stagger class) for faster perceived load */
 
 /* Content visibility for long grids - skip rendering off-screen items */
 .grid-item-contain {

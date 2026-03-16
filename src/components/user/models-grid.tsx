@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, memo } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -52,6 +52,96 @@ interface ModelsGridProps {
   isAuthenticated: boolean;
   creditBalance: number;
 }
+
+/** Memoized card to avoid re-renders when parent state changes (e.g. search typing) */
+const ModelCard = memo(function ModelCard({
+  model,
+  hasAccess,
+  cost7d,
+  t,
+  onModelClick,
+  staggerClass,
+}: {
+  model: ModelItem;
+  hasAccess: (id: string) => boolean;
+  cost7d: number;
+  t: ReturnType<typeof useTranslations>;
+  onModelClick: (model: ModelItem, e: React.MouseEvent) => void;
+  staggerClass: string;
+}) {
+  const thumbSrc = model.avatarUrl || `/api/models/${model.folderName}/thumbnail`;
+  return (
+    <div className={cn("grid-item-contain", staggerClass)}>
+      <Link
+        href={`/models/${model.folderName}`}
+        onClick={(e) => onModelClick(model, e)}
+        className="group block"
+      >
+        <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
+          <NextImageWithFallback
+            src={thumbSrc}
+            alt={model.name}
+            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
+            loading="lazy"
+            fallback={
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
+                <span className="text-4xl font-bold text-muted-foreground/30">
+                  {model.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+            }
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent opacity-80" />
+          <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-all duration-500" />
+          <div className="absolute top-2.5 right-2.5">
+            {hasAccess(model.id) ? (
+              <div className="bg-green-500/20 backdrop-blur-md p-1.5 rounded-lg border border-green-500/20 text-green-400">
+                <Unlock className="h-3 w-3" />
+              </div>
+            ) : (
+              <div className="bg-black/30 backdrop-blur-md p-1.5 rounded-lg border border-white/[0.08] text-white/50">
+                <Lock className="h-3 w-3" />
+              </div>
+            )}
+          </div>
+          {model.countryFlag && (
+            <div className="absolute top-2.5 left-2.5">
+              <span className="text-lg drop-shadow-md">{model.countryFlag}</span>
+            </div>
+          )}
+          <div className="absolute bottom-12 sm:bottom-14 right-2.5">
+            <RetryImage
+              src={thumbSrc}
+              alt=""
+              className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
+              loading="lazy"
+            />
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 transform translate-y-0.5 group-hover:translate-y-0 transition-transform duration-300">
+            <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[10px] sm:text-xs font-medium text-white/50">
+                <span className="hidden sm:inline">
+                  {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                    ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                    : `${model.contentCount} ${t("items")}`}
+                </span>
+                <span className="sm:hidden">{model.contentCount} {t("items")}</span>
+              </span>
+              {!hasAccess(model.id) && cost7d > 0 && (
+                <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">
+                  {t("getAccess")}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </Link>
+    </div>
+  );
+});
 
 export function ModelsGrid({
   initialModels,
@@ -247,7 +337,7 @@ export function ModelsGrid({
 
     const isInitialWithFilters = !hasFetchedFilteredRef.current;
     if (isInitialWithFilters) hasFetchedFilteredRef.current = true;
-    searchTimerRef.current = setTimeout(doFetch, isInitialWithFilters ? 0 : 300);
+    searchTimerRef.current = setTimeout(doFetch, isInitialWithFilters ? 0 : 150);
 
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -327,12 +417,12 @@ export function ModelsGrid({
     };
   }, [checkAtBottomAndLoad]);
 
-  const hasAccess = (modelId: string) => {
+  const hasAccess = useCallback((modelId: string) => {
     if (userAccessModelIds === "all") return true;
     return userAccessModelIds.includes(modelId);
-  };
+  }, [userAccessModelIds]);
 
-  const handleModelClick = (model: ModelItem, e: React.MouseEvent) => {
+  const handleModelClick = useCallback((model: ModelItem, e: React.MouseEvent) => {
     if (!hasAccess(model.id)) {
       e.preventDefault();
       setPopupIsBundle(false);
@@ -344,7 +434,7 @@ export function ModelsGrid({
       // Save scroll position so we can restore it when user returns
       sessionStorage.setItem("models_scroll_y", String(window.scrollY));
     }
-  };
+  }, []);
 
   const openBundlePopup = () => {
     setPopupIsBundle(true);
@@ -409,7 +499,7 @@ export function ModelsGrid({
                     initial={{ opacity: 0, scale: 1.05 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.6 }}
+                    transition={{ duration: 0.35 }}
                     className="absolute inset-0"
                   >
                     <NextImageWithFallback
@@ -519,7 +609,7 @@ export function ModelsGrid({
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.1 }}
           className="mb-8 rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10 border border-primary/20 p-5 sm:p-6"
         >
           <div className="flex flex-col lg:flex-row items-center justify-between gap-5">
@@ -627,91 +717,26 @@ export function ModelsGrid({
           <Search className="mx-auto h-10 w-10 mb-3 opacity-30" />
           <p className="font-medium">{t("noModels")}</p>
         </div>
+      ) : displayModels.length === 0 && loading ? (
+        /* Skeleton while search/filter loads — avoids blank flash */
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="aspect-[3/4] rounded-xl bg-white/[0.04] animate-pulse" />
+          ))}
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
             {displayModels.map((model, index) => (
-              <div
+              <ModelCard
                 key={model.id}
-                className={cn("animate-in fade-in grid-item-contain", `stagger-${Math.min(index % 10 + 1, 10)}`)}
-              >
-                <Link
-                  href={`/models/${model.folderName}`}
-                  onClick={(e) => handleModelClick(model, e)}
-                  className="group block"
-                >
-                  <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
-                    <NextImageWithFallback
-                      src={model.avatarUrl || `/api/models/${model.folderName}/thumbnail`}
-                      alt={model.name}
-                      className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
-                      fill
-                      sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
-                      loading="lazy"
-                      fallback={
-                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
-                          <span className="text-4xl font-bold text-muted-foreground/30">
-                            {model.name.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                      }
-                    />
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent opacity-80" />
-                    <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-all duration-500" />
-
-                    {/* Access badge */}
-                    <div className="absolute top-2.5 right-2.5">
-                      {hasAccess(model.id) ? (
-                        <div className="bg-green-500/20 backdrop-blur-md p-1.5 rounded-lg border border-green-500/20 text-green-400">
-                          <Unlock className="h-3 w-3" />
-                        </div>
-                      ) : (
-                        <div className="bg-black/30 backdrop-blur-md p-1.5 rounded-lg border border-white/[0.08] text-white/50">
-                          <Lock className="h-3 w-3" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Country flag */}
-                    {model.countryFlag && (
-                      <div className="absolute top-2.5 left-2.5">
-                        <span className="text-lg drop-shadow-md">{model.countryFlag}</span>
-                      </div>
-                    )}
-
-                    {/* Model avatar */}
-                    <div className="absolute bottom-12 sm:bottom-14 right-2.5">
-                      <RetryImage
-                        src={model.avatarUrl || `/api/models/${model.folderName}/avatar`}
-                        alt=""
-                        className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
-                        loading="lazy"
-                      />
-                    </div>
-
-                    {/* Info overlay */}
-                    <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 transform translate-y-0.5 group-hover:translate-y-0 transition-transform duration-300">
-                      <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className="text-[10px] sm:text-xs font-medium text-white/50">
-                          <span className="hidden sm:inline">
-                            {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
-                              ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
-                              : `${model.contentCount} ${t("items")}`}
-                          </span>
-                          <span className="sm:hidden">{model.contentCount} {t("items")}</span>
-                        </span>
-                        {!hasAccess(model.id) && cost7d > 0 && (
-                          <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">
-                            {t("getAccess")}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              </div>
+                model={model}
+                hasAccess={hasAccess}
+                cost7d={cost7d}
+                t={t}
+                onModelClick={handleModelClick}
+                staggerClass={index < 12 ? `animate-in fade-in stagger-${Math.min(index + 1, 10)}` : ""}
+              />
             ))}
           </div>
 
