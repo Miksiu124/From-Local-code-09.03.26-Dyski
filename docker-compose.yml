@@ -82,6 +82,7 @@ services:
       - internal
 
   # ── PostgreSQL ────────────────────────────────────────────────
+  # 2GB + shared_buffers for aggressive disk cache (VPS 8GB)
   postgres:
     image: postgres:16-alpine
     container_name: content-postgres
@@ -90,6 +91,18 @@ services:
       POSTGRES_DB: content_platform
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d
@@ -103,12 +116,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: "1.0"
     networks:
       - internal
 
   # ── Redis ─────────────────────────────────────────────────────
+  # 1GB for aggressive thumbnail + playlist cache (VPS 8GB)
   redis:
     image: redis:7-alpine
     container_name: content-redis
@@ -116,7 +130,9 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command: >
-      redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1000 --appendonly yes
+      redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru
+      --lazyfree-lazy-eviction yes --lazyfree-lazy-server-del yes
+      --save 60 1000 --appendonly yes
       ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
@@ -130,7 +146,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 320M
+          memory: 1280M
           cpus: "0.5"
     networks:
       - internal

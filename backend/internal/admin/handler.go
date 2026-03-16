@@ -1373,10 +1373,69 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 			fmt.Sprintf("%d settings failed to save", errCount))
 	}
 
+	// Invalidate public settings cache so /api/settings/public reflects changes
+	if h.redis != nil {
+		_ = h.redis.Del(ctx, "api:settings:public").Err()
+	}
 	return common.Success(c, map[string]bool{"success": true})
 }
 
 // ═══ R2 Operations ═══════════════════════════════════════════════════════════
+
+// invalidateContentCaches clears Redis caches for models list and all model detail/content.
+// Call after SyncR2, ImportR2, or any bulk content change.
+func (h *Handler) invalidateContentCaches(ctx context.Context) {
+	if h.redis == nil {
+		return
+	}
+	_ = h.redis.Del(ctx, "api:models:first", "api:models:featured").Err()
+	var cursor uint64
+	for {
+		keys, next, err := h.redis.Scan(ctx, cursor, "api:model:*", 100).Result()
+		if err != nil {
+			break
+		}
+		for _, k := range keys {
+			_ = h.redis.Del(ctx, k).Err()
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+// invalidateModelCaches clears caches for a specific model by content item ID.
+// Call after ToggleContentHidden or DeleteContent.
+func (h *Handler) invalidateModelCaches(ctx context.Context, contentItemID string) {
+	if h.redis == nil || contentItemID == "" {
+		return
+	}
+	var slug string
+	err := h.db.QueryRow(ctx, `
+		SELECT m.folder_name FROM content_items ci
+		JOIN models m ON m.id = ci.model_id
+		WHERE ci.id = $1
+	`, contentItemID).Scan(&slug)
+	if err != nil {
+		return
+	}
+	_ = h.redis.Del(ctx, "api:model:slug:"+slug).Err()
+	var cursor uint64
+	for {
+		keys, next, err := h.redis.Scan(ctx, cursor, "api:model:content:"+slug+":*", 50).Result()
+		if err != nil {
+			break
+		}
+		for _, k := range keys {
+			_ = h.redis.Del(ctx, k).Err()
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
 
 // ═══ R2 Operations ═══════════════════════════════════════════════════════════
 
@@ -1399,6 +1458,7 @@ func (h *Handler) SyncR2(c echo.Context) error {
 		totalObjects += objects
 	}
 
+	h.invalidateContentCaches(ctx)
 	return common.Success(c, map[string]interface{}{
 		"syncedModels":   len(synced),
 		"newContentItems": totalImported,
@@ -1424,6 +1484,7 @@ func (h *Handler) ImportR2(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	h.invalidateContentCaches(ctx)
 	return common.Success(c, map[string]interface{}{
 		"imported":     imported,
 		"totalObjects": total,
@@ -1642,6 +1703,7 @@ func (h *Handler) ToggleContentHidden(c echo.Context) error {
 		return common.NotFound(c, "Content item not found")
 	}
 
+	h.invalidateModelCaches(ctx, req.ID)
 	return common.Success(c, map[string]bool{"success": true})
 }
 
@@ -1652,6 +1714,9 @@ func (h *Handler) DeleteContent(c echo.Context) error {
 	if id == "" || len(id) < 10 {
 		return common.BadRequest(c, "id is required")
 	}
+
+	// Invalidate cache before delete (need slug from DB)
+	h.invalidateModelCaches(ctx, id)
 
 	err := h.contentService.DeleteContentItem(ctx, id)
 	if err != nil {
