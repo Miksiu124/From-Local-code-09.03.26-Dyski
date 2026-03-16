@@ -115,6 +115,20 @@ export function Header() {
 
   const isAdmin = user?.role === "ADMIN";
 
+  const handleLogoClick = (e: React.MouseEvent) => {
+    // Reset models search state so logo returns to clean main page
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("models_search");
+      sessionStorage.removeItem("models_country");
+      sessionStorage.removeItem("models_purchased_only");
+      sessionStorage.removeItem("models_scroll_y");
+    }
+    if (pathname === "/") {
+      e.preventDefault();
+      window.location.href = "/";
+    }
+  };
+
   const navLinks = [
     { href: "/", label: t("nav.models"), show: true },
     { href: "/purchase", label: t("nav.buyCredits"), show: !!user },
@@ -125,8 +139,8 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 shrink-0">
+        {/* Logo — resets search and returns to main page */}
+        <Link href="/" className="flex items-center gap-2 shrink-0" onClick={handleLogoClick}>
           <span className="text-xl font-bold bg-gradient-to-r from-primary via-purple-400 to-primary bg-clip-text text-transparent">
             {t("common.appName")}
           </span>
