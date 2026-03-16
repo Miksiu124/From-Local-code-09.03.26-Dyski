@@ -61,6 +61,7 @@ export function RetryImage({
       onError={handleError}
       key={retryCount}
       loading={loading ?? "lazy"}
+      decoding="async"
       {...props}
     />
   );

@@ -94,8 +94,13 @@ export default async function HomePage() {
     ? ("all" as const)
     : access.modelIds;
 
+  const heroImageUrl = featuredModelsData.models[0]?.headerUrl ?? modelsData.models[0]?.headerUrl;
   return (
-    <div className="container mx-auto px-4 py-8">
+    <>
+      {heroImageUrl && (
+        <link rel="preload" as="image" href={heroImageUrl} />
+      )}
+      <div className="container mx-auto px-4 py-8">
       <ModelsGrid
         initialModels={modelsData.models.map((m) => ({
           id: m.id,
@@ -146,5 +151,6 @@ export default async function HomePage() {
         creditBalance={realCreditBalance}
       />
     </div>
+    </>
   );
 }

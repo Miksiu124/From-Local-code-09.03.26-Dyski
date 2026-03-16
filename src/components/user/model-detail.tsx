@@ -982,7 +982,7 @@ export function ModelDetail({
               <button
                 key={item.id}
                 type="button"
-                className={cn("cursor-pointer group animate-in fade-in text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", `stagger-${Math.min(index % 10 + 1, 10)}`)}
+                className={cn("cursor-pointer group text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : "")}
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
@@ -992,8 +992,9 @@ export function ModelDetail({
                       <LazyRetryImage
                         src={`/api/content/${item.id}/thumbnail`}
                         alt={item.contentType === "VIDEO" ? t("video") : t("photo")}
-                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
-                        rootMargin="2000px"
+                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
+                        rootMargin="1200px"
+                        priority={index < 6}
                         placeholder={
                           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted/60 via-muted/40 to-secondary/50 animate-pulse">
                             {item.contentType === "VIDEO" ? (
