@@ -84,7 +84,7 @@ services:
   # ── PostgreSQL ────────────────────────────────────────────────
   # 2GB + shared_buffers for aggressive disk cache (VPS 8GB)
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: content-postgres
     restart: unless-stopped
     environment:

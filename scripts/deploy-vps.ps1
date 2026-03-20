@@ -1,12 +1,13 @@
 # ContentVault — deploy na VPS (PowerShell)
-# Uzycie: .\scripts\deploy-vps.ps1 [-Build] [-Rebuild] [-RebuildFresh] [-Billionmail]
+# Uzycie: .\scripts\deploy-vps.ps1 [-Build] [-Rebuild] [-RebuildFresh] [-PgUpgrade] [-Billionmail]
 #   -Build       = sync + docker compose build + up
 #   -Rebuild     = sync + pelna przebudowa od zera (zachowuje tylko postgres_data)
 #   -RebuildFresh = sync + przebudowa OD ZERA z baza (zachowuje 4 uzytkownikow + .env)
+#   -PgUpgrade   = sync + upgrade PostgreSQL 16→18 (backup-first, zero utraty danych)
 #   -Billionmail = uzyj docker-compose.billionmail.yml
 # Wymaga: rsync (z Git Bash lub WSL) albo uzyj scp
 
-param([switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$Billionmail)
+param([switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$PgUpgrade, [switch]$PgResume, [switch]$Billionmail)
 
 # Laduj .env.deploy jesli istnieje
 $deployEnv = Join-Path (Split-Path -Parent $PSScriptRoot) ".env.deploy"
@@ -27,6 +28,8 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot  # ContentManager/
 
 Write-Host "=== ContentVault deploy ==="
 Write-Host "Host: $VPS_USER@$VPS_HOST`:$VPS_PATH"
+if ($PgUpgrade) { Write-Host "Tryb: UPGRADE PostgreSQL 16→18 (backup-first, zero utraty danych)" }
+if ($PgResume) { Write-Host "Tryb: UPGRADE --resume (kontynuuj od restore)" }
 Write-Host ""
 
 # Sync: rsync lub fallback tar+scp
@@ -65,6 +68,10 @@ if ($RebuildFresh) {
 } elseif ($Rebuild) {
   $bmArg = if ($Billionmail) { " --billionmail" } else { "" }
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/vps-rebuild.sh$bmArg"
+} elseif ($PgUpgrade) {
+  $bmArg = if ($Billionmail) { " --billionmail" } else { "" }
+  $resumeArg = if ($PgResume) { " --resume " } else { "" }
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh${resumeArg}$bmArg"
 } elseif ($Build) {
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose $composeFiles build && docker compose $composeFiles up -d"
 } else {

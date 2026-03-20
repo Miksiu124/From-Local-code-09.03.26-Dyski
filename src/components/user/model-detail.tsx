@@ -117,6 +117,25 @@ export function ModelDetail({
   const [overlayTogglingFav, setOverlayTogglingFav] = useState(false);
   const [overlayDeleting, setOverlayDeleting] = useState(false);
   const savedScrollY = useRef(0);
+  const f5RedirectCheckedRef = useRef(false);
+
+  // F5 fallback: when user refreshes while in video overlay, redirect to model folder.
+  // Run ONLY on initial mount — if user clicked thumbnail after refresh, nav.type stays "reload"
+  // but we must NOT redirect (they intentionally opened overlay). hasRun guards that.
+  useEffect(() => {
+    if (f5RedirectCheckedRef.current) return;
+    f5RedirectCheckedRef.current = true;
+    if (!initialView || !hasAccess || !isAuthenticated) return;
+    const nav = performance.getEntriesByType?.("navigation")?.[0] as PerformanceNavigationTiming | undefined;
+    if (nav?.type !== "reload") return;
+    const params = new URLSearchParams();
+    if (activeFilter !== "ALL") params.set("filter", activeFilter);
+    if (activeSort !== "newest") params.set("sort", activeSort);
+    const qs = params.toString();
+    router.replace(`/models/${model.folderName}${qs ? `?${qs}` : ""}`, { scroll: false });
+    setSelectedItemId(null);
+    setViewItemFallback(null);
+  }, [initialView, hasAccess, isAuthenticated, activeFilter, activeSort, model.folderName, router]);
 
   // Persist filter/sort to sessionStorage (for content-viewer back link) — sync from URL on mount
   useEffect(() => {
@@ -1242,6 +1261,12 @@ export function ModelDetail({
                   className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
                   onContextMenu={(e) => e.preventDefault()}
                   draggable={false}
+                  fallback={
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 px-8 text-white/50">
+                      <Image className="h-16 w-16 opacity-40" />
+                      <span className="text-sm">{t("imageLoadFailed")}</span>
+                    </div>
+                  }
                 />
               )}
             </div>

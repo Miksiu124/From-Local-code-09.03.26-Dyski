@@ -7,5 +7,7 @@ compatibility_date = "2024-01-01"
 binding = "FILES"
 bucket_name = "files"
 
-# Domena: avatars.twojadomena.com (ustaw w Cloudflare po deploy)
-# workers_dev = true  # tymczasowo: *.workers.dev
+# Custom domain — Worker serwuje tylko avatars/*, reszta 403
+[[routes]]
+pattern = "files.dyskiof.net"
+custom_domain = true

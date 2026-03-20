@@ -49,8 +49,8 @@ export function RetryImage({
     [retryCount, maxRetries, retryDelayMs, onError]
   );
 
-  if (showFallback && fallback) {
-    return <>{fallback}</>;
+  if (showFallback) {
+    return <>{fallback ?? <span className="inline-block w-12 h-12 bg-muted/50 rounded" aria-hidden />}</>;
   }
 
   return (

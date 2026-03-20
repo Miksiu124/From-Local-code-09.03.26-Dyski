@@ -4,6 +4,43 @@ Błąd „Network error — could not load the video” przy próbie odtworzenia
 
 ---
 
+## 0a. Segmenty idą na /models/... zamiast /api/... (pending)
+
+Jeśli w DevTools → Network segmenty (.ts) idą na `dyskiof.net/models/...` zamiast `dyskiof.net/api/content/.../segment/...` lub R2:
+
+- **Przyczyna:** Playlista zwraca względne URLe, a HLS.js rozwiązuje je względem złej bazy (np. URL strony).
+- **Rozwiązanie:** API zawsze zwraca bezwzględne URLe. Sprawdź, czy playlistę pobierasz z `/api/content/{id}/playlist/master.m3u8` (nie z innego źródła).
+- **Fallback:** Ustaw `HLS_USE_API_SEGMENTS=true` w `.env` — segmenty będą proxy’owane przez API zamiast presigned R2 (omija problemy CORS).
+
+---
+
+## 0. R2 CORS (wymagane dla presigned URLs)
+
+Segmenty HLS (.ts) są serwowane z R2 przez presigned URLs. Przeglądarka wymaga CORS na buckecie R2.
+
+**Konfiguracja CORS na buckecie R2:**
+
+1. Cloudflare Dashboard → R2 → wybierz bucket (z wideo) → Settings → CORS Policy
+2. Wklej konfigurację z `scripts/r2-cors-hls.json` lub ustaw ręcznie:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://dyskiof.net", "https://www.dyskiof.net", "http://localhost:3000"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range", "Content-Type"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "Content-Type", "ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+3. Zapisz. Propagacja CORS może potrwać do 30 s.
+
+**Weryfikacja:** DevTools → Network → request do segmentu (URL z `r2.cloudflarestorage.com`) → Response Headers powinny zawierać `Access-Control-Allow-Origin: https://dyskiof.net`.
+
+---
+
 ## Auto-detekcja baseURL (od 2025-02)
 
 API **automatycznie** wyznacza URLe segmentów HLS z żądania (`Host` + `X-Forwarded-Proto`), gdy `FRONTEND_URL` wskazuje na localhost lub frontend. Dzięki temu streaming działa za nginx/Cloudflare nawet bez poprawnego `FRONTEND_URL` w `.env`.
@@ -87,6 +124,8 @@ Bez tego długie requesty streamingu mogą się urywać.
 
 | # | Co sprawdzić | Jak |
 |---|--------------|-----|
+| 0 | R2 CORS | Bucket R2 → Settings → CORS Policy → `https://dyskiof.net` w AllowedOrigins |
+| 0b | HLS_USE_API_SEGMENTS | Jeśli presigned nie działa: `HLS_USE_API_SEGMENTS=true` → segmenty przez API |
 | 1 | FRONTEND_URL | Na VPS: `grep FRONTEND_URL .env` → powinno być `https://dyskiof.net` |
 | 2 | Zalogowanie | Czy użytkownik jest zalogowany na stronie? |
 | 3 | Dostęp do treści | Czy użytkownik kupił treść / jest adminem? |
@@ -105,7 +144,6 @@ curl -b "session=WARTOSC" "https://dyskiof.net/api/content/CONTENT_ID/playlist/m
 ```
 
 - 200 + treść `.m3u8` → playlist jest serwowana.
-- Adresy segmentów powinny wyglądać tak:  
-  `https://dyskiof.net/api/content/.../segment/...?token=...&uid=...`
+- Adresy segmentów: presigned URLs (`...r2.cloudflarestorage.com/...`) — wymagają CORS na R2 (patrz sekcja 0).
 
 Jeśli zamiast tego widzisz `http://localhost:3000/...` albo `http://frontend:3000/...` → popraw `FRONTEND_URL`.

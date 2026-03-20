@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://dyskiof.net", "https://www.dyskiof.net", "http://localhost:3000"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range", "Content-Type"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "Content-Type", "ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

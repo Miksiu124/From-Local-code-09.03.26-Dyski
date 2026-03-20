@@ -75,6 +75,7 @@ const ModelCard = memo(function ModelCard({
       <Link
         href={`/models/${model.folderName}`}
         onClick={(e) => onModelClick(model, e)}
+        prefetch={false}
         className="group block"
       >
         <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
@@ -492,7 +493,7 @@ export function ModelsGrid({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:h-[420px]">
             {/* Main Hero Card */}
             <div className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card min-h-[280px] sm:min-h-[340px]">
-              <Link href={`/models/${heroModel.folderName}`} onClick={(e) => handleModelClick(heroModel, e)}>
+              <Link href={`/models/${heroModel.folderName}`} onClick={(e) => handleModelClick(heroModel, e)} prefetch={false}>
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={heroModel.id}
@@ -567,6 +568,7 @@ export function ModelsGrid({
                   key={model.id}
                   href={`/models/${model.folderName}`}
                   onClick={(e) => handleModelClick(model, e)}
+                  prefetch={false}
                   className="flex-shrink-0 w-[260px] lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
                 >
                   <div className="flex h-full min-h-[100px]">

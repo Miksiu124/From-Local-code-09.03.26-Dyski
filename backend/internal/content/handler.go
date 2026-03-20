@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -58,6 +59,24 @@ func sanitizeFilename(name string) (string, error) {
 		return "", fmt.Errorf("invalid filename")
 	}
 	return clean, nil
+}
+
+// sanitizeSegmentPath allows slashes (e.g. subfolder/segment.ts) but rejects path traversal.
+func sanitizeSegmentPath(name string) (string, error) {
+	decoded, err := url.PathUnescape(name)
+	if err != nil {
+		return "", fmt.Errorf("invalid segment path")
+	}
+	if decoded == "" || strings.Contains(decoded, "..") || strings.HasPrefix(decoded, "/") || strings.Contains(decoded, "\\") {
+		return "", fmt.Errorf("invalid segment path")
+	}
+	// Reject path traversal via absolute or parent refs
+	for _, part := range strings.Split(decoded, "/") {
+		if part == "." || part == ".." {
+			return "", fmt.Errorf("invalid segment path")
+		}
+	}
+	return decoded, nil
 }
 
 // slugPattern allows only safe characters for model folder_name/slug (prevents path traversal in R2 keys).
@@ -361,14 +380,33 @@ func (h *Handler) Playlist(c echo.Context) error {
 	}
 
 	baseURL := streamingBaseURL(c, h.cfg)
-	rewritten := RewritePlaylist(
-		playlistContent,
-		baseURL,
-		userID,
-		contentItemID,
-		h.cfg.StreamingTokenSecret,
-		h.cfg.StreamingTokenTTL,
-	)
+	var rewritten string
+	if hlsFolderPath != nil && *hlsFolderPath != "" {
+		presigner := func(key string) (string, error) {
+			return h.r2.PresignGetObject(ctx, key, 1*time.Hour)
+		}
+		usePresigned := !h.cfg.HLSUseAPISegments
+		rewritten = RewritePlaylistWithPresignedSegments(
+			playlistContent,
+			*hlsFolderPath,
+			baseURL,
+			userID,
+			contentItemID,
+			h.cfg.StreamingTokenSecret,
+			h.cfg.StreamingTokenTTL,
+			usePresigned,
+			presigner,
+		)
+	} else {
+		rewritten = RewritePlaylist(
+			playlistContent,
+			baseURL,
+			userID,
+			contentItemID,
+			h.cfg.StreamingTokenSecret,
+			h.cfg.StreamingTokenTTL,
+		)
+	}
 
 	c.Response().Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	c.Response().Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -387,7 +425,8 @@ func (h *Handler) Segment(c echo.Context) error {
 		return common.Forbidden(c)
 	}
 
-	filename, err := sanitizeFilename(rawFilename)
+	// Support URL-encoded paths (e.g. subfolder%2Fsegment.ts)
+	filename, err := sanitizeSegmentPath(rawFilename)
 	if err != nil {
 		return common.BadRequest(c, "Invalid filename")
 	}

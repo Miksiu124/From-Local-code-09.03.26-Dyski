@@ -61,6 +61,12 @@ uploads/
 # ad-hoc query files
 query.sql
 
+# DB upgrade backups (contain production data)
+backups/
+
+# Upgrade rollback (created by upgrade-postgres-16-to-18.sh)
+docker-compose.yml.bak
+
 # logs
 dump.log
 temp-docker-stats.log

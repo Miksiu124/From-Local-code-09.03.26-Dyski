@@ -70,9 +70,9 @@ func main() {
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
 	e.Use(echomw.BodyLimit("2M"))
-	// Gzip JSON responses — skip binary (thumbnails, segments)
+	// Gzip JSON responses — skip binary (thumbnails, segments). Level 3 = less CPU than 5
 	e.Use(echomw.GzipWithConfig(echomw.GzipConfig{
-		Level: 5,
+		Level: 3,
 		Skipper: func(c echo.Context) bool {
 			p := c.Path()
 			return strings.Contains(p, "/thumbnail") || strings.Contains(p, "/segment") ||

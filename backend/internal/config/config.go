@@ -46,7 +46,8 @@ type Config struct {
 
 	// HLS Streaming
 	StreamingTokenSecret string
-	StreamingTokenTTL    int // seconds
+	StreamingTokenTTL    int  // seconds
+	HLSUseAPISegments   bool // if true, proxy segments via API (skip presigned URLs) — use when R2 CORS fails
 
 	// Admin
 	AdminEmails []string
@@ -94,7 +95,8 @@ func Load() (*Config, error) {
 		R2ProofBucketName:     getEnvOrDefault("R2_PROOF_BUCKET_NAME", ""),
 		R2ProofEndpoint:       getEnvOrDefault("R2_PROOF_ENDPOINT", ""),
 		StreamingTokenSecret:  requireEnv("STREAMING_TOKEN_SECRET"),
-		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600), // 6 hours
+		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600),   // 6 hours
+		HLSUseAPISegments:     getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "true" || getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "1",
 		BlikExpirationMinutes: getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
 		SMTPHost:              getEnvOrDefault("SMTP_HOST", "smtp"),
 		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 587),

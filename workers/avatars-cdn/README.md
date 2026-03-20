@@ -32,33 +32,33 @@ npm install
 
 ## Deploy
 
-```bash
-npm run deploy
+**Wymagania:** Strefa `dyskiof.net` musi być w tym samym koncie Cloudflare co bucket R2 `files`.
+
+```powershell
+# Zaloguj się (jeśli jeszcze nie)
+npx wrangler login
+
+# Deploy (custom domain files.dyskiof.net jest w wrangler.toml)
+.\deploy.ps1
+# lub: npm run deploy
 ```
 
-Po deploy Worker będzie dostępny pod adresem `https://avatars-cdn.<twoj-subkonto>.workers.dev` (jeśli masz workers.dev).
-
-## Custom Domain (produkcja)
-
-1. W Cloudflare Dashboard → Workers & Pages → avatars-cdn → Settings → Domains
-2. Kliknij **Add Custom Domain**
-3. Wpisz np. `avatars.twojadomena.com`
-4. Cloudflare doda rekord DNS automatycznie
+Po deploy Worker będzie dostępny pod `https://files.dyskiof.net` — tylko ścieżki `avatars/*` są dozwolone.
 
 ## Integracja z backendem
 
-W `.env` backendu ustaw:
+W `.env` na VPS ustaw:
 
 ```
-R2_PUBLIC_URL=https://avatars.twojadomena.com
+R2_PUBLIC_URL=https://files.dyskiof.net
 ```
 
 Backend będzie przekierowywał żądania avatarów/headerów na ten URL zamiast proxy przez Go.
 
 ## Format URL
 
-- Avatar: `https://avatars.twojadomena.com/avatars/{slug}_avatar.webp`
-- Header: `https://avatars.twojadomena.com/avatars/{slug}_header.webp`
+- Avatar: `https://files.dyskiof.net/avatars/{slug}_avatar.webp`
+- Header: `https://files.dyskiof.net/avatars/{slug}_header.webp`
 
 Worker mapuje ścieżkę 1:1 na klucz R2: `avatars/{plik}`.
 

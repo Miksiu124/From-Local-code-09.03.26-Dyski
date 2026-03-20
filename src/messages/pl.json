@@ -133,6 +133,7 @@
     "deleteContent": "Usuń",
     "deleteContentConfirm": "Czy na pewno usunąć ten element?",
     "contentDeleteFailed": "Nie udało się usunąć elementu",
+    "imageLoadFailed": "Nie udało się załadować zdjęcia",
     "featured": "Wyróżnione",
     "carouselPrev": "Poprzedni slajd",
     "carouselNext": "Następny slajd",
@@ -141,6 +142,7 @@
     "modelsCount": "modeli"
   },
   "videoPlayer": {
+    "back": "Wróć",
     "seekBack": "Cofnij 10 sekund",
     "seekForward": "Przewiń 10 sekund",
     "play": "Odtwórz",

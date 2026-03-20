@@ -133,6 +133,7 @@
     "deleteContent": "Delete",
     "deleteContentConfirm": "Are you sure you want to delete this item?",
     "contentDeleteFailed": "Failed to delete item",
+    "imageLoadFailed": "Failed to load image",
     "featured": "Featured",
     "carouselPrev": "Previous slide",
     "carouselNext": "Next slide",
@@ -141,6 +142,7 @@
     "modelsCount": "models"
   },
   "videoPlayer": {
+    "back": "Back",
     "seekBack": "Seek back 10 seconds",
     "seekForward": "Seek forward 10 seconds",
     "play": "Play",

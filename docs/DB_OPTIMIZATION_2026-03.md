@@ -47,3 +47,37 @@ docker compose exec -T postgres psql -U platform -d content_platform < backend/m
 
 - Postgres: max 20, min 2, 30min lifetime
 - Redis: pool 10, min idle 2
+
+---
+
+## 6. CPU / API load reduction (2026-03)
+
+### R2_PUBLIC_URL — krytyczne dla obciążenia API
+
+Gdy `R2_PUBLIC_URL` **nie** jest ustawione, avatary i headery modeli idą przez API (proxy z R2). Każdy request = pobranie z R2 + cache do Redis + stream do klienta → duże obciążenie CPU i sieci.
+
+**Sprawdź na VPS:**
+```bash
+grep R2_PUBLIC_URL /opt/contentvault/.env
+# Powinno być: R2_PUBLIC_URL=https://files.dyskiof.net
+```
+
+Gdy ustawione: API zwraca `avatarUrl` i `headerUrl` z bezpośrednim URL CDN → obrazy ładują się z Cloudflare, nie przez API.
+
+### Prefetch RSC wyłączony
+
+Linki do modeli (`/models/:slug`) mają `prefetch={false}` — Next.js nie prefetchuje 20+ stron modeli naraz, co redukuje skoki CPU.
+
+### Gzip Level 3
+
+Kompresja JSON obniżona z 5 do 3 — mniejsze zużycie CPU przy minimalnie większym payloadzie.
+
+### Presigned URLs dla segmentów HLS (2026-03)
+
+Segmenty wideo (.ts) są teraz serwowane bezpośrednio z R2 — klient pobiera je z presigned URL, nie przez API. API przestaje proxyować bajty wideo → **znaczne odciążenie CPU i sieci**.
+
+**Wymaganie:** Bucket R2 musi mieć skonfigurowane CORS, żeby odtwarzacz (dyskiof.net) mógł pobierać segmenty:
+- W Cloudflare Dashboard → R2 → bucket → Settings → CORS
+- Dodać regułę: `https://dyskiof.net` w Allow-Origin, metoda GET
+
+**Uwaga:** HLS.js nie wysyła `credentials` dla presigned URLs (cross-origin) — tylko dla playlist z API (same-origin). Dzięki temu R2 nie musi zwracać `Access-Control-Allow-Credentials: true`.

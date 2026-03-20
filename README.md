@@ -14,7 +14,7 @@
 |---|---|
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
 | Backend API | Go 1.24, Echo framework |
-| Database | PostgreSQL 16 |
+| Database | PostgreSQL 18 |
 | Cache / PubSub | Redis 7 |
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |

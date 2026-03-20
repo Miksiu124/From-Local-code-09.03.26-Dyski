@@ -80,6 +80,26 @@ export function ContentViewer({
   }, [modelSlug, backHrefProp]);
 
   const backHref = backHrefProp ?? computedBackHref;
+  const f5RedirectCheckedRef = useRef(false);
+
+  // F5 fallback: when user refreshes on content page (video player), redirect to model folder.
+  // Run only once on mount — ContentViewer is a different route so no "click adds view" case.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (f5RedirectCheckedRef.current) return;
+    f5RedirectCheckedRef.current = true;
+    const nav = performance.getEntriesByType?.("navigation")?.[0] as PerformanceNavigationTiming | undefined;
+    if (nav?.type !== "reload") return;
+    const filter = sessionStorage.getItem(`filter_model_${modelSlug}`);
+    const sort = sessionStorage.getItem(`sort_model_${modelSlug}`);
+    const params = new URLSearchParams();
+    const validFilters = ["ALL", "VIDEO", "PHOTO", "FAVORITES"];
+    const validSorts = ["newest", "oldest", "longest", "shortest"];
+    if (filter && filter !== "ALL" && validFilters.includes(filter)) params.set("filter", filter);
+    if (sort && sort !== "newest" && validSorts.includes(sort)) params.set("sort", sort);
+    const qs = params.toString();
+    router.replace(`/models/${modelSlug}${qs ? `?${qs}` : ""}`);
+  }, [modelSlug, router]);
 
   const handleBack = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
