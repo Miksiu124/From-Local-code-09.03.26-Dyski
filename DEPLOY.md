@@ -186,14 +186,14 @@ sudo systemctl status certbot.timer
 
 > **⚠️ Important:** The Nginx container mounts `/etc/letsencrypt` as read-only. After certificate renewal, you must restart Nginx:
 > ```bash
-> docker compose restart nginx
+> cd /opt/contentvault && docker compose -f docker-compose.yml -f docker-compose.vps.yml restart nginx
 > ```
 > Add this to a cron job to automate it:
 > ```bash
 > # Edit crontab
 > sudo crontab -e
 > # Add this line (restarts nginx after certbot renewal, twice daily):
-> 0 0,12 * * * certbot renew --quiet && docker compose -f /opt/contentvault/docker-compose.yml restart nginx
+> 0 0,12 * * * certbot renew --quiet && cd /opt/contentvault && docker compose -f docker-compose.yml -f docker-compose.vps.yml restart nginx
 > ```
 
 ---
@@ -265,8 +265,9 @@ SMTP_FROM=noreply@yourdomain.com
 SMTP_HOSTNAME=mail.yourdomain.com
 SMTP_ALLOWED_DOMAINS=yourdomain.com
 
-# ── Nginx ─────────────────────────────────────────────────────
-NGINX_CONFIG=./nginx/nginx.conf.production
+# ── Nginx (produkcja) ─────────────────────────────────────────
+# Nie ustawiaj NGINX_CONFIG — na VPS używaj: docker compose -f docker-compose.yml -f docker-compose.vps.yml
+# (plik docker-compose.vps.yml montuje nginx.conf.production). Skrypty deploy-* robią to automatycznie.
 
 # ── Frontend ──────────────────────────────────────────────────
 NEXT_PUBLIC_APP_URL=https://yourdomain.com
@@ -298,13 +299,13 @@ chmod 600 /opt/contentvault/.env
 Edit the nginx config and replace `yourdomain.com` with your actual domain:
 
 ```bash
-sed -i 's/yourdomain.com/YOUR_ACTUAL_DOMAIN/g' /opt/contentvault/nginx/nginx.conf
+sed -i 's/yourdomain.com/YOUR_ACTUAL_DOMAIN/g' /opt/contentvault/nginx/nginx.conf.production
 ```
 
 **Verify the changes:**
 
 ```bash
-grep "server_name\|ssl_certificate" /opt/contentvault/nginx/nginx.conf
+grep "server_name\|ssl_certificate" /opt/contentvault/nginx/nginx.conf.production
 ```
 
 ---
@@ -316,24 +317,24 @@ grep "server_name\|ssl_certificate" /opt/contentvault/nginx/nginx.conf
 ```bash
 cd /opt/contentvault
 
-# Build all images
-docker compose build --no-cache
+# Build all images (VPS = production nginx z docker-compose.vps.yml)
+docker compose -f docker-compose.yml -f docker-compose.vps.yml build --no-cache
 
 # Start in detached mode
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
 
 # Watch the logs (Ctrl+C to exit)
-docker compose logs -f
+docker compose -f docker-compose.yml -f docker-compose.vps.yml logs -f
 ```
 
 ### 7.2 Run Database Seed (first time only)
 
 ```bash
 # Seed the database with initial data (countries, settings, admin user, credit packages)
-docker compose exec api ./server -seed
+docker compose -f docker-compose.yml -f docker-compose.vps.yml exec api ./server -seed
 
 # OR if using the dedicated seed binary:
-docker compose exec api sh -c "cd /app && ./seed"
+docker compose -f docker-compose.yml -f docker-compose.vps.yml exec api sh -c "cd /app && ./seed"
 ```
 
 > **Note:** The Go backend automatically runs database migrations on startup. You only need to run the seed once.
@@ -341,7 +342,7 @@ docker compose exec api sh -c "cd /app && ./seed"
 ### 7.3 Verify Services Are Healthy
 
 ```bash
-docker compose ps
+docker compose -f docker-compose.yml -f docker-compose.vps.yml ps
 ```
 
 All services should show `healthy` or `running`:
@@ -402,7 +403,7 @@ BACKUP_DIR="/opt/backups"
 mkdir -p "$BACKUP_DIR"
 
 # Dump PostgreSQL
-docker compose -f /opt/contentvault/docker-compose.yml exec -T postgres \
+docker compose -f /opt/contentvault/docker-compose.yml -f /opt/contentvault/docker-compose.vps.yml exec -T postgres \
   pg_dump -U platform content_platform | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
 
 # Keep only last 30 days
@@ -428,7 +429,7 @@ crontab -e
 ```bash
 # Restore a specific backup
 gunzip -c /opt/backups/db_YYYYMMDD_HHMMSS.sql.gz | \
-  docker compose -f /opt/contentvault/docker-compose.yml exec -T postgres \
+  docker compose -f /opt/contentvault/docker-compose.yml -f /opt/contentvault/docker-compose.vps.yml exec -T postgres \
   psql -U platform content_platform
 ```
 
@@ -442,14 +443,14 @@ gunzip -c /opt/backups/db_YYYYMMDD_HHMMSS.sql.gz | \
 
 ```bash
 # All services
-docker compose logs -f
+docker compose -f docker-compose.yml -f docker-compose.vps.yml logs -f
 
 # Specific service
-docker compose logs -f api
-docker compose logs -f nginx
+docker compose -f docker-compose.yml -f docker-compose.vps.yml logs -f api
+docker compose -f docker-compose.yml -f docker-compose.vps.yml logs -f nginx
 
 # Last 100 lines
-docker compose logs --tail=100 api
+docker compose -f docker-compose.yml -f docker-compose.vps.yml logs --tail=100 api
 ```
 
 ### 10.2 Resource Usage
@@ -494,12 +495,12 @@ cd /opt/contentvault
 git pull origin main
 
 # Rebuild and restart without downtime
-docker compose build --no-cache api frontend
-docker compose up -d --no-deps api frontend
+docker compose -f docker-compose.yml -f docker-compose.vps.yml build --no-cache api frontend
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --no-deps api frontend
 
 # Verify health
-docker compose ps
-docker compose logs --tail=50 api
+docker compose -f docker-compose.yml -f docker-compose.vps.yml ps
+docker compose -f docker-compose.yml -f docker-compose.vps.yml logs --tail=50 api
 ```
 
 ---
@@ -519,7 +520,7 @@ docker compose logs --tail=50 api
 - [ ] All API secrets are 64+ random character strings
 - [ ] `SMTP_HOSTNAME` set to your mail subdomain (e.g. `mail.yourdomain.com`)
 - [ ] DNS records configured for mail: MX, SPF, DKIM, DMARC
-- [ ] `NGINX_CONFIG=./nginx/nginx.conf.production` set in `.env`
+- [ ] Nginx produkcja: deploy / ręczne `docker compose` z **`-f docker-compose.vps.yml`** (montuje `nginx.conf.production`)
 
 ### Recommended Additions (Post-Launch)
 
@@ -540,9 +541,9 @@ docker compose logs --tail=50 api
 | `api` fails with DB error | Check `POSTGRES_PASSWORD` matches in `.env` and Docker service |
 | Frontend shows blank page | Check `NEXT_PUBLIC_APP_URL` is set to your HTTPS domain |
 | Redis connection errors | Verify `REDIS_URL` doesn't have a password if Redis has none |
-| 502 Bad Gateway | Check if `api` or `frontend` containers are healthy: `docker compose ps` |
+| 502 Bad Gateway | Check if `api` or `frontend` containers are healthy: `docker compose -f docker-compose.yml -f docker-compose.vps.yml ps` |
 | BLIK WebSocket fails | Ensure nginx WebSocket config is correct; check `FRONTEND_URL` env var |
-| Emails not sending | Check SMTP relay is healthy: `docker compose logs smtp` |
+| Emails not sending | Check SMTP relay is healthy: `docker compose -f docker-compose.yml -f docker-compose.vps.yml logs smtp` |
 | Emails going to spam | Verify MX, SPF, DKIM, DMARC DNS records for `SMTP_HOSTNAME` |
 
 ---

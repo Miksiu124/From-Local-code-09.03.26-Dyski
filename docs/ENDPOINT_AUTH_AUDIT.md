@@ -25,5 +25,6 @@ Disable with `DISABLE_API_RATE_LIMIT=true` (e.g. load testing).
 
 ## BFF (nginx)
 
-- Default: `location /api/` → **frontend:3000**; Next `app/api/[[...path]]/route.ts` proxies to Go.
+- **VPS:** `docker compose -f docker-compose.yml -f docker-compose.vps.yml` montuje **`nginx.conf.production`** (skrypty deploy już to robią).
+- `location /api/` → **frontend:3000**; Next `app/api/[[...path]]/route.ts` proxies to Go.
 - Exception: `^/api/credits/purchase/<uuid>/blik$` → **api:8080** (WebSocket).

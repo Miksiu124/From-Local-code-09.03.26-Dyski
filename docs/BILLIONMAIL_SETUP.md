@@ -96,10 +96,10 @@ Gdy używasz BillionMail, **nie** ustawiaj `RESEND_API_KEY` – ContentVault kor
 
 ```bash
 cd /opt/contentvault   # lub Twoja ścieżka do ContentManager
-docker compose -f docker-compose.yml -f docker-compose.billionmail.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml up -d
 ```
 
-Override łączy API z siecią BillionMail i ustawia `SMTP_HOST=postfix`, `SMTP_PORT=587`.
+Override łączy API z siecią BillionMail i ustawia `SMTP_HOST=postfix`, `SMTP_PORT=587`. **`docker-compose.vps.yml`** montuje `nginx.conf.production` na VPS.
 
 ### 3c. Inna nazwa sieci BillionMail
 

@@ -59,8 +59,8 @@ if ($rsync) {
 Write-Host ""
 Write-Host "Starting on VPS..."
 
-$composeFiles = "-f docker-compose.yml"
-if ($Billionmail) { $composeFiles = "-f docker-compose.yml -f docker-compose.billionmail.yml" }
+$composeFiles = "-f docker-compose.yml -f docker-compose.vps.yml"
+if ($Billionmail) { $composeFiles = "-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml" }
 
 if ($RebuildFresh) {
   $bmArg = if ($Billionmail) { " --billionmail" } else { "" }

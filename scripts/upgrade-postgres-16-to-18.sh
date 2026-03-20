@@ -20,11 +20,11 @@ BACKUP_DIR="${REPO_ROOT}/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/pre_pg18_upgrade_${TIMESTAMP}.dump"
 
-# Compose files (obsługa billionmail)
-COMPOSE_FILES="-f docker-compose.yml"
+# Compose files (VPS nginx production + opcjonalnie billionmail)
+COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
 RESUME=false
 for arg in "$@"; do
-  [[ "$arg" == "--billionmail" ]] && COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml"
+  [[ "$arg" == "--billionmail" ]] && COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
   [[ "$arg" == "--resume" ]] && RESUME=true
 done
 

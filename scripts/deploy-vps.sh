@@ -55,8 +55,9 @@ rsync -avz --delete \
 echo ""
 echo "Starting on VPS..."
 
-COMPOSE_FILES="-f docker-compose.yml"
-[[ -n "$BILLIONMAIL" ]] && COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml"
+# VPS: zawsze docker-compose.vps.yml → nginx.conf.production (bez polegania na NGINX_CONFIG w .env)
+COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
+[[ -n "$BILLIONMAIL" ]] && COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
 
 if [[ "$REBUILD_FRESH" == true ]]; then
   ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/vps-rebuild-fresh.sh $BILLIONMAIL"

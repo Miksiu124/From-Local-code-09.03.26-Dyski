@@ -151,7 +151,8 @@
 ├── .github/                    # CI/CD
 │   └── workflows/              # Tests, DAST, CodeQL
 │
-├── docker-compose.yml          # All services
+├── docker-compose.yml          # All services (lokalnie: nginx → nginx.conf)
+├── docker-compose.vps.yml      # VPS: wymusza nginx.conf.production (łącz z -f przy deploy)
 ├── docker-compose.billionmail.yml  # BillionMail SMTP override
 ├── Dockerfile.frontend         # Next.js container (with Turnstile build-arg)
 ├── next.config.ts              # CSP headers, Turnstile domain allowlisting
@@ -291,7 +292,7 @@ The repository includes deploy scripts. See **[DEPLOY.md](DEPLOY.md)** for full 
 ./scripts/deploy-vps.sh --build
 ```
 
-Set `VPS_HOST`, `VPS_USER` in `.env.deploy`. Details in `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
+Set `VPS_HOST`, `VPS_USER` in `.env.deploy`. Skrypty deploy dokładają **`docker-compose.vps.yml`** (produkcyjny nginx). Details in `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
 
 ---
 
@@ -369,7 +370,7 @@ Prices are stored in PLN. For English locale, prices are converted to USD at 4:1
 | `SMTP_FROM` | No | Sender address (default: `noreply@dyskiof.net`) |
 | `SMTP_HOSTNAME` | No | Mail server hostname for DNS records |
 | `SMTP_ALLOWED_DOMAINS` | No | Domains allowed to send mail |
-| `NGINX_CONFIG` | No | Path to nginx config (default: `./nginx/nginx.conf`) |
+| `NGINX_CONFIG` | No | Opcjonalnie: inna ścieżka nginx **tylko lokalnie**. Na VPS użyj **`docker-compose.vps.yml`** zamiast zmiennej w `.env`. |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |
 | `DISCORD_CLIENT_ID` | No | Discord OAuth client ID |
