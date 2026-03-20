@@ -742,7 +742,7 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 
 		case <-ticker.C:
 			var currentStatus string
-			err := h.db.QueryRow(ctx, `SELECT status FROM credit_purchases WHERE id = $1`, purchaseID).Scan(&currentStatus)
+			err := h.db.QueryRow(ctx, `SELECT status FROM credit_purchases WHERE id = $1 AND user_id = $2`, purchaseID, userID).Scan(&currentStatus)
 			if err == nil && currentStatus != "PENDING" {
 				payload, _ := json.Marshal(map[string]string{"status": currentStatus})
 				fmt.Fprintf(c.Response().Writer, "data: %s\n\n", payload)

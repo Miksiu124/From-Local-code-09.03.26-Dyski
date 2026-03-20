@@ -72,31 +72,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  async rewrites() {
-    // Detect if we are running inside Docker
-    const isDocker = process.env.HOSTNAME === "0.0.0.0" || process.env.API_HOST === "api";
-    const defaultApiUrl = isDocker ? "http://api:8080/api" : "http://localhost:8080/api";
-
-    let apiUrl = process.env.API_URL || defaultApiUrl;
-
-    // If we are in Docker but apiUrl points to localhost, fix it for the proxy
-    if (isDocker && apiUrl.includes("localhost:8080")) {
-      console.log("[next.config] Docker detected, fixing API_URL from localhost to api");
-      apiUrl = apiUrl.replace("localhost:8080", "api:8080");
-    }
-
-    // Strip trailing /api if present for the destination base
-    const apiBase = apiUrl.endsWith("/api") ? apiUrl.slice(0, -4) : apiUrl;
-
-    console.log(`[next.config] Rewriting /api to ${apiBase}/api`);
-
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${apiBase}/api/:path*`,
-      },
-    ];
-  },
+  // /api/* is proxied by app/api/[[...path]]/route.ts (BFF). Nginx should send /api/ to this app, not directly to Go.
 };
 
 export default withNextIntl(nextConfig);
