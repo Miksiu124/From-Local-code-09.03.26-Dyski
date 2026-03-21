@@ -16,12 +16,6 @@
 
 **Szacowany czas:** 5–9 dni roboczych (3 fazy, możliwa równoległość 1+2)
 
-### Status wdrożenia (checklist)
-
-- [x] **Faza 1:** Audyt w `docs/ENDPOINT_AUTH_AUDIT.md`; poprawka IDOR w `StreamPurchaseStatus` (poll DB z `user_id`).
-- [x] **Faza 2:** Grupowe limity Redis (`middleware/apiratelimit.go`); wyłączenie: `DISABLE_API_RATE_LIMIT=true`.
-- [x] **Faza 3 (wariant A):** `src/app/api/[[...path]]/route.ts` → Go; nginx `/api/` → frontend; wyjątek regex BLIK → api; usunięte `rewrites` z `next.config.ts`.
-
 ---
 
 ## Stan obecny (audyt)

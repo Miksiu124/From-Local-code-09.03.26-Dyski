@@ -123,12 +123,6 @@ func main() {
 
 	// ── Rate limiter ─────────────────────────────────────────────────────
 	rateLimiter := middleware.NewRateLimiter(redisClient)
-	rlDisabled := cfg.DisableAPIRateLimit
-	publicRL := middleware.APIRateLimitEcho(rateLimiter, "public", 300, 60*1000, rlDisabled)
-	contentRL := middleware.APIRateLimitEcho(rateLimiter, "content", 200, 60*1000, rlDisabled)
-	creditsRL := middleware.APIRateLimitEcho(rateLimiter, "credits", 30, 60*1000, rlDisabled)
-	userRL := middleware.APIRateLimitEcho(rateLimiter, "user", 120, 60*1000, rlDisabled)
-	adminRL := middleware.APIRateLimitEcho(rateLimiter, "admin", 100, 60*1000, rlDisabled)
 
 	// ── Routes ───────────────────────────────────────────────────────────
 	api := e.Group("/api")
@@ -136,7 +130,7 @@ func main() {
 	// Mailer
 	mailService := mailer.New(cfg)
 
-	// Auth routes (public) — granular Redis limits live in auth handlers, not group middleware
+	// Auth routes (public)
 	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient)
 	authGroup := api.Group("/auth")
 	authGroup.POST("/register", authHandler.Register)
@@ -150,45 +144,43 @@ func main() {
 	authGroup.GET("/discord", authHandler.DiscordRedirect)
 	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
 
+	// Models (public)
 	modelsHandler := models.NewHandler(pgPool, cfg, redisClient)
-	contentHandler := content.NewHandler(pgPool, r2Client, cfg, redisClient)
-	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg, r2ProofClient)
-	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient)
-	favoritesHandler := favorites.NewHandler(pgPool)
-	notifHandler := notifications.NewHandler(pgPool, redisClient)
-	userHandler := user.NewHandler(pgPool, mailService)
-	referralHandler := referral.NewHandler(pgPool, cfg, rateLimiter)
-	linksHandler := links.NewHandler(pgPool, cfg)
+	api.GET("/models", modelsHandler.List)
+	api.GET("/models/stats", modelsHandler.GetStats) // Added
+	api.GET("/models/:slug", modelsHandler.GetBySlug)
+	api.GET("/models/:slug/content", modelsHandler.ListContent) // Added pagination endpoint
+	api.GET("/models/:modelId/access", modelsHandler.CheckAccess, authMW.OptionalAuth)
+
+	// Meta & Helpers
 	geoHandler := geo.NewHandler()
+	api.GET("/geo/country", geoHandler.GetUserCountry)
+	api.GET("/countries", modelsHandler.ListCountries)
+	api.GET("/settings/public", modelsHandler.GetPublicSettings)
+	api.GET("/user/access", modelsHandler.GetUserAccess, authMW.OptionalAuth)
 
-	// Public + catalog (rate: public)
-	pub := api.Group("", publicRL)
-	pub.GET("/models", modelsHandler.List)
-	pub.GET("/models/stats", modelsHandler.GetStats)
-	pub.GET("/models/:slug", modelsHandler.GetBySlug)
-	pub.GET("/models/:slug/content", modelsHandler.ListContent)
-	pub.GET("/models/:modelId/access", modelsHandler.CheckAccess, authMW.OptionalAuth)
-	pub.GET("/geo/country", geoHandler.GetUserCountry)
-	pub.GET("/countries", modelsHandler.ListCountries)
-	pub.GET("/settings/public", modelsHandler.GetPublicSettings)
-	pub.GET("/user/access", modelsHandler.GetUserAccess, authMW.OptionalAuth)
-	pub.GET("/public/links/:slug", linksHandler.TrackAndResolveLink)
-	pub.GET("/models/:slug/avatar", contentHandler.ModelAvatar)
-	pub.GET("/models/:slug/header", contentHandler.ModelHeader)
-	pub.GET("/models/:slug/thumbnail", contentHandler.ModelAvatar)
-	pub.GET("/credit-packages", creditsHandler.ListPackages)
-	pub.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
+	// Public Custom Links
+	linksHandler := links.NewHandler(pgPool, cfg)
+	api.GET("/public/links/:slug", linksHandler.TrackAndResolveLink)
 
-	// Content / streaming (rate: content)
-	cont := api.Group("", contentRL)
-	cont.GET("/content/:slug/:contentItemId/details", contentHandler.GetContentDetails, authMW.OptionalAuth)
-	cont.GET("/content/:id/thumbnail", contentHandler.Thumbnail, authMW.OptionalAuth)
-	cont.GET("/content/:id/thumbnail/:filename", contentHandler.Thumbnail, authMW.OptionalAuth)
-	cont.GET("/content/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate, authMW.RequireEmailVerified)
-	cont.GET("/content/:id/segment/:filename", contentHandler.Segment)
+	// Content streaming (requires auth + access)
+	contentHandler := content.NewHandler(pgPool, r2Client, cfg, redisClient)
+	
+	// Model images (public)
+	api.GET("/models/:slug/avatar", contentHandler.ModelAvatar)
+	api.GET("/models/:slug/header", contentHandler.ModelHeader)
+	api.GET("/models/:slug/thumbnail", contentHandler.ModelAvatar)
 
-	// Credits (rate: credits)
-	creditsGroup := api.Group("/credits", creditsRL, authMW.Authenticate)
+	contentGroup := api.Group("/content")
+	contentGroup.GET("/:slug/:contentItemId/details", contentHandler.GetContentDetails, authMW.OptionalAuth)
+	contentGroup.GET("/:id/thumbnail", contentHandler.Thumbnail, authMW.OptionalAuth)
+	contentGroup.GET("/:id/thumbnail/:filename", contentHandler.Thumbnail, authMW.OptionalAuth)
+	contentGroup.GET("/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate, authMW.RequireEmailVerified)
+	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
+
+	// Credits (requires auth)
+	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg, r2ProofClient)
+	creditsGroup := api.Group("/credits", authMW.Authenticate)
 	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase, authMW.RequireEmailVerified)
 	creditsGroup.POST("/validate-promo", creditsHandler.ValidatePromo)
 	creditsGroup.POST("/purchase/:id/proof", creditsHandler.UploadProof, echomw.BodyLimit("12M"))
@@ -197,35 +189,51 @@ func main() {
 	creditsGroup.POST("/purchase/:id/txid", creditsHandler.SubmitTxId)
 	creditsGroup.POST("/purchase/:id/blik", creditsHandler.UpdateBlikCode)
 	creditsGroup.GET("/purchase", creditsHandler.ListPurchases)
-	creditsGroup.GET("/purchase/:id/blik", creditsHandler.BlikWebSocket)
 
-	// User-scoped routes (rate: user)
-	usr := api.Group("", userRL)
-	usr.POST("/purchases", purchasesHandler.Create, authMW.Authenticate, authMW.RequireEmailVerified)
-	usr.GET("/purchases", purchasesHandler.List, authMW.Authenticate)
+	api.GET("/credit-packages", creditsHandler.ListPackages)
 
-	favGroup := api.Group("/favorites", userRL, authMW.Authenticate)
+	// BLIK WebSocket
+	api.GET("/credits/purchase/:id/blik", creditsHandler.BlikWebSocket, authMW.Authenticate)
+
+	// Purchases (requires auth)
+	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient)
+	api.POST("/purchases", purchasesHandler.Create, authMW.Authenticate, authMW.RequireEmailVerified)
+    api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
+
+	// Favorites (requires auth)
+	favoritesHandler := favorites.NewHandler(pgPool)
+	favGroup := api.Group("/favorites", authMW.Authenticate)
 	favGroup.POST("", favoritesHandler.Toggle)
 	favGroup.GET("", favoritesHandler.List)
 	favGroup.GET("/:contentItemId/details", favoritesHandler.GetDetails)
 	favGroup.POST("/check", favoritesHandler.BatchCheck)
 
-	notifGroup := api.Group("/notifications", userRL, authMW.Authenticate)
+	// Notifications (requires auth)
+	notifHandler := notifications.NewHandler(pgPool, redisClient)
+	notifGroup := api.Group("/notifications", authMW.Authenticate)
 	notifGroup.GET("", notifHandler.List)
 	notifGroup.GET("/stream", notifHandler.Stream)
 	notifGroup.PATCH("", notifHandler.MarkAllRead)
 
-	usr.GET("/user/balance", userHandler.GetBalance, authMW.Authenticate)
-	usr.GET("/user/profile", userHandler.GetProfile, authMW.Authenticate)
-	usr.PATCH("/user/profile", userHandler.UpdateProfile, authMW.Authenticate)
-	usr.PATCH("/user/email", userHandler.UpdateEmail, authMW.Authenticate)
-	usr.PATCH("/user/password", userHandler.UpdatePassword, authMW.Authenticate)
-	usr.PATCH("/user/autoplay", userHandler.UpdateAutoplay, authMW.Authenticate)
-	usr.GET("/user/preferences", userHandler.GetPreferences, authMW.Authenticate)
-	usr.GET("/referral/me", referralHandler.GetMe, authMW.Authenticate)
+	// User (requires auth)
+	userHandler := user.NewHandler(pgPool, mailService)
+	api.GET("/user/balance", userHandler.GetBalance, authMW.Authenticate)
+	api.GET("/user/profile", userHandler.GetProfile, authMW.Authenticate)
+	api.PATCH("/user/profile", userHandler.UpdateProfile, authMW.Authenticate)
+	api.PATCH("/user/email", userHandler.UpdateEmail, authMW.Authenticate)
+	api.PATCH("/user/password", userHandler.UpdatePassword, authMW.Authenticate)
+	api.PATCH("/user/autoplay", userHandler.UpdateAutoplay, authMW.Authenticate)
+	api.GET("/user/preferences", userHandler.GetPreferences, authMW.Authenticate)
+
+	// Referral (requires auth)
+	referralHandler := referral.NewHandler(pgPool, cfg, rateLimiter)
+	api.GET("/referral/me", referralHandler.GetMe, authMW.Authenticate)
+
+	// Public referral link tracking (no auth) - /r/[code] redirects here
+	api.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
-	adminGroup := api.Group("/admin", adminRL, authMW.Authenticate, adminMW.RequireAdmin)
+	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
 	adminHandler := admin.NewHandler(pgPool, r2Client, r2ProofClient, cfg, redisClient, contentService, mailService)
 
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)

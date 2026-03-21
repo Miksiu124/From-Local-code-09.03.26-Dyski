@@ -29,8 +29,6 @@ type Config struct {
 
 	// Security (optional, see SECURITY_AUDIT.md)
 	DisableBearerAuth bool // if true, only accept cookie (no Authorization: Bearer) — reduces token leakage risk
-	// DisableAPIRateLimit: when true, skips Redis group rate limits on /api (auth handler limits still apply)
-	DisableAPIRateLimit bool
 
 	// R2 / S3
 	R2AccountID       string
@@ -86,7 +84,6 @@ func Load() (*Config, error) {
 		JWTExpirySecs:         resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
 		SessionTokenTTL:       resolveSessionTTL(),
 		DisableBearerAuth:     getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "true" || getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "1",
-		DisableAPIRateLimit:   getEnvOrDefault("DISABLE_API_RATE_LIMIT", "") == "true" || getEnvOrDefault("DISABLE_API_RATE_LIMIT", "") == "1",
 		R2AccountID:           getEnvOrDefault("R2_ACCOUNT_ID", ""),
 		R2AccessKeyID:         requireEnv("R2_ACCESS_KEY_ID"),
 		R2SecretAccessKey:     requireEnv("R2_SECRET_ACCESS_KEY"),

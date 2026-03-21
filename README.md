@@ -461,9 +461,7 @@ docker compose down -v
 
 ## API Overview
 
-In production (nginx), browser traffic to `/api/*` hits **Next.js** first (`app/api/[[...path]]/route.ts`), which proxies to the Go API on the Docker network. The Go service is not exposed on the public `/api` path. **Exception:** BLIK WebSocket `GET /api/credits/purchase/:id/blik` is matched by nginx and sent **directly** to Go (WS upgrade). See `docs/ENDPOINT_AUTH_AUDIT.md` and `docs/SECURITY_ARCHITECTURE_ACTION_PLAN.md`.
-
-The Go backend implements the RESTful API at `/api/`. Key endpoint groups:
+The Go backend exposes a RESTful API at `/api/`. Key endpoint groups:
 
 - **Auth** `/api/auth/*` — register, login, logout, me, verify-email, resend-verification, forgot/reset-password, Discord OAuth
 - **Models** `/api/models/*` — browse models, content lists, public settings
