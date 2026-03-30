@@ -11,6 +11,7 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/thumbnailpub"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -61,6 +62,11 @@ func (h *Handler) headerURL(folderName string) string {
 		return ""
 	}
 	return fmt.Sprintf("%s/avatars/%s_header.webp", base, folderName)
+}
+
+// contentThumbnailCDNUrl returns a direct R2 public URL when R2_PUBLIC_URL is set and a canonical key exists.
+func (h *Handler) contentThumbnailCDNUrl(thumbnailPath, hlsFolderPath *string) string {
+	return thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, thumbnailPath, hlsFolderPath)
 }
 
 // List models with cursor pagination, search, and country filter
@@ -255,9 +261,9 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	model.AvatarURL = h.avatarURL(model.FolderName)
 	model.HeaderURL = h.headerURL(model.FolderName)
 
-	// Get content items
+	// Get content items (paths for CDN thumbnail URLs — same row, no extra queries)
 	rows, err := h.db.Query(ctx, `
-		SELECT id, content_type, duration
+		SELECT id, content_type, duration, thumbnail_path, hls_folder_path
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 		ORDER BY created_at ASC
@@ -268,19 +274,22 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	defer rows.Close()
 
 	type ContentItem struct {
-		ID          string `json:"id"`
-		ContentType string `json:"contentType"`
-		Duration    *int   `json:"duration"`
+		ID           string `json:"id"`
+		ContentType  string `json:"contentType"`
+		Duration     *int   `json:"duration"`
+		ThumbnailURL string `json:"thumbnailUrl,omitempty"`
 	}
 
 	var contentItems []ContentItem
 	for rows.Next() {
 		var ci ContentItem
 		var duration *int
-		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration); err != nil {
+		var thumbPath, hlsPath *string
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath); err != nil {
 			continue
 		}
 		ci.Duration = duration
+		ci.ThumbnailURL = h.contentThumbnailCDNUrl(thumbPath, hlsPath)
 		contentItems = append(contentItems, ci)
 	}
 
@@ -343,9 +352,9 @@ func (h *Handler) ListContent(c echo.Context) error {
 		}
 	}
 
-	// 2. Build Query
+	// 2. Build Query (thumbnail_path + hls_folder_path: one round-trip for CDN URLs)
 	query := `
-		SELECT id, content_type, duration
+		SELECT id, content_type, duration, thumbnail_path, hls_folder_path
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 	`
@@ -394,19 +403,22 @@ func (h *Handler) ListContent(c echo.Context) error {
 	defer rows.Close()
 
 	type ContentItem struct {
-		ID          string `json:"id"`
-		ContentType string `json:"contentType"`
-		Duration    *int   `json:"duration"`
+		ID           string `json:"id"`
+		ContentType  string `json:"contentType"`
+		Duration     *int   `json:"duration"`
+		ThumbnailURL string `json:"thumbnailUrl,omitempty"`
 	}
 
 	var items []ContentItem
 	for rows.Next() {
 		var ci ContentItem
 		var duration *int
-		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration); err != nil {
+		var thumbPath, hlsPath *string
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath); err != nil {
 			continue
 		}
 		ci.Duration = duration
+		ci.ThumbnailURL = h.contentThumbnailCDNUrl(thumbPath, hlsPath)
 		items = append(items, ci)
 	}
 

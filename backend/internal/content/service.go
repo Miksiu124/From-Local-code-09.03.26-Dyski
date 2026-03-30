@@ -87,8 +87,68 @@ func playlistImportPriority(base string) int {
 	return 0
 }
 
+// parseSourceSegmentUID extracts the video id from an R2 path segment:
+//   xyz_source → xyz
+//   xyz_source (1) → xyz   (Windows duplicate folder)
+//   xyz_source - Copy → xyz, xyz_source - Copy (2) → xyz   (English Windows)
+func parseSourceSegmentUID(segment string) (uid string, ok bool) {
+	const marker = "_source"
+	idx := strings.LastIndex(segment, marker)
+	if idx <= 0 {
+		return "", false
+	}
+	rest := segment[idx+len(marker):]
+	if rest == "" {
+		return segment[:idx], true
+	}
+	if strings.HasPrefix(rest, " (") && strings.HasSuffix(rest, ")") && len(rest) >= 4 {
+		num := rest[2 : len(rest)-1]
+		for _, c := range num {
+			if c < '0' || c > '9' {
+				return "", false
+			}
+		}
+		return segment[:idx], true
+	}
+	if parseSourceSegmentCopySuffix(rest) {
+		return segment[:idx], true
+	}
+	return "", false
+}
+
+// parseSourceSegmentCopySuffix is true for English " - Copy" / " - Copy (2)" or Polish " - kopia" / " - kopia (2)" after _source.
+func parseSourceSegmentCopySuffix(rest string) bool {
+	for _, suf := range []string{" - Copy", " - kopia"} {
+		if rest == suf {
+			return true
+		}
+		if strings.HasPrefix(rest, suf+" (") && strings.HasSuffix(rest, ")") && len(rest) > len(suf)+3 {
+			num := rest[len(suf)+2 : len(rest)-1]
+			for _, c := range num {
+				if c < '0' || c > '9' {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func hlsFolderIsWindowsDuplicateVariant(hlsFolder string) bool {
+	if strings.Contains(hlsFolder, "_source (") {
+		return true
+	}
+	for _, s := range []string{"_source - Copy", "_source - kopia"} {
+		if strings.Contains(hlsFolder, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseVideoM3U8Key detects an HLS entry playlist for import.
-// unique_id comes from the path segment ending with _source (e.g. abc123_source).
+// unique_id comes from the path segment …_source or …_source (N) (e.g. abc123_source).
 // hls_folder_path is the directory containing the .m3u8 file (supports nested layouts like …_source/hls/master.m3u8).
 func parseVideoM3U8Key(key string) (uniqueID, hlsFolder string, ok bool) {
 	if !strings.HasSuffix(key, ".m3u8") {
@@ -103,17 +163,15 @@ func parseVideoM3U8Key(key string) (uniqueID, hlsFolder string, ok bool) {
 		return "", "", false
 	}
 	sourceIdx := -1
+	var uid string
 	for i := len(parts) - 2; i >= 0; i-- {
-		if strings.HasSuffix(parts[i], "_source") {
+		if u, ok := parseSourceSegmentUID(parts[i]); ok {
 			sourceIdx = i
+			uid = u
 			break
 		}
 	}
-	if sourceIdx < 0 {
-		return "", "", false
-	}
-	uid := strings.TrimSuffix(parts[sourceIdx], "_source")
-	if uid == "" {
+	if sourceIdx < 0 || uid == "" {
 		return "", "", false
 	}
 	hls := strings.Join(parts[:len(parts)-1], "/")
@@ -212,7 +270,10 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 			base := key[strings.LastIndex(key, "/")+1:]
 			pri := playlistImportPriority(base)
 			cur, exists := videoBest[uniqueID]
-			if !exists || pri > cur.priority {
+			preferCanonical := pri == cur.priority && exists &&
+				!hlsFolderIsWindowsDuplicateVariant(hlsFolder) &&
+				hlsFolderIsWindowsDuplicateVariant(cur.hlsFolder)
+			if !exists || pri > cur.priority || preferCanonical {
 				videoBest[uniqueID] = videoPick{key: key, hlsFolder: hlsFolder, priority: pri}
 			}
 			continue
@@ -252,7 +313,10 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 		_, err := s.db.Exec(ctx, `
 			INSERT INTO content_items (model_id, unique_id, content_type, hls_master_path, hls_folder_path, is_active, is_hidden)
 			VALUES ($1, $2, 'VIDEO', $3, $4, true, false)
-			ON CONFLICT (unique_id) DO UPDATE SET hls_master_path = $3, hls_folder_path = $4
+			ON CONFLICT (unique_id) DO UPDATE SET
+				model_id = EXCLUDED.model_id,
+				hls_master_path = EXCLUDED.hls_master_path,
+				hls_folder_path = EXCLUDED.hls_folder_path
 		`, modelID, uid, pick.key, pick.hlsFolder)
 		if err != nil {
 			log.Printf("[Sync] VIDEO insert/update failed model=%s key=%s: %v", folderName, pick.key, err)
@@ -262,9 +326,8 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 		go s.populateVideoDuration(context.Background(), uid, pick.key)
 	}
 
-	// Cleanup: remove duplicate content items for this model.
-	// Keep the newest entry (by created_at) for each hls_folder_path (videos)
-	// and each thumbnail_path (photos).
+	// Cleanup: remove duplicate rows for this model (same R2 key, different ids — e.g. legacy imports).
+	// Keep the newest entry (by created_at) per hls_folder_path (VIDEO) and per thumbnail_path (PHOTO).
 	_, _ = s.db.Exec(ctx, `
 		DELETE FROM content_items ci
 		WHERE ci.model_id = $1
@@ -275,6 +338,22 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 			WHERE ci2.model_id = ci.model_id
 			AND ci2.hls_folder_path = ci.hls_folder_path
 			AND ci2.content_type = 'VIDEO'
+			AND ci2.id != ci.id
+			AND ci2.created_at > ci.created_at
+		)
+	`, modelID)
+
+	_, _ = s.db.Exec(ctx, `
+		DELETE FROM content_items ci
+		WHERE ci.model_id = $1
+		AND ci.content_type = 'PHOTO'
+		AND ci.thumbnail_path IS NOT NULL
+		AND ci.thumbnail_path <> ''
+		AND EXISTS (
+			SELECT 1 FROM content_items ci2
+			WHERE ci2.model_id = ci.model_id
+			AND ci2.content_type = 'PHOTO'
+			AND ci2.thumbnail_path = ci.thumbnail_path
 			AND ci2.id != ci.id
 			AND ci2.created_at > ci.created_at
 		)

@@ -7,7 +7,7 @@ compatibility_date = "2024-01-01"
 binding = "FILES"
 bucket_name = "files"
 
-# Custom domain — Worker serwuje tylko avatars/*, reszta 403
+# Custom domain — Worker: avatars + treści modeli (zdjęcia/HLS); zablokowane m.in. proofs/*
 [[routes]]
 pattern = "files.dyskiof.net"
 custom_domain = true

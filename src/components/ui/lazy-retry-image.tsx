@@ -92,7 +92,7 @@ export function LazyRetryImage({
   }, [rootMargin, tryLoad]);
 
   return (
-    <div ref={containerRef} className="absolute inset-0">
+    <div ref={containerRef} className="absolute inset-0 min-h-0 min-w-0">
       {shouldLoad ? (
         <RetryImage
           src={src}

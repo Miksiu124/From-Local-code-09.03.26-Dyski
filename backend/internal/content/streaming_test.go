@@ -153,3 +153,27 @@ func TestRewritePlaylist_CommentsPreserved(t *testing.T) {
 		t.Error("#EXT-X-ENDLIST comment not preserved")
 	}
 }
+
+func TestRewritePlaylistWithPresignedSegments_PublicCDN(t *testing.T) {
+	playlist := "#EXTM3U\nsegment_000.ts\n"
+	out := RewritePlaylistWithPresignedSegments(
+		playlist,
+		"folder/vid_source",
+		"https://example.com/api",
+		"user-1",
+		"content-1",
+		testSecret,
+		3600,
+		true,
+		"https://files.example.com",
+		false,
+		func(string) (string, error) {
+			t.Fatal("presigner must not run when public CDN is on")
+			return "", nil
+		},
+	)
+	wantSub := "https://files.example.com/folder/vid_source/segment_000.ts"
+	if !strings.Contains(out, wantSub) {
+		t.Fatalf("expected public URL in output, got:\n%s", out)
+	}
+}

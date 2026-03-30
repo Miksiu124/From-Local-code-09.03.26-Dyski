@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -15,11 +16,14 @@ import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/user/video-player";
 import { RetryImage } from "@/components/ui/retry-image";
 import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
+import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
 
 interface ContentItem {
   id: string;
   contentType: string;
   duration: number | null;
+  /** Direct R2/CDN URL when backend sets R2_PUBLIC_URL; otherwise use /api/content/.../thumbnail */
+  thumbnailUrl?: string | null;
 }
 
 type ContentFilter = "ALL" | "VIDEO" | "PHOTO" | "FAVORITES";
@@ -157,6 +161,7 @@ export function ModelDetail({
           id: data.contentItem.id,
           contentType: data.contentItem.contentType,
           duration: data.contentItem.duration ?? null,
+          thumbnailUrl: data.contentItem.thumbnailUrl ?? null,
         });
       })
       .catch(() => {});
@@ -243,6 +248,11 @@ export function ModelDetail({
       : null;
 
   const overlayRef = useRef<HTMLDivElement>(null);
+  /** Gate portal until client — avoids SSR/hydration mismatch; useLayoutEffect runs before paint. */
+  const [overlayPortalReady, setOverlayPortalReady] = useState(false);
+  useLayoutEffect(() => {
+    setOverlayPortalReady(true);
+  }, []);
 
   const buildModelUrl = useCallback((opts: { filter?: ContentFilter; sort?: SortOrder; view?: string | null }) => {
     const params = new URLSearchParams();
@@ -413,10 +423,16 @@ export function ModelDetail({
       const res = await fetch(`/api/favorites?${params.toString()}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        const mapped: ContentItem[] = (data.items || []).map((i: { contentItemId: string; contentType: string; duration: number | null }) => ({
+        const mapped: ContentItem[] = (data.items || []).map((i: {
+          contentItemId: string;
+          contentType: string;
+          duration: number | null;
+          thumbnailUrl?: string | null;
+        }) => ({
           id: i.contentItemId,
           contentType: i.contentType,
           duration: i.duration,
+          thumbnailUrl: i.thumbnailUrl ?? null,
         }));
         if (append) {
           setFavoritesItems((prev) => [...prev, ...mapped]);
@@ -690,6 +706,26 @@ export function ModelDetail({
   };
 
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const sentinelElRef = useRef<HTMLDivElement | null>(null);
+
+  const attachSentinelObserver = useCallback(() => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    const node = sentinelElRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMoreRef.current();
+        }
+      },
+      { root: null, rootMargin: "200px" }
+    );
+    observer.observe(node);
+    observerRef.current = observer;
+  }, []);
 
   // Prevent empty state flash during fast scroll / dev tools viewport changes.
   // Only show empty state after we're confident (debounced) to avoid brief "Pusto"-like glitches.
@@ -722,23 +758,13 @@ export function ModelDetail({
     };
   }, [displayItems.length, loadingMore, isFiltering]);
 
-  const sentinelCallbackRef = useCallback((node: HTMLDivElement | null) => {
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-      observerRef.current = null;
-    }
-    if (!node) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMoreRef.current();
-        }
-      },
-      { root: null, rootMargin: "200px" }
-    );
-    observer.observe(node);
-    observerRef.current = observer;
-  }, []);
+  const sentinelCallbackRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      sentinelElRef.current = node;
+      attachSentinelObserver();
+    },
+    [attachSentinelObserver]
+  );
 
   useEffect(() => {
     return () => {
@@ -778,6 +804,16 @@ export function ModelDetail({
       if (scrollRaf != null) cancelAnimationFrame(scrollRaf);
     };
   }, [checkAtBottomAndLoad]);
+
+  // Resize (DevTools dock, window drag): IO can miss intersections; re-attach + bottom check.
+  useEffect(() => {
+    const onResize = () => {
+      attachSentinelObserver();
+      requestAnimationFrame(() => checkAtBottomAndLoad());
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [attachSentinelObserver, checkAtBottomAndLoad]);
 
   // displayItems and displayTotal are hoisted above (near overlay nav computation)
 
@@ -996,20 +1032,22 @@ export function ModelDetail({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5 items-start [grid-auto-rows:minmax(0,auto)]">
             {displayItems.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                className={cn("cursor-pointer group text-left w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : "")}
+                className={cn("cursor-pointer group text-left w-full self-start rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : "")}
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
-                <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300">
+                {/* h-0 + % padding: height tied only to column width — avoids aspect-ratio + absolute img blow-ups after resize */}
+                <div className="relative isolate w-full h-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] pb-[133.333333%] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300 [contain:layout_paint]">
                   {hasAccess ? (
                     <>
                       <LazyRetryImage
-                        src={`/api/content/${item.id}/thumbnail`}
+                        src={contentThumbnailSrc(item.id, item.thumbnailUrl)}
+                        fallbackSrc={contentThumbnailProxySrc(item.id)}
                         alt={item.contentType === "VIDEO" ? t("video") : t("photo")}
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
                         rootMargin="1200px"
@@ -1109,11 +1147,14 @@ export function ModelDetail({
         </>
       )}
 
-      {/* ── Fullscreen content overlay ── */}
-      {selectedItemId && selectedItem && (
+      {/* ── Fullscreen overlay → document.body so position:fixed is never trapped by ancestor transform/filter ── */}
+      {overlayPortalReady &&
+        selectedItemId &&
+        selectedItem &&
+        createPortal(
         <div
           ref={overlayRef}
-          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col"
+          className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-sm flex flex-col"
           // Fix #6: Mobile swipe support
           onTouchStart={(e) => {
             const touch = e.touches[0];
@@ -1256,7 +1297,8 @@ export function ModelDetail({
                 </div>
               ) : (
                 <RetryImage
-                  src={`/api/content/${selectedItemId}/thumbnail`}
+                  src={contentThumbnailSrc(selectedItemId, selectedItem.thumbnailUrl)}
+                  fallbackSrc={contentThumbnailProxySrc(selectedItemId)}
                   alt=""
                   className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
                   onContextMenu={(e) => e.preventDefault()}
@@ -1280,8 +1322,9 @@ export function ModelDetail({
             </span>
             <span className="sm:hidden">{t("swipeToNavigate")}</span>
           </p>
-        </div>
-      )}
+        </div>,
+        document.body
+        )}
 
     </>
   );

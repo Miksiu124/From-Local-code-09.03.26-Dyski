@@ -16,6 +16,7 @@ interface ContentDetailsResponse {
     thumbnailPath: string | null;
     hlsMasterPath: string | null;
     duration: number | null;
+    thumbnailUrl?: string;
   };
   hasAccess: boolean;
   prevItemId: string | null;
@@ -55,6 +56,7 @@ export default async function FavoritesContentViewPage({ params, searchParams }:
         modelSlug={data.model.folderName}
         prevItemId={data.prevItemId}
         nextItemId={data.nextItemId}
+        thumbnailUrl={data.contentItem.thumbnailUrl ?? null}
         backHref={backHref}
         backLabel="Back to Favorites"
         navBasePath="/favorites"

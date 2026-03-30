@@ -12,6 +12,7 @@ http {
     client_max_body_size 50M;
 
     # --- RATE LIMITING (DDoS / connection exhaustion protection) ---
+    # Default API: 50 r/s, burst 100 + nodelay => 101. równoległych GET od razu = 429 dla reszty (np. siatka miniaturek).
     limit_req_zone $binary_remote_addr zone=req_limit:10m rate=50r/s;
     limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
     limit_req_status 429;
@@ -98,6 +99,27 @@ http {
         ssl_session_timeout 1d;
         ssl_session_cache shared:SSL:10m;
         ssl_session_tickets off;
+
+        # --- CONTENT THUMBNAILS (galerie: wiele równoległych GET na jedną sesję) ---
+        # Bez limit_req/limit_conn: unika 429 przy dużej siatce. Ryzyko: scraping / koszt R2+CPU — łagodź Cloudflare
+        # Rate Limiting, WAF, ewentualnie cache na CDN; pozostałe /api/ nadal objęte limitami.
+        location ~* ^/api/content/[^/]+/thumbnail(/.*)?$ {
+            proxy_pass http://api:8080;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 86400s;
+            proxy_send_timeout 86400s;
+            proxy_buffering off;
+            proxy_request_buffering off;
+            proxy_hide_header X-Frame-Options;
+            proxy_hide_header Strict-Transport-Security;
+            proxy_hide_header Referrer-Policy;
+            proxy_hide_header X-Powered-By;
+        }
 
         # --- BACKEND API ---
         location /api/ {

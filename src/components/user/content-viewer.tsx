@@ -8,6 +8,8 @@ import { ArrowLeft, Heart, ChevronLeft, ChevronRight, Loader2 } from "lucide-rea
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
+import { RetryImage } from "@/components/ui/retry-image";
 
 const VideoPlayer = dynamic(
   () => import("@/components/user/video-player").then((m) => ({ default: m.VideoPlayer })),
@@ -28,6 +30,8 @@ interface ContentViewerProps {
   modelSlug: string;
   prevItemId: string | null;
   nextItemId: string | null;
+  /** CDN thumbnail from API when R2_PUBLIC_URL is set */
+  thumbnailUrl?: string | null;
   backHref?: string;
   backLabel?: string;
   navBasePath?: string;
@@ -41,6 +45,7 @@ interface DisplayedState {
   modelName: string;
   prevItemId: string | null;
   nextItemId: string | null;
+  thumbnailUrl?: string | null;
 }
 
 export function ContentViewer({
@@ -50,6 +55,7 @@ export function ContentViewer({
   modelSlug,
   prevItemId,
   nextItemId,
+  thumbnailUrl: initialThumbnailUrl,
   backHref: backHrefProp,
   backLabel,
   navBasePath,
@@ -121,6 +127,8 @@ export function ContentViewer({
   const effectiveContentType = displayedState?.contentType ?? contentType;
   const effectivePrevId = displayedState?.prevItemId ?? prevItemId;
   const effectiveNextId = displayedState?.nextItemId ?? nextItemId;
+  const effectiveThumbUrl =
+    displayedState?.thumbnailUrl ?? initialThumbnailUrl ?? null;
 
   useEffect(() => {
     if (displayedState) setDisplayedState(null);
@@ -188,6 +196,7 @@ export function ContentViewer({
           modelName: data.model.name,
           prevItemId: data.prevItemId,
           nextItemId: data.nextItemId,
+          thumbnailUrl: data.contentItem.thumbnailUrl ?? null,
         });
         router.replace(targetUrl);
       } catch {
@@ -374,8 +383,9 @@ export function ContentViewer({
             <VideoPlayer contentItemId={effectiveItemId} />
           </div>
         ) : (
-          <img
-            src={`/api/content/${effectiveItemId}/thumbnail`}
+          <RetryImage
+            src={contentThumbnailSrc(effectiveItemId, effectiveThumbUrl)}
+            fallbackSrc={contentThumbnailProxySrc(effectiveItemId)}
             alt={effectiveContentType === "VIDEO" ? t("video") : t("photo")}
             className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
             onContextMenu={(e) => e.preventDefault()}

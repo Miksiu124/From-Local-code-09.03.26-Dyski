@@ -18,6 +18,7 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/models"
+	"content-platform-backend/internal/thumbnailpub"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -101,6 +102,9 @@ const masterPlaylistCachePrefix = "master_playlist:"
 const thumbnailCacheTTL = 24 * time.Hour
 const thumbnailCachePrefix = "thumb:"
 const thumbnailCacheMaxBytes = 1024 * 1024 // 1MB — VPS 8GB, Redis 1GB
+
+// Long browser/CDN TTL for bytes proxied from R2; no immutable (same API URL can get new file at same key).
+const cacheControlProxiedR2Image = "public, max-age=2592000, stale-while-revalidate=86400"
 
 type Handler struct {
 	db    *pgxpool.Pool
@@ -191,7 +195,7 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 			if ct == "" {
 				ct = "image/webp"
 			}
-			c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+			c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 			c.Response().Header().Set("Content-Type", ct)
 			c.Response().WriteHeader(http.StatusOK)
 			_, _ = c.Response().Writer.Write(cached)
@@ -221,7 +225,7 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 	}
 
 	// 4. Serve to client
-	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = c.Response().Writer.Write(data)
@@ -385,7 +389,8 @@ func (h *Handler) Playlist(c echo.Context) error {
 		presigner := func(key string) (string, error) {
 			return h.r2.PresignGetObject(ctx, key, 1*time.Hour)
 		}
-		usePresigned := !h.cfg.HLSUseAPISegments
+		usePublicCDN := h.cfg.HLSUsePublicCDNSegments && h.cfg.R2PublicURL != ""
+		usePresigned := !h.cfg.HLSUseAPISegments && !usePublicCDN
 		rewritten = RewritePlaylistWithPresignedSegments(
 			playlistContent,
 			*hlsFolderPath,
@@ -394,6 +399,8 @@ func (h *Handler) Playlist(c echo.Context) error {
 			contentItemID,
 			h.cfg.StreamingTokenSecret,
 			h.cfg.StreamingTokenTTL,
+			usePublicCDN,
+			h.cfg.R2PublicURL,
 			usePresigned,
 			presigner,
 		)
@@ -485,13 +492,13 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 
 	// Find content item
 	var ciID, ciType, ciCreatedAt string
-	var ciThumbnail, ciHlsMaster *string
+	var ciThumbnail, ciHlsFolder, ciHlsMaster *string
 	var ciDuration *int
 	var ciModelID string
 	err = h.db.QueryRow(ctx, `
-		SELECT id, content_type, thumbnail_path, hls_master_path, duration, model_id, created_at::text
+		SELECT id, content_type, thumbnail_path, hls_folder_path, hls_master_path, duration, model_id, created_at::text
 		FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false
-	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsMaster, &ciDuration, &ciModelID, &ciCreatedAt)
+	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsFolder, &ciHlsMaster, &ciDuration, &ciModelID, &ciCreatedAt)
 	if err != nil || ciModelID != modelID {
 		return common.NotFound(c, "Content item not found")
 	}
@@ -516,10 +523,12 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 		ORDER BY created_at DESC LIMIT 1
 	`, modelID, ciCreatedAt).Scan(&nextID)
 
+	thumbURL := thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, ciThumbnail, ciHlsFolder)
 	contentItem := map[string]interface{}{
-		"id":          ciID,
-		"contentType": ciType,
-		"duration":    ciDuration,
+		"id":            ciID,
+		"contentType":   ciType,
+		"duration":      ciDuration,
+		"thumbnailUrl":  thumbURL,
 	}
 
 	return common.Success(c, map[string]interface{}{
@@ -591,7 +600,7 @@ func (h *Handler) ModelAvatar(c echo.Context) error {
 	defer body.Close()
 
 	// Set cache headers
-	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = io.Copy(c.Response().Writer, body)
@@ -635,7 +644,7 @@ func (h *Handler) ModelHeader(c echo.Context) error {
 	}
 	defer body.Close()
 
-	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = io.Copy(c.Response().Writer, body)

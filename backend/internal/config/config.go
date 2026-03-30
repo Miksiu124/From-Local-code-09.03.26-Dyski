@@ -47,7 +47,9 @@ type Config struct {
 	// HLS Streaming
 	StreamingTokenSecret string
 	StreamingTokenTTL    int  // seconds
-	HLSUseAPISegments   bool // if true, proxy segments via API (skip presigned URLs) — use when R2 CORS fails
+	HLSUseAPISegments    bool // if true, proxy segments via API (skip presigned/public URLs) — use when R2 CORS fails
+	// HLSUsePublicCDNSegments: rewrite .ts/.m4s/.mp4 lines to R2_PUBLIC_URL/... (no presign). Unset env defaults to on when R2PublicURL is set.
+	HLSUsePublicCDNSegments bool
 
 	// Admin
 	AdminEmails []string
@@ -112,6 +114,21 @@ func Load() (*Config, error) {
 	// Normalize URLs: strip trailing slashes to prevent double-slash bugs
 	cfg.FrontendURL = strings.TrimRight(cfg.FrontendURL, "/")
 	cfg.DiscordRedirectURI = strings.TrimRight(cfg.DiscordRedirectURI, "/")
+	cfg.R2PublicURL = strings.TrimRight(cfg.R2PublicURL, "/")
+
+	// HLS segments: point at R2_PUBLIC_URL (Worker) when set; presign if public URL empty.
+	// HLS_USE_PUBLIC_CDN_SEGMENTS=0 keeps presigned URLs even when R2_PUBLIC_URL is set.
+	switch strings.ToLower(strings.TrimSpace(getEnvOrDefault("HLS_USE_PUBLIC_CDN_SEGMENTS", ""))) {
+	case "true", "1", "yes":
+		cfg.HLSUsePublicCDNSegments = true
+	case "false", "0", "no":
+		cfg.HLSUsePublicCDNSegments = false
+	default:
+		cfg.HLSUsePublicCDNSegments = cfg.R2PublicURL != ""
+	}
+	if cfg.HLSUseAPISegments {
+		cfg.HLSUsePublicCDNSegments = false
+	}
 
 	// R2 endpoint fallback
 	if cfg.R2Endpoint == "" && cfg.R2AccountID != "" {

@@ -4,19 +4,22 @@ import (
 	"strconv"
 
 	"content-platform-backend/internal/common"
+	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/models"
+	"content-platform-backend/internal/thumbnailpub"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 )
 
 type Handler struct {
-	db *pgxpool.Pool
+	db  *pgxpool.Pool
+	cfg *config.Config
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
+	return &Handler{db: db, cfg: cfg}
 }
 
 type ToggleRequest struct {
@@ -89,6 +92,7 @@ func (h *Handler) List(c echo.Context) error {
 
 	query := `
 		SELECT f.id, f.content_item_id, ci.content_type, ci.duration,
+			   ci.thumbnail_path, ci.hls_folder_path,
 			   m.id AS model_id, m.name AS model_name, m.folder_name, f.created_at::text
 		FROM favorites f
 		JOIN content_items ci ON ci.id = f.content_item_id
@@ -144,6 +148,7 @@ func (h *Handler) List(c echo.Context) error {
 		ContentItemID string  `json:"contentItemId"`
 		ContentType   string  `json:"contentType"`
 		Duration      *int    `json:"duration"`
+		ThumbnailURL  string  `json:"thumbnailUrl,omitempty"`
 		ModelName     string  `json:"modelName"`
 		ModelSlug     string  `json:"modelSlug"`
 		CreatedAt     string  `json:"createdAt"`
@@ -153,10 +158,13 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var item FavItem
 		var modelID string
+		var thumbPath, hlsPath *string
 		if err := rows.Scan(&item.ID, &item.ContentItemID, &item.ContentType, &item.Duration,
+			&thumbPath, &hlsPath,
 			&modelID, &item.ModelName, &item.ModelSlug, &item.CreatedAt); err != nil {
 			continue
 		}
+		item.ThumbnailURL = thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, thumbPath, hlsPath)
 		items = append(items, item)
 	}
 
@@ -221,11 +229,13 @@ func (h *Handler) GetDetails(c echo.Context) error {
 		sort = "newest"
 	}
 
-	// Verify user has favorited this item and get content + model
+	// Verify user has favorited this item and get content + model (+ paths for CDN thumb URL)
 	var ciID, ciType, modelID, modelName, modelFolder, favCreatedAt, favID string
 	var ciDuration *int
+	var thumbPath, hlsPath *string
 	baseQuery := `
 		SELECT ci.id, ci.content_type, ci.duration,
+		       ci.thumbnail_path, ci.hls_folder_path,
 		       m.id, m.name, m.folder_name, f.created_at::text, f.id
 		FROM favorites f
 		JOIN content_items ci ON ci.id = f.content_item_id AND ci.is_active = true AND ci.is_hidden = false
@@ -233,7 +243,7 @@ func (h *Handler) GetDetails(c echo.Context) error {
 		WHERE f.user_id = $1 AND f.content_item_id = $2
 	`
 	err := h.db.QueryRow(ctx, baseQuery, userID, contentItemID).Scan(
-		&ciID, &ciType, &ciDuration,
+		&ciID, &ciType, &ciDuration, &thumbPath, &hlsPath,
 		&modelID, &modelName, &modelFolder, &favCreatedAt, &favID,
 	)
 	if err != nil {
@@ -309,6 +319,7 @@ func (h *Handler) GetDetails(c echo.Context) error {
 			ORDER BY f.created_at DESC, f.id DESC LIMIT 1`, userID, contentItemID, favID).Scan(&nextID)
 	}
 
+	thumbURL := thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, thumbPath, hlsPath)
 	return common.Success(c, map[string]interface{}{
 		"model": map[string]interface{}{
 			"id":         modelID,
@@ -316,9 +327,10 @@ func (h *Handler) GetDetails(c echo.Context) error {
 			"folderName": modelFolder,
 		},
 		"contentItem": map[string]interface{}{
-			"id":          ciID,
-			"contentType": ciType,
-			"duration":    ciDuration,
+			"id":            ciID,
+			"contentType":   ciType,
+			"duration":      ciDuration,
+			"thumbnailUrl":  thumbURL,
 		},
 		"hasAccess":  hasAccess,
 		"prevItemId": prevID,

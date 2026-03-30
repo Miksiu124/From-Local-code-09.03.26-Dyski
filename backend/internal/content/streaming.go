@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"content-platform-backend/internal/thumbnailpub"
 )
 
 var resolutionFromFilename = regexp.MustCompile(`(\d{3,4})p`)
@@ -110,10 +112,12 @@ func RewritePlaylist(playlistContent, baseURL, userID, contentItemID, tokenSecre
 	return strings.Join(result, "\n")
 }
 
-// RewritePlaylistWithPresignedSegments rewrites .ts/.m4s/.mp4 to R2 presigned URLs.
-// .m3u8 (variant playlists) stay as API URLs (auth required). Segments bypass API.
-// usePresigned: if false, always use API URLs (for debugging or when R2 CORS fails).
-func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseURL, userID, contentItemID, tokenSecret string, tokenTTL int, usePresigned bool, presigner func(key string) (string, error)) string {
+// RewritePlaylistWithPresignedSegments rewrites .ts/.m4s/.mp4 to public CDN URLs, presigned URLs, or API URLs.
+// .m3u8 (variant playlists) stay as API URLs (auth required).
+// usePublicCDN + publicCDNBase: stable https://R2_PUBLIC_URL/key URLs (no presign).
+// usePresigned: R2 presigned GET when public CDN is off.
+// If both off, segment lines use API proxy URLs.
+func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseURL, userID, contentItemID, tokenSecret string, tokenTTL int, usePublicCDN bool, publicCDNBase string, usePresigned bool, presigner func(key string) (string, error)) string {
 	lines := strings.Split(playlistContent, "\n")
 	var result []string
 
@@ -149,14 +153,22 @@ func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseUR
 			continue
 		}
 
-		if usePresigned && (strings.HasSuffix(segmentPath, ".ts") || strings.HasSuffix(segmentPath, ".m4s") || strings.HasSuffix(segmentPath, ".mp4")) {
+		if strings.HasSuffix(segmentPath, ".ts") || strings.HasSuffix(segmentPath, ".m4s") || strings.HasSuffix(segmentPath, ".mp4") {
 			key := strings.TrimSuffix(hlsFolderPath, "/") + "/" + segmentPath
-			presignedURL, err := presigner(key)
-			if err == nil {
-				result = append(result, presignedURL)
-				continue
+			if usePublicCDN && publicCDNBase != "" {
+				if pub := thumbnailpub.PublicObjectURL(publicCDNBase, key); pub != "" {
+					result = append(result, pub)
+					continue
+				}
 			}
-			log.Printf("[HLS] presign failed for %q, falling back to API: %v", key, err)
+			if usePresigned {
+				presignedURL, err := presigner(key)
+				if err == nil {
+					result = append(result, presignedURL)
+					continue
+				}
+				log.Printf("[HLS] presign failed for %q, falling back to API: %v", key, err)
+			}
 		}
 		// .m3u8 or presign failed: use absolute API URL
 		token := GenerateStreamingToken(tokenSecret, userID, contentItemID, segmentPath, tokenTTL)
