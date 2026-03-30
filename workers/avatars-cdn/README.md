@@ -11,8 +11,8 @@ Cloudflare Worker na **tym samym** bucketcie R2 co backend (`files`). Serwuje:
 - **Zablokowany prefix `proofs/`** — dowody płatności nie są serwowane po HTTP
 - Tylko **GET / HEAD / OPTIONS**
 - **HMAC:** `?token=` (hex 64) i `expires=` (Unix sekundy). Treść podpisu: `canonicalR2Key + "\n" + expires` (klucz jak po `pathnameToR2Key`, segmenty URL zdekodowane).
-- **Sesja HLS:** po poprawnym żądaniu z tokenem dla `.m3u8` / `.ts` / `.m4s` Worker ustawia cookie `cv_media_sess` (HttpOnly, Secure, SameSite=None), żeby kolejne żądania do tego samego folderu mogły działać **bez** query (przy `withCredentials` w HLS.js — patrz frontend).
-- **CORS:** `MEDIA_CDN_ALLOWED_ORIGINS` — lista originów (przecinek). Pusta = `*` (bez credentials). Z listą: dopasowanie `Origin` + `Access-Control-Allow-Credentials: true`.
+- **Sesja HLS (opcjonalna):** po poprawnym żądaniu z tokenem Worker może ustawić cookie `cv_media_sess` (HttpOnly, Secure, SameSite=None) na kolejne żądania bez query. Frontend **nie** wysyła `withCredentials` na CDN — każdy segment i tak ma `?token=&expires=` w playliście, więc odtwarzanie nie zależy od tego cookie.
+- **CORS:** `MEDIA_CDN_ALLOWED_ORIGINS` — lista originów (przecinek), np. `https://dyskiof.net,https://www.dyskiof.net`. **W produkcji ustaw zawsze, gdy front woła CDN z `withCredentials` (HLS)** — pusta lista = `Access-Control-Allow-Origin: *`, a przeglądarka **odrzuca** odpowiedź przy credentials (w Network widać 200, a request na czerwono). Z listą: echo `Origin` + `Access-Control-Allow-Credentials: true`.
 - **Wyłączenie gatekeepera:** brak `MEDIA_CDN_SIGNING_SECRET` **lub** `MEDIA_GATEKEEPER_DISABLED=1` → zachowanie legacy (cały bucket publicznie czytelny poza `proofs/`). **Nie stosować w produkcji z treścią płatną.**
 
 ## Backend
@@ -28,6 +28,16 @@ R2_PUBLIC_URL=https://files.dyskiof.net
 ```
 
 Frontend: `NEXT_PUBLIC_MEDIA_HOST=files.dyskiof.net` (lub lista po przecinku) — `next/image` CDN + HLS `withCredentials` na ten host.
+
+## Weryfikacja gatekeepera
+
+- **Incognito**, URL do `.ts` **bez** `?token=&expires=` → oczekiwane **403**. Jeśli pobiera plik, gatekeeper jest **wyłączony** w Workerze.
+- W **DevTools → Network → Response Headers** po deployu tej wersji Workera: nagłówek **`X-CV-Gatekeeper`**
+  - **`off`** — brak sekretu albo `MEDIA_GATEKEEPER_DISABLED=1` → cały bucket (poza `proofs/`) jest publicznie czytelny.
+  - **`on`** — HMAC włączony; bez poprawnego query → **403**.
+- Brak nagłówka `X-CV-Gatekeeper` → ruch **nie idzie** przez tego Workera (np. inna trasa DNS / publiczny R2 zamiast custom domain Workera).
+
+**Naprawa:** W Cloudflare → Worker `avatars-cdn` → **Secrets**: ustaw **`MEDIA_CDN_SIGNING_SECRET`** (ta sama wartość co `STREAMING_TOKEN_SECRET` w API). Usuń **`MEDIA_GATEKEEPER_DISABLED`** z vars (jeśli jest). **Deploy** Workera.
 
 ## Deploy
 

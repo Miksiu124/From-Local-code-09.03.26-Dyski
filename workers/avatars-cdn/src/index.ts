@@ -99,6 +99,11 @@ function buildCors(origin: string): Headers {
   return h;
 }
 
+/** DevTools: Response Headers — `off` = public read (no secret or MEDIA_GATEKEEPER_DISABLED). */
+function stampGatekeeper(headers: Headers, gatekeeperOff: boolean): void {
+  headers.set("X-CV-Gatekeeper", gatekeeperOff ? "off" : "on");
+}
+
 const CACHE_M3U8 = "public, max-age=10, stale-while-revalidate=30";
 const CACHE_AVATAR_PREFIX = "public, max-age=2592000";
 const CACHE_IMMUTABLE_YEAR =
@@ -155,7 +160,16 @@ function applyObjectHeaders(
   gatekeeperActive: boolean
 ): void {
   const guessed = contentTypeFromKey(key);
-  if (metaType && metaType !== "application/octet-stream") {
+  const lower = key.toLowerCase();
+  // R2 often stores video/vnd.dlna.mpeg-tts for .ts — prefer standard HLS MIME for players + CORS clients.
+  const forceGuessedForHls =
+    guessed &&
+    (lower.endsWith(".ts") ||
+      lower.endsWith(".m4s") ||
+      lower.endsWith(".m3u8"));
+  if (forceGuessedForHls) {
+    headers.set("Content-Type", guessed);
+  } else if (metaType && metaType !== "application/octet-stream") {
     headers.set("Content-Type", metaType);
   } else if (guessed) {
     headers.set("Content-Type", guessed);
@@ -291,6 +305,15 @@ interface Env {
   MEDIA_GATEKEEPER_DISABLED?: string;
 }
 
+function computeGatekeeperState(env: Env): { secret: string; gatekeeperOff: boolean } {
+  const secret = (env.MEDIA_CDN_SIGNING_SECRET || "").trim();
+  const gatekeeperOff =
+    env.MEDIA_GATEKEEPER_DISABLED === "1" ||
+    env.MEDIA_GATEKEEPER_DISABLED === "true" ||
+    !secret;
+  return { secret, gatekeeperOff };
+}
+
 export default {
   async fetch(
     request: Request,
@@ -299,9 +322,12 @@ export default {
   ): Promise<Response> {
     const allowed = parseAllowedOrigins(env.MEDIA_CDN_ALLOWED_ORIGINS);
     const origin = corsOrigin(request, allowed);
+    const { secret, gatekeeperOff } = computeGatekeeperState(env);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: buildCors(origin) });
+      const oh = buildCors(origin);
+      stampGatekeeper(oh, gatekeeperOff);
+      return new Response(null, { status: 204, headers: oh });
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -312,14 +338,10 @@ export default {
     const r2Key = pathnameToR2Key(url.pathname);
 
     if (!isPathAllowed(r2Key)) {
-      return new Response("Forbidden", { status: 403, headers: buildCors(origin) });
+      const bh = buildCors(origin);
+      stampGatekeeper(bh, gatekeeperOff);
+      return new Response("Forbidden", { status: 403, headers: bh });
     }
-
-    const secret = (env.MEDIA_CDN_SIGNING_SECRET || "").trim();
-    const gatekeeperOff =
-      env.MEDIA_GATEKEEPER_DISABLED === "1" ||
-      env.MEDIA_GATEKEEPER_DISABLED === "true" ||
-      !secret;
 
     const needAuth =
       !gatekeeperOff && !isPublicAvatarPath(r2Key);
@@ -349,7 +371,9 @@ export default {
     }
 
     if (!authorized) {
-      return new Response("Forbidden", { status: 403, headers: buildCors(origin) });
+      const fh = buildCors(origin);
+      stampGatekeeper(fh, gatekeeperOff);
+      return new Response("Forbidden", { status: 403, headers: fh });
     }
 
     const useEdgeCache =
@@ -364,6 +388,7 @@ export default {
         if (cached) {
           const h = new Headers(cached.headers);
           mergeCors(h, origin);
+          stampGatekeeper(h, gatekeeperOff);
           if (setSessionCookie) h.append("Set-Cookie", setSessionCookie);
           return new Response(cached.body, { status: cached.status, headers: h });
         }
@@ -372,7 +397,9 @@ export default {
       if (request.method === "HEAD") {
         const meta = await env.FILES.head(r2Key);
         if (!meta) {
-          return new Response("Not Found", { status: 404, headers: buildCors(origin) });
+          const nh = buildCors(origin);
+          stampGatekeeper(nh, gatekeeperOff);
+          return new Response("Not Found", { status: 404, headers: nh });
         }
         const headers = buildCors(origin);
         applyObjectHeaders(
@@ -384,6 +411,7 @@ export default {
           true,
           gatekeeperActive
         );
+        stampGatekeeper(headers, gatekeeperOff);
         if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
         const res = new Response(null, { status: 200, headers });
         if (useEdgeCache) {
@@ -394,7 +422,9 @@ export default {
 
       const object = await env.FILES.get(r2Key);
       if (!object) {
-        return new Response("Not Found", { status: 404, headers: buildCors(origin) });
+        const nh = buildCors(origin);
+        stampGatekeeper(nh, gatekeeperOff);
+        return new Response("Not Found", { status: 404, headers: nh });
       }
 
       const headers = buildCors(origin);
@@ -407,6 +437,7 @@ export default {
         false,
         gatekeeperActive
       );
+      stampGatekeeper(headers, gatekeeperOff);
       if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
 
       const res = new Response(object.body, {
@@ -421,9 +452,11 @@ export default {
       return res;
     } catch (err) {
       console.error("[files-cdn] R2 error:", err);
+      const eh = buildCors(origin);
+      stampGatekeeper(eh, gatekeeperOff);
       return new Response("Internal Server Error", {
         status: 500,
-        headers: buildCors(origin),
+        headers: eh,
       });
     }
   },

@@ -154,24 +154,13 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           // use credentials — R2 CORS doesn't support Access-Control-Allow-Credentials,
           // which causes "blocked by CORS policy" when withCredentials=true.
           const origin = typeof window !== "undefined" ? window.location.origin : "";
-          const mediaHosts = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
-            .split(",")
-            .map((s) => s.trim().toLowerCase())
-            .filter(Boolean);
-          const isMediaCdnUrl = (urlStr: string) => {
-            try {
-              const u = new URL(urlStr, origin || "https://localhost");
-              const h = u.hostname.toLowerCase();
-              return mediaHosts.some((mh) => h === mh || h.endsWith(`.${mh}`));
-            } catch {
-              return false;
-            }
-          };
           const hls = new Hls({
             xhrSetup: (xhr: XMLHttpRequest, url: string) => {
               const isSameOrigin = !url || url.startsWith("/") || url.startsWith(origin);
-              // CDN + credentials so Worker can attach HttpOnly session cookie after first signed segment.
-              xhr.withCredentials = isSameOrigin || isMediaCdnUrl(url);
+              // Only same-origin (playlist via /api/...) may use credentials. CDN segment URLs carry
+              // ?token=&expires= on every request — withCredentials would require a strict ACAO + credentials
+              // handshake and breaks when the edge returns * or CORS is slightly off (red 200 in DevTools).
+              xhr.withCredentials = isSameOrigin;
             },
           });
 

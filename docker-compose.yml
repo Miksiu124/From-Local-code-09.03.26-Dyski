@@ -50,6 +50,8 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
+        - NEXT_PUBLIC_MEDIA_HOST=${NEXT_PUBLIC_MEDIA_HOST}
     container_name: content-frontend
     restart: unless-stopped
     env_file: .env
@@ -61,6 +63,7 @@ services:
       # NOTE: Set NEXT_PUBLIC_APP_URL to your domain in .env
       # e.g. NEXT_PUBLIC_APP_URL=https://yourdomain.com
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
+      - NEXT_PUBLIC_MEDIA_HOST=${NEXT_PUBLIC_MEDIA_HOST}
       - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
       - ADMIN_EMAILS=${ADMIN_EMAILS}
     ports:

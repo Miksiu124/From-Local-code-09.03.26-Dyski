@@ -1138,7 +1138,7 @@ export function ModelDetail({
             {loadingMore && (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             )}
-            {!loadingMore && !cursor && displayItems.length > 0 && (
+            {!loadingMore && !hasMoreCursor && displayItems.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 {displayItems.length} of {displayTotal} items
               </p>

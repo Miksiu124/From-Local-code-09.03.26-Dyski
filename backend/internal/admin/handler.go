@@ -339,6 +339,9 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 	h.publishBlikAction(ctx, purchaseID, "REJECTED")
 	h.publishNotification(ctx, userID, "PAYMENT_REJECTED", "Payment Rejected", msg)
 
+	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
+	h.discord.NotifyPurchaseRejected(ctx, info, req.Reason)
+
 	return common.Success(c, map[string]bool{"success": true})
 }
 
