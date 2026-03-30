@@ -1,12 +1,17 @@
 /**
- * Cloudflare Worker — publiczny odczyt z R2 (bucket FILES).
- * - avatars/* — avatary / headery
- * - pozostałe klucze — zdjęcia, HLS, segmenty (.m3u8, .ts, …) zgodnie z ścieżkami w R2
+ * Cloudflare Worker — R2 FILES bucket.
+ * - avatars/* — public (no HMAC)
+ * - Other objects — HMAC gatekeeper ?token=&expires= (aligned with Go thumbnailpub.SignMediaURLToken)
+ * - HLS: after valid query token, sets HttpOnly session cookie so .ts can be fetched without query (see cookie scope)
  *
- * Zablokowane: path traversal, proofs/ (dowody płatności mogą być w tym samym buckecie).
+ * Secrets (wrangler): MEDIA_CDN_SIGNING_SECRET — must match backend STREAMING_TOKEN_SECRET or MEDIA_CDN_SIGNING_SECRET.
+ * Vars: MEDIA_CDN_ALLOWED_ORIGINS=comma list (e.g. https://dyskiof.net,https://www.dyskiof.net). Empty = *.
+ * MEDIA_GATEKEEPER_DISABLED=1 — bypass auth (migration / local only).
  */
 
 const BLOCKED_PREFIXES = ["proofs/"];
+
+const COOKIE_NAME = "cv_media_sess";
 
 function isPathAllowed(path: string): boolean {
   if (path === "" || path.includes("..") || path.includes("\\")) {
@@ -22,10 +27,6 @@ function isPathAllowed(path: string): boolean {
   return true;
 }
 
-/**
- * Cloudflare czasem przekazuje pathname z %20 / %28 itd.; klucz w R2 ma zwykle już znaki „ludzkie”.
- * Dekodujemy każdy segment osobno (nie cały string — unikamy nadużyć %2F).
- */
 function pathnameToR2Key(pathname: string): string {
   let path = pathname.startsWith("/") ? pathname.slice(1) : pathname;
   path = path
@@ -39,6 +40,26 @@ function pathnameToR2Key(pathname: string): string {
     })
     .join("/");
   return path;
+}
+
+function isPublicAvatarPath(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower === "avatars" || lower.startsWith("avatars/");
+}
+
+function isHlsCookiePath(key: string): boolean {
+  const lower = key.toLowerCase();
+  return (
+    lower.endsWith(".ts") ||
+    lower.endsWith(".m4s") ||
+    lower.endsWith(".m3u8")
+  );
+}
+
+function parentPrefix(key: string): string {
+  const i = key.lastIndexOf("/");
+  if (i <= 0) return "";
+  return key.slice(0, i);
 }
 
 function contentTypeFromKey(key: string): string | undefined {
@@ -55,23 +76,37 @@ function contentTypeFromKey(key: string): string | undefined {
   return undefined;
 }
 
-function buildCors(): Headers {
+function parseAllowedOrigins(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function corsOrigin(request: Request, allowed: string[]): string {
+  const reqOrigin = request.headers.get("Origin");
+  if (allowed.length === 0) return "*";
+  if (reqOrigin && allowed.includes(reqOrigin)) return reqOrigin;
+  return allowed[0] ?? "*";
+}
+
+function buildCors(origin: string): Headers {
   const h = new Headers();
-  h.set("Access-Control-Allow-Origin", "*");
+  h.set("Access-Control-Allow-Origin", origin);
+  if (origin !== "*") {
+    h.set("Access-Control-Allow-Credentials", "true");
+  }
   h.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
   h.set("Access-Control-Max-Age", "86400");
   return h;
 }
 
-/** HLS playlists change; keep edge/browser TTL short. */
 const CACHE_M3U8 = "public, max-age=10, stale-while-revalidate=30";
-/** Same path can be overwritten (avatar/header refresh). */
 const CACHE_AVATAR_PREFIX = "public, max-age=2592000";
-/** Versioned / unique object keys — safe for immutable + 1y (fewer R2 reads via CDN/browser). */
 const CACHE_IMMUTABLE_YEAR =
   "public, max-age=31536000, immutable, stale-while-revalidate=86400";
+/** Short TTL for signed query URLs (aligns with typical MEDIA_CDN_URL_TTL_SEC). */
+const CACHE_SIGNED_MEDIA = "public, max-age=1800, stale-while-revalidate=60";
 
-function cacheControlForKey(key: string): string {
+function cacheControlForKey(key: string, gatekeeperActive: boolean): string {
   const lower = key.toLowerCase();
   if (lower.endsWith(".m3u8")) {
     return CACHE_M3U8;
@@ -79,7 +114,22 @@ function cacheControlForKey(key: string): string {
   if (lower.startsWith("avatars/")) {
     return CACHE_AVATAR_PREFIX;
   }
-  if (
+  if (gatekeeperActive) {
+    if (
+      lower.endsWith(".ts") ||
+      lower.endsWith(".m4s") ||
+      lower.endsWith(".mp4") ||
+      lower.endsWith(".webm") ||
+      lower.endsWith(".jpg") ||
+      lower.endsWith(".jpeg") ||
+      lower.endsWith(".png") ||
+      lower.endsWith(".webp") ||
+      lower.endsWith(".gif") ||
+      lower.endsWith(".vtt")
+    ) {
+      return CACHE_SIGNED_MEDIA;
+    }
+  } else if (
     lower.endsWith(".jpg") ||
     lower.endsWith(".jpeg") ||
     lower.endsWith(".png") ||
@@ -101,7 +151,8 @@ function applyObjectHeaders(
   metaType: string | undefined,
   etag: string | undefined,
   size: number | undefined,
-  includeLength: boolean
+  includeLength: boolean,
+  gatekeeperActive: boolean
 ): void {
   const guessed = contentTypeFromKey(key);
   if (metaType && metaType !== "application/octet-stream") {
@@ -113,21 +164,144 @@ function applyObjectHeaders(
   } else {
     headers.set("Content-Type", "application/octet-stream");
   }
-  headers.set("Cache-Control", cacheControlForKey(key));
+  headers.set("Cache-Control", cacheControlForKey(key, gatekeeperActive));
   if (etag) headers.set("ETag", etag);
   if (includeLength && size !== undefined) {
     headers.set("Content-Length", String(size));
   }
 }
 
+function hexFromBuffer(buf: ArrayBuffer): string {
+  return [...new Uint8Array(buf)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return hexFromBuffer(sig);
+}
+
+function signingBody(r2Key: string, exp: number): string {
+  return r2Key + "\n" + String(exp);
+}
+
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) {
+    out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return out === 0;
+}
+
+async function verifyQueryToken(
+  secret: string,
+  r2Key: string,
+  token: string | null,
+  expStr: string | null
+): Promise<boolean> {
+  if (!token || !expStr || token.length !== 64) return false;
+  const exp = parseInt(expStr, 10);
+  if (!Number.isFinite(exp) || exp <= 0) return false;
+  if (Math.floor(Date.now() / 1000) > exp) return false;
+  const expected = await hmacHex(secret, signingBody(r2Key, exp));
+  return timingSafeEqualHex(expected, token.toLowerCase());
+}
+
+function sessionSignBody(prefix: string, exp: number): string {
+  return "session:" + prefix + "\n" + String(exp);
+}
+
+function b64urlEncode(s: string): string {
+  const b = new TextEncoder().encode(s);
+  let bin = "";
+  for (let i = 0; i < b.length; i++) bin += String.fromCharCode(b[i]!);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64urlDecode(s: string): string {
+  let b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+async function buildSessionCookieValue(
+  secret: string,
+  prefix: string,
+  exp: number
+): Promise<string> {
+  const sig = await hmacHex(secret, sessionSignBody(prefix, exp));
+  return `v1.${exp}.${b64urlEncode(prefix)}.${sig}`;
+}
+
+function getCookie(header: string | null, name: string): string | null {
+  if (!header) return null;
+  const parts = header.split(";");
+  for (const p of parts) {
+    const [k, ...rest] = p.trim().split("=");
+    if (k === name) return rest.join("=").trim();
+  }
+  return null;
+}
+
+async function verifySessionCookie(
+  secret: string,
+  r2Key: string,
+  cookieHeader: string | null
+): Promise<boolean> {
+  const raw = getCookie(cookieHeader, COOKIE_NAME);
+  if (!raw) return false;
+  const parts = raw.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const exp = parseInt(parts[1]!, 10);
+  if (!Number.isFinite(exp) || exp <= 0) return false;
+  if (Math.floor(Date.now() / 1000) > exp) return false;
+  let prefix: string;
+  try {
+    prefix = b64urlDecode(parts[2]!);
+  } catch {
+    return false;
+  }
+  if (!prefix || prefix.includes("..")) return false;
+  const sig = parts[3]!;
+  if (sig.length !== 64) return false;
+  const expected = await hmacHex(secret, sessionSignBody(prefix, exp));
+  if (!timingSafeEqualHex(expected, sig.toLowerCase())) return false;
+  if (r2Key === prefix) return true;
+  if (r2Key.startsWith(prefix + "/")) return true;
+  return false;
+}
+
 interface Env {
   FILES: R2Bucket;
+  MEDIA_CDN_SIGNING_SECRET?: string;
+  MEDIA_CDN_ALLOWED_ORIGINS?: string;
+  MEDIA_GATEKEEPER_DISABLED?: string;
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<Response> {
+    const allowed = parseAllowedOrigins(env.MEDIA_CDN_ALLOWED_ORIGINS);
+    const origin = corsOrigin(request, allowed);
+
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: buildCors() });
+      return new Response(null, { status: 204, headers: buildCors(origin) });
     }
 
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -138,49 +312,126 @@ export default {
     const r2Key = pathnameToR2Key(url.pathname);
 
     if (!isPathAllowed(r2Key)) {
-      return new Response("Forbidden", { status: 403 });
+      return new Response("Forbidden", { status: 403, headers: buildCors(origin) });
     }
 
+    const secret = (env.MEDIA_CDN_SIGNING_SECRET || "").trim();
+    const gatekeeperOff =
+      env.MEDIA_GATEKEEPER_DISABLED === "1" ||
+      env.MEDIA_GATEKEEPER_DISABLED === "true" ||
+      !secret;
+
+    const needAuth =
+      !gatekeeperOff && !isPublicAvatarPath(r2Key);
+
+    let authorized = !needAuth;
+    let setSessionCookie: string | null = null;
+
+    if (needAuth) {
+      const token = url.searchParams.get("token");
+      const expiresQ = url.searchParams.get("expires");
+      if (token && expiresQ && (await verifyQueryToken(secret, r2Key, token, expiresQ))) {
+        authorized = true;
+        if (isHlsCookiePath(r2Key)) {
+          const exp = parseInt(expiresQ, 10);
+          const prefix = parentPrefix(r2Key);
+          if (prefix) {
+            const maxAge = Math.max(0, exp - Math.floor(Date.now() / 1000));
+            const val = await buildSessionCookieValue(secret, prefix, exp);
+            setSessionCookie = `${COOKIE_NAME}=${val}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=None`;
+          }
+        }
+      } else if (
+        await verifySessionCookie(secret, r2Key, request.headers.get("Cookie"))
+      ) {
+        authorized = true;
+      }
+    }
+
+    if (!authorized) {
+      return new Response("Forbidden", { status: 403, headers: buildCors(origin) });
+    }
+
+    const useEdgeCache =
+      needAuth && url.searchParams.has("token") && url.searchParams.has("expires");
+
+    const gatekeeperActive = needAuth;
+
     try {
+      const cache = caches.default;
+      if (useEdgeCache) {
+        const cached = await cache.match(request);
+        if (cached) {
+          const h = new Headers(cached.headers);
+          mergeCors(h, origin);
+          if (setSessionCookie) h.append("Set-Cookie", setSessionCookie);
+          return new Response(cached.body, { status: cached.status, headers: h });
+        }
+      }
+
       if (request.method === "HEAD") {
         const meta = await env.FILES.head(r2Key);
         if (!meta) {
-          return new Response("Not Found", { status: 404 });
+          return new Response("Not Found", { status: 404, headers: buildCors(origin) });
         }
-        const headers = buildCors();
+        const headers = buildCors(origin);
         applyObjectHeaders(
           headers,
           r2Key,
           meta.httpMetadata?.contentType,
           meta.httpEtag,
           meta.size,
-          true
+          true,
+          gatekeeperActive
         );
-        return new Response(null, { status: 200, headers });
+        if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
+        const res = new Response(null, { status: 200, headers });
+        if (useEdgeCache) {
+          ctx.waitUntil(cache.put(request, res.clone()));
+        }
+        return res;
       }
 
       const object = await env.FILES.get(r2Key);
       if (!object) {
-        return new Response("Not Found", { status: 404 });
+        return new Response("Not Found", { status: 404, headers: buildCors(origin) });
       }
 
-      const headers = buildCors();
+      const headers = buildCors(origin);
       applyObjectHeaders(
         headers,
         r2Key,
         object.httpMetadata?.contentType,
         object.httpEtag,
         object.size,
-        false
+        false,
+        gatekeeperActive
       );
+      if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
 
-      return new Response(object.body, {
+      const res = new Response(object.body, {
         status: 200,
         headers,
       });
+
+      if (useEdgeCache) {
+        ctx.waitUntil(cache.put(request, res.clone()));
+      }
+
+      return res;
     } catch (err) {
       console.error("[files-cdn] R2 error:", err);
-      return new Response("Internal Server Error", { status: 500 });
+      return new Response("Internal Server Error", {
+        status: 500,
+        headers: buildCors(origin),
+      });
     }
   },
 };
+
+function mergeCors(h: Headers, origin: string): void {
+  h.set("Access-Control-Allow-Origin", origin);
+  if (origin !== "*") {
+    h.set("Access-Control-Allow-Credentials", "true");
+  }
+}

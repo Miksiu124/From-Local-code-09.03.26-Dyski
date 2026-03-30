@@ -2,6 +2,12 @@ name = "avatars-cdn"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# Secrets: wrangler secret put MEDIA_CDN_SIGNING_SECRET
+#   (same value as Go STREAMING_TOKEN_SECRET or MEDIA_CDN_SIGNING_SECRET)
+# Optional vars (Dashboard or wrangler.toml [vars]):
+#   MEDIA_CDN_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+#   MEDIA_GATEKEEPER_DISABLED=1   # dev only — disables HMAC (public bucket read)
+
 # R2 bucket binding — tylko odczyt z bucketa "files"
 [[r2_buckets]]
 binding = "FILES"

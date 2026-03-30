@@ -2,6 +2,8 @@ package favorites
 
 import (
 	"strconv"
+	"strings"
+	"time"
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
@@ -20,6 +22,18 @@ type Handler struct {
 
 func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
 	return &Handler{db: db, cfg: cfg}
+}
+
+func (h *Handler) thumbnailCDNUrl(thumbPath, hlsPath *string) string {
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	sec := h.cfg.EffectiveMediaCDNSigningSecret()
+	if h.cfg.MediaCDNSignURLs && sec != "" {
+		return thumbnailpub.PublicSignedThumbnailURL(base, thumbPath, hlsPath, sec, time.Duration(h.cfg.MediaCDNUrlTTL)*time.Second)
+	}
+	return thumbnailpub.PublicThumbnailURL(base, thumbPath, hlsPath)
 }
 
 type ToggleRequest struct {
@@ -164,7 +178,7 @@ func (h *Handler) List(c echo.Context) error {
 			&modelID, &item.ModelName, &item.ModelSlug, &item.CreatedAt); err != nil {
 			continue
 		}
-		item.ThumbnailURL = thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, thumbPath, hlsPath)
+		item.ThumbnailURL = h.thumbnailCDNUrl(thumbPath, hlsPath)
 		items = append(items, item)
 	}
 
@@ -319,7 +333,7 @@ func (h *Handler) GetDetails(c echo.Context) error {
 			ORDER BY f.created_at DESC, f.id DESC LIMIT 1`, userID, contentItemID, favID).Scan(&nextID)
 	}
 
-	thumbURL := thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, thumbPath, hlsPath)
+	thumbURL := h.thumbnailCDNUrl(thumbPath, hlsPath)
 	return common.Success(c, map[string]interface{}{
 		"model": map[string]interface{}{
 			"id":         modelID,

@@ -223,6 +223,23 @@ Wszystkie `fetch('/api/...')` w komponentach klienckich muszą zostać przeniesi
 
 ---
 
+## Cloudflare: WAF i cache dla domeny mediów (R2 Worker)
+
+Checklist operacyjna (Dashboard Cloudflare, strefa z Custom Domain Workera, np. `files.*`):
+
+| Obszar | Sugestia |
+|--------|----------|
+| Hotlink / osadzanie | Włączyć ochronę przed hotlinkiem zgodnie z polityką produktu (ograniczenie embedów na obcych domenach). |
+| Rate limiting | Np. ~100 żądań / min / IP na hostname mediów — ograniczenie scrapingu i kosztów. |
+| Bot Fight Mode | Włączone; Managed Challenge dla podejrzanych klientów. |
+| Reguły cache | Długi TTL dla segmentów `.ts` tam, gdzie Worker emituje długi `Cache-Control`; playlisty `.m3u8` — krótki TTL (Worker ustawia krótki `max-age`). |
+| Sekret Workera | `wrangler secret put MEDIA_CDN_SIGNING_SECRET` — ta sama wartość co `STREAMING_TOKEN_SECRET` lub `MEDIA_CDN_SIGNING_SECRET` w Go. |
+| CORS | Zmienna Workera `MEDIA_CDN_ALLOWED_ORIGINS` — originy frontu (np. `https://example.com`) przy HLS z `credentials`. |
+
+**Uwaga:** `MEDIA_GATEKEEPER_DISABLED=1` w vars Workera wyłącza HMAC i udostępnia publiczny odczyt (poza `proofs/`) — tylko debug / krótka migracja.
+
+---
+
 ## Kryteria akceptacji (Definition of Done)
 
 - [ ] Wszystkie istniejące testy przechodzą

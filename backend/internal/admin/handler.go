@@ -73,11 +73,14 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Auto-expire old pending purchases (skip BLIK with retries remaining)
-	_, _ = h.db.Exec(ctx, `
+	if rows, qerr := h.db.Query(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE status = 'PENDING' AND expiration_time < now()
 			AND (payment_method != 'BLIK' OR retry_count >= 5)
-	`)
+		RETURNING id
+	`); qerr == nil {
+		discord.NotifyForExpiredPurchaseRows(rows, h.db, h.discord)
+	}
 
 	statusFilter := c.QueryParam("status")
 	sortBy := c.QueryParam("sortBy")
@@ -1730,50 +1733,7 @@ func (h *Handler) DeleteContent(c echo.Context) error {
 
 // fetchPurchaseInfoForDiscord loads all fields needed for a Discord webhook embed.
 func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID string) discord.PurchaseInfo {
-	var info discord.PurchaseInfo
-	info.PurchaseID = purchaseID
-	info.Currency = "PLN"
-
-	var blikCode, crypto, txId, uname *string
-	err := h.db.QueryRow(ctx, `
-		SELECT cp.credits, cp.amount, cp.payment_method, cp.transaction_code,
-		       cp.blik_code, cp.crypto_currency, cp.tx_id, cp.retry_count,
-		       u.email, u.name, u.created_at,
-		       pkg.name
-		FROM credit_purchases cp
-		JOIN users u ON u.id = cp.user_id
-		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		WHERE cp.id = $1
-	`, purchaseID).Scan(
-		&info.Credits, &info.Amount, &info.PaymentMethod, &info.TransactionCode,
-		&blikCode, &crypto, &txId, &info.PaymentAttempts,
-		&info.UserEmail, &uname, &info.UserCreatedAt,
-		&info.PackageName,
-	)
-	if err != nil {
-		log.Printf("[Discord] Failed to fetch purchase info for %s: %v", purchaseID, err)
-		return info
-	}
-	// Amount from DB is in PLN
-	if blikCode != nil {
-		info.BlikCode = *blikCode
-	}
-	if crypto != nil {
-		info.CryptoCurrency = *crypto
-	}
-	if txId != nil {
-		info.TxID = *txId
-	}
-	if uname != nil {
-		info.UserName = *uname
-	}
-	// country column may not exist yet if migration hasn't been applied
-	var uCountry *string
-	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE email = $1`, info.UserEmail).Scan(&uCountry)
-	if uCountry != nil {
-		info.UserCountry = *uCountry
-	}
-	return info
+	return discord.FetchPurchaseInfo(ctx, h.db, purchaseID)
 }
 
 // ═══ Analytics ═══════════════════════════════════════════════════════════════

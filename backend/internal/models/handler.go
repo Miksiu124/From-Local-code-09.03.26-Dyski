@@ -65,8 +65,17 @@ func (h *Handler) headerURL(folderName string) string {
 }
 
 // contentThumbnailCDNUrl returns a direct R2 public URL when R2_PUBLIC_URL is set and a canonical key exists.
+// When MEDIA_CDN_SIGN_URLS is on, appends gatekeeper ?token=&expires= (same secret as Worker).
 func (h *Handler) contentThumbnailCDNUrl(thumbnailPath, hlsFolderPath *string) string {
-	return thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, thumbnailPath, hlsFolderPath)
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	sec := h.cfg.EffectiveMediaCDNSigningSecret()
+	if h.cfg.MediaCDNSignURLs && sec != "" {
+		return thumbnailpub.PublicSignedThumbnailURL(base, thumbnailPath, hlsFolderPath, sec, time.Duration(h.cfg.MediaCDNUrlTTL)*time.Second)
+	}
+	return thumbnailpub.PublicThumbnailURL(base, thumbnailPath, hlsFolderPath)
 }
 
 // List models with cursor pagination, search, and country filter

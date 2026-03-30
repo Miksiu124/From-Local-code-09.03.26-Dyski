@@ -5,11 +5,16 @@ import Image from "next/image";
 import { RetryImage } from "./retry-image";
 import { cn } from "@/lib/utils";
 
-const CDN_HOST = "files.dyskiof.net";
+/** Comma-separated hostnames for direct CDN images (unoptimized next/image). */
+const CDN_HOSTS = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
 
 function isCdnUrl(src: string): boolean {
   try {
-    return new URL(src, "https://dummy").hostname === CDN_HOST;
+    const host = new URL(src, "https://dummy").hostname.toLowerCase();
+    return CDN_HOSTS.includes(host);
   } catch {
     return false;
   }

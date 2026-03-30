@@ -117,6 +117,18 @@ func NewHandler(db *pgxpool.Pool, r2 *R2Client, cfg *config.Config, redis *redis
 	return &Handler{db: db, r2: r2, cfg: cfg, redis: redis}
 }
 
+func (h *Handler) cdnThumbnailURL(thumbPath, hlsFolder *string) string {
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	sec := h.cfg.EffectiveMediaCDNSigningSecret()
+	if h.cfg.MediaCDNSignURLs && sec != "" {
+		return thumbnailpub.PublicSignedThumbnailURL(base, thumbPath, hlsFolder, sec, time.Duration(h.cfg.MediaCDNUrlTTL)*time.Second)
+	}
+	return thumbnailpub.PublicThumbnailURL(base, thumbPath, hlsFolder)
+}
+
 // Thumbnail proxies thumbnail images from R2 (optional auth — thumbnails can be public or restricted)
 func (h *Handler) Thumbnail(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -391,6 +403,8 @@ func (h *Handler) Playlist(c echo.Context) error {
 		}
 		usePublicCDN := h.cfg.HLSUsePublicCDNSegments && h.cfg.R2PublicURL != ""
 		usePresigned := !h.cfg.HLSUseAPISegments && !usePublicCDN
+		mediaSec := h.cfg.EffectiveMediaCDNSigningSecret()
+		signMedia := h.cfg.MediaCDNSignURLs && mediaSec != ""
 		rewritten = RewritePlaylistWithPresignedSegments(
 			playlistContent,
 			*hlsFolderPath,
@@ -403,6 +417,9 @@ func (h *Handler) Playlist(c echo.Context) error {
 			h.cfg.R2PublicURL,
 			usePresigned,
 			presigner,
+			mediaSec,
+			h.cfg.MediaCDNUrlTTL,
+			signMedia,
 		)
 	} else {
 		rewritten = RewritePlaylist(
@@ -523,7 +540,7 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 		ORDER BY created_at DESC LIMIT 1
 	`, modelID, ciCreatedAt).Scan(&nextID)
 
-	thumbURL := thumbnailpub.PublicThumbnailURL(h.cfg.R2PublicURL, ciThumbnail, ciHlsFolder)
+	thumbURL := h.cdnThumbnailURL(ciThumbnail, ciHlsFolder)
 	contentItem := map[string]interface{}{
 		"id":            ciID,
 		"contentType":   ciType,

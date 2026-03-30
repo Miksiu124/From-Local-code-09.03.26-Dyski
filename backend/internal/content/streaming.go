@@ -114,10 +114,10 @@ func RewritePlaylist(playlistContent, baseURL, userID, contentItemID, tokenSecre
 
 // RewritePlaylistWithPresignedSegments rewrites .ts/.m4s/.mp4 to public CDN URLs, presigned URLs, or API URLs.
 // .m3u8 (variant playlists) stay as API URLs (auth required).
-// usePublicCDN + publicCDNBase: stable https://R2_PUBLIC_URL/key URLs (no presign).
+// usePublicCDN + publicCDNBase: https://R2_PUBLIC_URL/key URLs; when signMediaCDN + mediaCDNSecret set, appends ?token=&expires=.
 // usePresigned: R2 presigned GET when public CDN is off.
 // If both off, segment lines use API proxy URLs.
-func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseURL, userID, contentItemID, tokenSecret string, tokenTTL int, usePublicCDN bool, publicCDNBase string, usePresigned bool, presigner func(key string) (string, error)) string {
+func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseURL, userID, contentItemID, tokenSecret string, tokenTTL int, usePublicCDN bool, publicCDNBase string, usePresigned bool, presigner func(key string) (string, error), mediaCDNSecret string, mediaCDNTTL int, signMediaCDN bool) string {
 	lines := strings.Split(playlistContent, "\n")
 	var result []string
 
@@ -156,7 +156,13 @@ func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseUR
 		if strings.HasSuffix(segmentPath, ".ts") || strings.HasSuffix(segmentPath, ".m4s") || strings.HasSuffix(segmentPath, ".mp4") {
 			key := strings.TrimSuffix(hlsFolderPath, "/") + "/" + segmentPath
 			if usePublicCDN && publicCDNBase != "" {
-				if pub := thumbnailpub.PublicObjectURL(publicCDNBase, key); pub != "" {
+				ttl := time.Duration(mediaCDNTTL) * time.Second
+				if signMediaCDN && mediaCDNSecret != "" {
+					if pub := thumbnailpub.PublicSignedObjectURL(publicCDNBase, key, mediaCDNSecret, ttl); pub != "" {
+						result = append(result, pub)
+						continue
+					}
+				} else if pub := thumbnailpub.PublicObjectURL(publicCDNBase, key); pub != "" {
 					result = append(result, pub)
 					continue
 				}

@@ -154,10 +154,24 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           // use credentials — R2 CORS doesn't support Access-Control-Allow-Credentials,
           // which causes "blocked by CORS policy" when withCredentials=true.
           const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const mediaHosts = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
+            .split(",")
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          const isMediaCdnUrl = (urlStr: string) => {
+            try {
+              const u = new URL(urlStr, origin || "https://localhost");
+              const h = u.hostname.toLowerCase();
+              return mediaHosts.some((mh) => h === mh || h.endsWith(`.${mh}`));
+            } catch {
+              return false;
+            }
+          };
           const hls = new Hls({
             xhrSetup: (xhr: XMLHttpRequest, url: string) => {
               const isSameOrigin = !url || url.startsWith("/") || url.startsWith(origin);
-              xhr.withCredentials = isSameOrigin;
+              // CDN + credentials so Worker can attach HttpOnly session cookie after first signed segment.
+              xhr.withCredentials = isSameOrigin || isMediaCdnUrl(url);
             },
           });
 
@@ -742,6 +756,19 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         controls={isIOS}
         controlsList="nodownload"
         onContextMenu={(e) => e.preventDefault()}
+        onError={() => {
+          const el = videoRef.current;
+          if (!el?.error) return;
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
+          setLoading(false);
+          setHlsError((prev) => {
+            if (prev) return prev;
+            return "Video could not be loaded (link may have expired). Try Retry.";
+          });
+        }}
       />
 
       {/* Loading spinner */}
