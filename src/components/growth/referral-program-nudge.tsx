@@ -7,7 +7,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { X, UserPlus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { trackReferralProgramNudge } from "@/lib/growth-analytics";
 import {
   dismissPeriodicNudge,
@@ -105,14 +106,13 @@ export function ReferralProgramNudge() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-          <Button asChild size="sm" className="h-9">
-            <Link
-              href="/referral"
-              onClick={() => trackReferralProgramNudge("periodic_banner", "cta_click")}
-            >
-              {t("nudgeOpenProgram")}
-            </Link>
-          </Button>
+          <Link
+            href="/referral"
+            className={cn(buttonVariants({ size: "sm" }), "h-9")}
+            onClick={() => trackReferralProgramNudge("periodic_banner", "cta_click")}
+          >
+            {t("nudgeOpenProgram")}
+          </Link>
           <Button
             type="button"
             variant="ghost"
