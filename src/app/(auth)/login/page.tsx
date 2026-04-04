@@ -90,7 +90,11 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = (await res.json()) as { error?: string; message?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        message?: string;
+        user?: { role?: string; id?: string; email?: string };
+      };
 
       if (!res.ok) {
         if (res.status === 403 && data.error === "EMAIL_NOT_VERIFIED") {
