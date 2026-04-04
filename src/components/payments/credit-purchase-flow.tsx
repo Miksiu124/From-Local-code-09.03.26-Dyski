@@ -6,12 +6,12 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2, UserPlus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaymentCountdown } from "@/components/payments/payment-countdown";
-import { formatPrice } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
 import { emitGrowthEvent } from "@/lib/growth-events";
 import {
   trackBlikPaymentExpired,
@@ -774,14 +774,13 @@ export function CreditPurchaseFlow({
                         </div>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Button asChild size="sm" className="h-9">
-                          <Link
-                            href="/referral"
-                            onClick={() => trackReferralProgramNudge("first_purchase_success", "cta_click")}
-                          >
-                            {t("referralPromptCta")}
-                          </Link>
-                        </Button>
+                        <Link
+                          href="/referral"
+                          className={cn(buttonVariants({ size: "sm" }), "h-9 inline-flex")}
+                          onClick={() => trackReferralProgramNudge("first_purchase_success", "cta_click")}
+                        >
+                          {t("referralPromptCta")}
+                        </Link>
                         <Button
                           type="button"
                           variant="ghost"
