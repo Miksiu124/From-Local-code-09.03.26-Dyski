@@ -125,12 +125,13 @@ export function CreditPurchaseFlow({
       const s = checkoutStateRef.current;
       if (s.paymentStatus === "APPROVED") return;
       if (s.step === "select-package") return;
+      const pendingPurchaseId = s.paymentResult?.id;
       const pendingWait =
         s.step === "waiting" &&
-        s.paymentResult?.id &&
+        pendingPurchaseId &&
         (!s.paymentStatus || s.paymentStatus === "PENDING" || s.paymentStatus === "EXPIRED");
-      if (pendingWait) {
-        emitPaymentAbandonedOnce(s.paymentResult.id, "unmount");
+      if (pendingWait && pendingPurchaseId) {
+        emitPaymentAbandonedOnce(pendingPurchaseId, "unmount");
         return;
       }
       trackCheckoutAbandoned(s.step, {
@@ -144,11 +145,12 @@ export function CreditPurchaseFlow({
     const onPageHide = () => {
       const s = checkoutStateRef.current;
       if (s.paymentStatus === "APPROVED") return;
+      const pendingPurchaseId = s.paymentResult?.id;
       const pendingWait =
         s.step === "waiting" &&
-        s.paymentResult?.id &&
+        pendingPurchaseId &&
         (!s.paymentStatus || s.paymentStatus === "PENDING" || s.paymentStatus === "EXPIRED");
-      if (pendingWait) emitPaymentAbandonedOnce(s.paymentResult.id, "pagehide");
+      if (pendingWait && pendingPurchaseId) emitPaymentAbandonedOnce(pendingPurchaseId, "pagehide");
     };
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
