@@ -14,9 +14,9 @@ func NewPostgresPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, er
 		return nil, fmt.Errorf("unable to parse database URL: %w", err)
 	}
 
-	// Connection pool settings
-	config.MaxConns = 20
-	config.MinConns = 2
+	// Connection pool settings — tuned for home page parallel load (7 concurrent API calls)
+	config.MaxConns = 25
+	config.MinConns = 5
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute
 	config.HealthCheckPeriod = 30 * time.Second

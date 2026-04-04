@@ -27,13 +27,10 @@ type ModelResponse = {
 type ContentPageResponse = {
   items: {
     id: string;
-    uniqueId: string;
     contentType: "VIDEO" | "PHOTO";
-    thumbnailPath: string | null;
-    hlsMasterPath: string | null;
     duration: number | null;
-    isActive: boolean;
-    createdAt: string;
+    /** Set when R2_PUBLIC_URL is configured (direct CDN load). */
+    thumbnailUrl?: string;
   }[];
   nextCursor: string | null;
   totalCount: number;
@@ -115,8 +112,8 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
         initialContentItems={contentPage.items.map((item) => ({
           id: item.id,
           contentType: item.contentType,
-          thumbnailPath: item.thumbnailPath,
           duration: item.duration,
+          thumbnailUrl: item.thumbnailUrl ?? null,
         }))}
         initialCursor={contentPage.nextCursor}
         totalContentCount={contentPage.totalCount}

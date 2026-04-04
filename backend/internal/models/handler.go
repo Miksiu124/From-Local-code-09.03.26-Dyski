@@ -1,25 +1,47 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/thumbnailpub"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
+)
+
+const (
+	cacheKeyCountries   = "api:countries"
+	cacheKeySettings    = "api:settings:public"
+	cacheKeyStats       = "api:stats:models"
+	cacheKeyModelSlug   = "api:model:slug:"
+	cacheKeyModelContent = "api:model:content:"
+	cacheKeyModelsFirst = "api:models:first"
+	cacheKeyModelsFeatured = "api:models:featured"
+	cacheTTLCountries   = time.Hour
+	cacheTTLSettings    = 5 * time.Minute
+	cacheTTLStats       = time.Minute
+	cacheTTLModelSlug   = 5 * time.Minute
+	cacheTTLModelContent = 3 * time.Minute
+	cacheTTLModelsList  = 3 * time.Minute
 )
 
 type Handler struct {
-	db  *pgxpool.Pool
-	cfg *config.Config
+	db    *pgxpool.Pool
+	cfg   *config.Config
+	redis *redis.Client
 }
 
-func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
-	return &Handler{db: db, cfg: cfg}
+func NewHandler(db *pgxpool.Pool, cfg *config.Config, redis *redis.Client) *Handler {
+	return &Handler{db: db, cfg: cfg, redis: redis}
 }
 
 // avatarURL returns direct CDN URL when R2PublicURL is set.
@@ -42,6 +64,20 @@ func (h *Handler) headerURL(folderName string) string {
 	return fmt.Sprintf("%s/avatars/%s_header.webp", base, folderName)
 }
 
+// contentThumbnailCDNUrl returns a direct R2 public URL when R2_PUBLIC_URL is set and a canonical key exists.
+// When MEDIA_CDN_SIGN_URLS is on, appends gatekeeper ?token=&expires= (same secret as Worker).
+func (h *Handler) contentThumbnailCDNUrl(thumbnailPath, hlsFolderPath *string) string {
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	sec := h.cfg.EffectiveMediaCDNSigningSecret()
+	if h.cfg.MediaCDNSignURLs && sec != "" {
+		return thumbnailpub.PublicSignedThumbnailURL(base, thumbnailPath, hlsFolderPath, sec, time.Duration(h.cfg.MediaCDNUrlTTL)*time.Second)
+	}
+	return thumbnailpub.PublicThumbnailURL(base, thumbnailPath, hlsFolderPath)
+}
+
 // List models with cursor pagination, search, and country filter
 func (h *Handler) List(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -50,11 +86,27 @@ func (h *Handler) List(c echo.Context) error {
 	limitStr := c.QueryParam("limit")
 	country := c.QueryParam("country")
 	search := c.QueryParam("search")
+	featured := c.QueryParam("featured")
 
 	limit := 20
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l >= 1 && l <= 100 {
 			limit = l
+		}
+	}
+
+	// Cache first page when no filters (most common case)
+	cacheable := cursor == "" && country == "" && search == "" && limit == 20
+	if cacheable && h.redis != nil {
+		cacheKey := cacheKeyModelsFirst
+		if featured == "true" {
+			cacheKey = cacheKeyModelsFeatured
+		}
+		if cached, err := h.redis.Get(ctx, cacheKey).Bytes(); err == nil {
+			c.Response().Header().Set("Content-Type", "application/json")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
 		}
 	}
 
@@ -85,7 +137,7 @@ func (h *Handler) List(c echo.Context) error {
 	args := []interface{}{}
 	argIdx := 1
 
-	if featured := c.QueryParam("featured"); featured == "true" {
+	if featured == "true" {
 		query += ` AND m.is_featured = true`
 	}
 
@@ -161,16 +213,36 @@ func (h *Handler) List(c echo.Context) error {
 		items = []ModelItem{}
 	}
 
-	return common.Success(c, map[string]interface{}{
+	resp := map[string]interface{}{
 		"models":     items,
 		"nextCursor": nextCursor,
-	})
+	}
+	if cacheable && h.redis != nil {
+		cacheKey := cacheKeyModelsFirst
+		if featured == "true" {
+			cacheKey = cacheKeyModelsFeatured
+		}
+		if b, err := json.Marshal(resp); err == nil {
+			_ = h.redis.Set(ctx, cacheKey, b, cacheTTLModelsList).Err()
+		}
+	}
+	return common.Success(c, resp)
 }
 
 // GetBySlug returns a single model with its content items
 func (h *Handler) GetBySlug(c echo.Context) error {
 	ctx := c.Request().Context()
 	slug := c.Param("slug")
+
+	if h.redis != nil && slug != "" {
+		cacheKey := cacheKeyModelSlug + slug
+		if cached, err := h.redis.Get(ctx, cacheKey).Bytes(); err == nil {
+			c.Response().Header().Set("Content-Type", "application/json")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
+		}
+	}
 
 	var model struct {
 		ID          string  `json:"id"`
@@ -198,9 +270,9 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	model.AvatarURL = h.avatarURL(model.FolderName)
 	model.HeaderURL = h.headerURL(model.FolderName)
 
-	// Get content items
+	// Get content items (paths for CDN thumbnail URLs — same row, no extra queries)
 	rows, err := h.db.Query(ctx, `
-		SELECT id, content_type, duration
+		SELECT id, content_type, duration, thumbnail_path, hls_folder_path
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 		ORDER BY created_at ASC
@@ -211,19 +283,22 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	defer rows.Close()
 
 	type ContentItem struct {
-		ID          string `json:"id"`
-		ContentType string `json:"contentType"`
-		Duration    *int   `json:"duration"`
+		ID           string `json:"id"`
+		ContentType  string `json:"contentType"`
+		Duration     *int   `json:"duration"`
+		ThumbnailURL string `json:"thumbnailUrl,omitempty"`
 	}
 
 	var contentItems []ContentItem
 	for rows.Next() {
 		var ci ContentItem
 		var duration *int
-		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration); err != nil {
+		var thumbPath, hlsPath *string
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath); err != nil {
 			continue
 		}
 		ci.Duration = duration
+		ci.ThumbnailURL = h.contentThumbnailCDNUrl(thumbPath, hlsPath)
 		contentItems = append(contentItems, ci)
 	}
 
@@ -231,10 +306,16 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		contentItems = []ContentItem{}
 	}
 
-	return common.Success(c, map[string]interface{}{
+	resp := map[string]interface{}{
 		"model":        model,
 		"contentItems": contentItems,
-	})
+	}
+	if h.redis != nil && slug != "" {
+		if b, err := json.Marshal(resp); err == nil {
+			_ = h.redis.Set(ctx, cacheKeyModelSlug+slug, b, cacheTTLModelSlug).Err()
+		}
+	}
+	return common.Success(c, resp)
 }
 
 // ListContent returns paginated content items for a model
@@ -260,9 +341,29 @@ func (h *Handler) ListContent(c echo.Context) error {
 		return common.NotFound(c, "Model not found")
 	}
 
-	// 2. Build Query
+	// Cache first page (no cursor) — most common case
+	cacheableContent := cursor == "" && limit == 24
+	if cacheableContent && h.redis != nil {
+		typeKey := contentType
+		if typeKey == "" {
+			typeKey = "ALL"
+		}
+		sortKey := sort
+		if sortKey == "" {
+			sortKey = "newest"
+		}
+		cacheKey := cacheKeyModelContent + slug + ":" + typeKey + ":" + sortKey + ":first"
+		if cached, err := h.redis.Get(ctx, cacheKey).Bytes(); err == nil {
+			c.Response().Header().Set("Content-Type", "application/json")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
+		}
+	}
+
+	// 2. Build Query (thumbnail_path + hls_folder_path: one round-trip for CDN URLs)
 	query := `
-		SELECT id, content_type, duration
+		SELECT id, content_type, duration, thumbnail_path, hls_folder_path
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 	`
@@ -311,19 +412,22 @@ func (h *Handler) ListContent(c echo.Context) error {
 	defer rows.Close()
 
 	type ContentItem struct {
-		ID          string `json:"id"`
-		ContentType string `json:"contentType"`
-		Duration    *int   `json:"duration"`
+		ID           string `json:"id"`
+		ContentType  string `json:"contentType"`
+		Duration     *int   `json:"duration"`
+		ThumbnailURL string `json:"thumbnailUrl,omitempty"`
 	}
 
 	var items []ContentItem
 	for rows.Next() {
 		var ci ContentItem
 		var duration *int
-		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration); err != nil {
+		var thumbPath, hlsPath *string
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath); err != nil {
 			continue
 		}
 		ci.Duration = duration
+		ci.ThumbnailURL = h.contentThumbnailCDNUrl(thumbPath, hlsPath)
 		items = append(items, ci)
 	}
 
@@ -351,11 +455,26 @@ func (h *Handler) ListContent(c echo.Context) error {
 	}
 	_ = h.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount)
 
-	return common.Success(c, map[string]interface{}{
+	resp := map[string]interface{}{
 		"items":      items,
 		"nextCursor": nextCursor,
 		"totalCount": totalCount,
-	})
+	}
+	if cacheableContent && h.redis != nil {
+		typeKey := contentType
+		if typeKey == "" {
+			typeKey = "ALL"
+		}
+		sortKey := sort
+		if sortKey == "" {
+			sortKey = "newest"
+		}
+		cacheKey := cacheKeyModelContent + slug + ":" + typeKey + ":" + sortKey + ":first"
+		if b, err := json.Marshal(resp); err == nil {
+			_ = h.redis.Set(ctx, cacheKey, b, cacheTTLModelContent).Err()
+		}
+	}
+	return common.Success(c, resp)
 }
 
 // CheckAccess checks if user has access to a specific model
@@ -381,9 +500,19 @@ func (h *Handler) CheckAccess(c echo.Context) error {
 	return common.Success(c, map[string]bool{"hasAccess": hasAccess})
 }
 
-// ListCountries returns all countries
+// ListCountries returns all countries (cached 1h)
 func (h *Handler) ListCountries(c echo.Context) error {
 	ctx := c.Request().Context()
+	if h.redis != nil {
+		cached, err := h.redis.Get(ctx, cacheKeyCountries).Bytes()
+		if err == nil {
+			c.Response().Header().Set("Content-Type", "application/json")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
+		}
+	}
+
 	rows, err := h.db.Query(ctx, `
 		SELECT c.id, c.name, c.code, c.flag_emoji 
 		FROM countries c 
@@ -407,6 +536,12 @@ func (h *Handler) ListCountries(c echo.Context) error {
 	}
 	if countries == nil {
 		countries = []map[string]interface{}{}
+	}
+
+	if h.redis != nil {
+		if b, err := json.Marshal(countries); err == nil {
+			_ = h.redis.Set(ctx, cacheKeyCountries, b, cacheTTLCountries).Err()
+		}
 	}
 	return common.Success(c, countries)
 }
@@ -468,9 +603,18 @@ func (h *Handler) GetUserAccess(c echo.Context) error {
 	return common.Success(c, map[string]interface{}{"hasBundle": false, "modelIds": modelIds})
 }
 
-// GetPublicSettings returns public configuration like credit costs from the settings table
+// GetPublicSettings returns public configuration like credit costs from the settings table (cached 5min)
 func (h *Handler) GetPublicSettings(c echo.Context) error {
 	ctx := c.Request().Context()
+	if h.redis != nil {
+		cached, err := h.redis.Get(ctx, cacheKeySettings).Bytes()
+		if err == nil {
+			c.Response().Header().Set("Content-Type", "application/json")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
+		}
+	}
 
 	publicKeys := []string{
 		"model_credit_cost_7d",
@@ -481,8 +625,8 @@ func (h *Handler) GetPublicSettings(c echo.Context) error {
 	}
 
 	result := map[string]interface{}{
-		"model_credit_cost_7d":  200,
-		"model_credit_cost_30d": 350,
+		"model_credit_cost_7d":   200,
+		"model_credit_cost_30d":  350,
 		"bundle_credit_cost_14d": 500,
 		"bundle_credit_cost_30d": 900,
 		"blik_enabled":           true,
@@ -503,16 +647,37 @@ func (h *Handler) GetPublicSettings(c echo.Context) error {
 		result[key] = value
 	}
 
+	if h.redis != nil {
+		if b, err := json.Marshal(result); err == nil {
+			_ = h.redis.Set(ctx, cacheKeySettings, b, cacheTTLSettings).Err()
+		}
+	}
 	return common.Success(c, result)
 }
 
-// GetStats returns usage statistics like total active models
+// GetStats returns usage statistics like total active models (cached 1min)
 func (h *Handler) GetStats(c echo.Context) error {
 	ctx := c.Request().Context()
+	if h.redis != nil {
+		cached, err := h.redis.Get(ctx, cacheKeyStats).Bytes()
+		if err == nil {
+			c.Response().Header().Set("Content-Type", "application/json")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
+		}
+	}
+
 	var totalModels int
 	err := h.db.QueryRow(ctx, `SELECT COUNT(*) FROM models WHERE is_active = true`).Scan(&totalModels)
 	if err != nil {
 		return common.InternalError(c)
 	}
-	return common.Success(c, map[string]int{"totalModels": totalModels})
+	data := map[string]int{"totalModels": totalModels}
+	if h.redis != nil {
+		if b, err := json.Marshal(data); err == nil {
+			_ = h.redis.Set(ctx, cacheKeyStats, b, cacheTTLStats).Err()
+		}
+	}
+	return common.Success(c, data)
 }

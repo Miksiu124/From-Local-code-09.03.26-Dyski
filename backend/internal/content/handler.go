@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,6 +18,7 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/models"
+	"content-platform-backend/internal/thumbnailpub"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -60,6 +62,24 @@ func sanitizeFilename(name string) (string, error) {
 	return clean, nil
 }
 
+// sanitizeSegmentPath allows slashes (e.g. subfolder/segment.ts) but rejects path traversal.
+func sanitizeSegmentPath(name string) (string, error) {
+	decoded, err := url.PathUnescape(name)
+	if err != nil {
+		return "", fmt.Errorf("invalid segment path")
+	}
+	if decoded == "" || strings.Contains(decoded, "..") || strings.HasPrefix(decoded, "/") || strings.Contains(decoded, "\\") {
+		return "", fmt.Errorf("invalid segment path")
+	}
+	// Reject path traversal via absolute or parent refs
+	for _, part := range strings.Split(decoded, "/") {
+		if part == "." || part == ".." {
+			return "", fmt.Errorf("invalid segment path")
+		}
+	}
+	return decoded, nil
+}
+
 // slugPattern allows only safe characters for model folder_name/slug (prevents path traversal in R2 keys).
 var slugPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
@@ -76,8 +96,15 @@ func sanitizeSlug(slug string) (string, error) {
 	return slug, nil
 }
 
-const masterPlaylistCacheTTL = 30 * time.Minute
+const masterPlaylistCacheTTL = 2 * time.Hour // VPS 8GB — more aggressive cache
 const masterPlaylistCachePrefix = "master_playlist:"
+
+const thumbnailCacheTTL = 24 * time.Hour
+const thumbnailCachePrefix = "thumb:"
+const thumbnailCacheMaxBytes = 1024 * 1024 // 1MB — VPS 8GB, Redis 1GB
+
+// Long browser/CDN TTL for bytes proxied from R2; no immutable (same API URL can get new file at same key).
+const cacheControlProxiedR2Image = "public, max-age=2592000, stale-while-revalidate=86400"
 
 type Handler struct {
 	db    *pgxpool.Pool
@@ -88,6 +115,18 @@ type Handler struct {
 
 func NewHandler(db *pgxpool.Pool, r2 *R2Client, cfg *config.Config, redis *redis.Client) *Handler {
 	return &Handler{db: db, r2: r2, cfg: cfg, redis: redis}
+}
+
+func (h *Handler) cdnThumbnailURL(thumbPath, hlsFolder *string) string {
+	base := strings.TrimRight(h.cfg.R2PublicURL, "/")
+	if base == "" {
+		return ""
+	}
+	sec := h.cfg.EffectiveMediaCDNSigningSecret()
+	if h.cfg.MediaCDNSignURLs && sec != "" {
+		return thumbnailpub.PublicSignedThumbnailURL(base, thumbPath, hlsFolder, sec, time.Duration(h.cfg.MediaCDNUrlTTL)*time.Second)
+	}
+	return thumbnailpub.PublicThumbnailURL(base, thumbPath, hlsFolder)
 }
 
 // Thumbnail proxies thumbnail images from R2 (optional auth — thumbnails can be public or restricted)
@@ -158,28 +197,56 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 		return common.NotFound(c, "No thumbnail configuration found")
 	}
 
-	var body io.ReadCloser
-	var contentType string
-	var accessErr error
-
-	// Try targets in order
-	for _, target := range targets {
-		body, contentType, accessErr = h.r2.GetObject(ctx, target)
-		if accessErr == nil {
-			break // Found it!
+	// 1. Check Redis cache (avoids R2 GetObject on hit)
+	cacheKey := thumbnailCachePrefix + contentItemID
+	ctKey := cacheKey + ":ct"
+	if h.redis != nil {
+		cached, err := h.redis.Get(ctx, cacheKey).Bytes()
+		if err == nil {
+			ct, _ := h.redis.Get(ctx, ctKey).Result()
+			if ct == "" {
+				ct = "image/webp"
+			}
+			c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
+			c.Response().Header().Set("Content-Type", ct)
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Writer.Write(cached)
+			return nil
 		}
 	}
 
+	// 2. Fetch from R2
+	var body io.ReadCloser
+	var contentType string
+	var accessErr error
+	for _, target := range targets {
+		body, contentType, accessErr = h.r2.GetObject(ctx, target)
+		if accessErr == nil {
+			break
+		}
+	}
 	if accessErr != nil {
 		return common.NotFound(c, "Thumbnail not found in storage")
 	}
 	defer body.Close()
 
-	// Set cache headers for thumbnails
-	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	// 3. Read into memory (needed for Redis cache)
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return common.InternalError(c)
+	}
+
+	// 4. Serve to client
+	c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
-	_, _ = io.Copy(c.Response().Writer, body)
+	_, _ = c.Response().Writer.Write(data)
+
+	// 5. Cache in Redis for next request (allkeys-lru evicts when full)
+	if h.redis != nil && len(data) <= thumbnailCacheMaxBytes {
+		_ = h.redis.Set(ctx, cacheKey, data, thumbnailCacheTTL).Err()
+		_ = h.redis.Set(ctx, ctKey, contentType, thumbnailCacheTTL).Err()
+	}
 	return nil
 }
 
@@ -329,14 +396,41 @@ func (h *Handler) Playlist(c echo.Context) error {
 	}
 
 	baseURL := streamingBaseURL(c, h.cfg)
-	rewritten := RewritePlaylist(
-		playlistContent,
-		baseURL,
-		userID,
-		contentItemID,
-		h.cfg.StreamingTokenSecret,
-		h.cfg.StreamingTokenTTL,
-	)
+	var rewritten string
+	if hlsFolderPath != nil && *hlsFolderPath != "" {
+		presigner := func(key string) (string, error) {
+			return h.r2.PresignGetObject(ctx, key, 1*time.Hour)
+		}
+		usePublicCDN := h.cfg.HLSUsePublicCDNSegments && h.cfg.R2PublicURL != ""
+		usePresigned := !h.cfg.HLSUseAPISegments && !usePublicCDN
+		mediaSec := h.cfg.EffectiveMediaCDNSigningSecret()
+		signMedia := h.cfg.MediaCDNSignURLs && mediaSec != ""
+		rewritten = RewritePlaylistWithPresignedSegments(
+			playlistContent,
+			*hlsFolderPath,
+			baseURL,
+			userID,
+			contentItemID,
+			h.cfg.StreamingTokenSecret,
+			h.cfg.StreamingTokenTTL,
+			usePublicCDN,
+			h.cfg.R2PublicURL,
+			usePresigned,
+			presigner,
+			mediaSec,
+			h.cfg.MediaCDNUrlTTL,
+			signMedia,
+		)
+	} else {
+		rewritten = RewritePlaylist(
+			playlistContent,
+			baseURL,
+			userID,
+			contentItemID,
+			h.cfg.StreamingTokenSecret,
+			h.cfg.StreamingTokenTTL,
+		)
+	}
 
 	c.Response().Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	c.Response().Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -355,7 +449,8 @@ func (h *Handler) Segment(c echo.Context) error {
 		return common.Forbidden(c)
 	}
 
-	filename, err := sanitizeFilename(rawFilename)
+	// Support URL-encoded paths (e.g. subfolder%2Fsegment.ts)
+	filename, err := sanitizeSegmentPath(rawFilename)
 	if err != nil {
 		return common.BadRequest(c, "Invalid filename")
 	}
@@ -414,13 +509,13 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 
 	// Find content item
 	var ciID, ciType, ciCreatedAt string
-	var ciThumbnail, ciHlsMaster *string
+	var ciThumbnail, ciHlsFolder, ciHlsMaster *string
 	var ciDuration *int
 	var ciModelID string
 	err = h.db.QueryRow(ctx, `
-		SELECT id, content_type, thumbnail_path, hls_master_path, duration, model_id, created_at::text
+		SELECT id, content_type, thumbnail_path, hls_folder_path, hls_master_path, duration, model_id, created_at::text
 		FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false
-	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsMaster, &ciDuration, &ciModelID, &ciCreatedAt)
+	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsFolder, &ciHlsMaster, &ciDuration, &ciModelID, &ciCreatedAt)
 	if err != nil || ciModelID != modelID {
 		return common.NotFound(c, "Content item not found")
 	}
@@ -445,10 +540,12 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 		ORDER BY created_at DESC LIMIT 1
 	`, modelID, ciCreatedAt).Scan(&nextID)
 
+	thumbURL := h.cdnThumbnailURL(ciThumbnail, ciHlsFolder)
 	contentItem := map[string]interface{}{
-		"id":          ciID,
-		"contentType": ciType,
-		"duration":    ciDuration,
+		"id":            ciID,
+		"contentType":   ciType,
+		"duration":      ciDuration,
+		"thumbnailUrl":  thumbURL,
 	}
 
 	return common.Success(c, map[string]interface{}{
@@ -520,7 +617,7 @@ func (h *Handler) ModelAvatar(c echo.Context) error {
 	defer body.Close()
 
 	// Set cache headers
-	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = io.Copy(c.Response().Writer, body)
@@ -564,7 +661,7 @@ func (h *Handler) ModelHeader(c echo.Context) error {
 	}
 	defer body.Close()
 
-	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	c.Response().Header().Set("Cache-Control", cacheControlProxiedR2Image)
 	c.Response().Header().Set("Content-Type", contentType)
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = io.Copy(c.Response().Writer, body)

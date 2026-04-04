@@ -18,6 +18,166 @@ import (
 
 var ErrContentNotFound = errors.New("content item not found")
 
+// resolutionPPlaylistBase returns pixel height for variant playlists like 720p.m3u8, 360p.m3u8, 916p.m3u8.
+func resolutionPPlaylistBase(base string) (height int, ok bool) {
+	if !strings.HasSuffix(base, ".m3u8") {
+		return 0, false
+	}
+	mid := strings.TrimSuffix(base, ".m3u8")
+	if len(mid) < 3 || mid[len(mid)-1] != 'p' {
+		return 0, false
+	}
+	num := mid[:len(mid)-1]
+	if len(num) < 2 || len(num) > 4 {
+		return 0, false
+	}
+	for _, c := range num {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	v, err := strconv.Atoi(num)
+	if err != nil || v <= 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+// isAcceptableHLSEntryPlaylist is true for masters (master.m3u8, master-720p.m3u8), index/playlist, or NNNp.m3u8 variants.
+func isAcceptableHLSEntryPlaylist(base string) bool {
+	if base == "index.m3u8" || base == "playlist.m3u8" {
+		return true
+	}
+	if strings.HasPrefix(base, "master") && strings.HasSuffix(base, ".m3u8") {
+		return true
+	}
+	_, ok := resolutionPPlaylistBase(base)
+	return ok
+}
+
+// playlistImportPriority picks one canonical .m3u8 per *_source when several exist (e.g. master.m3u8 vs 720p.m3u8).
+func playlistImportPriority(base string) int {
+	switch base {
+	case "master.m3u8":
+		return 1_000_000
+	case "index.m3u8", "playlist.m3u8":
+		return 500_000
+	}
+	if strings.HasPrefix(base, "master-") && strings.HasSuffix(base, ".m3u8") {
+		rest := strings.TrimSuffix(strings.TrimPrefix(base, "master-"), ".m3u8")
+		if rest == "" {
+			return 400_000
+		}
+		if len(rest) >= 2 && rest[len(rest)-1] == 'p' {
+			if n, err := strconv.Atoi(rest[:len(rest)-1]); err == nil && n > 0 {
+				return 300_000 + n
+			}
+		}
+		if n, err := strconv.Atoi(rest); err == nil && n > 0 {
+			return 300_000 + n
+		}
+		return 310_000
+	}
+	if h, ok := resolutionPPlaylistBase(base); ok {
+		return 100_000 + h
+	}
+	if strings.HasPrefix(base, "master") && strings.HasSuffix(base, ".m3u8") {
+		return 450_000
+	}
+	return 0
+}
+
+// parseSourceSegmentUID extracts the video id from an R2 path segment:
+//   xyz_source → xyz
+//   xyz_source (1) → xyz   (Windows duplicate folder)
+//   xyz_source - Copy → xyz, xyz_source - Copy (2) → xyz   (English Windows)
+func parseSourceSegmentUID(segment string) (uid string, ok bool) {
+	const marker = "_source"
+	idx := strings.LastIndex(segment, marker)
+	if idx <= 0 {
+		return "", false
+	}
+	rest := segment[idx+len(marker):]
+	if rest == "" {
+		return segment[:idx], true
+	}
+	if strings.HasPrefix(rest, " (") && strings.HasSuffix(rest, ")") && len(rest) >= 4 {
+		num := rest[2 : len(rest)-1]
+		for _, c := range num {
+			if c < '0' || c > '9' {
+				return "", false
+			}
+		}
+		return segment[:idx], true
+	}
+	if parseSourceSegmentCopySuffix(rest) {
+		return segment[:idx], true
+	}
+	return "", false
+}
+
+// parseSourceSegmentCopySuffix is true for English " - Copy" / " - Copy (2)" or Polish " - kopia" / " - kopia (2)" after _source.
+func parseSourceSegmentCopySuffix(rest string) bool {
+	for _, suf := range []string{" - Copy", " - kopia"} {
+		if rest == suf {
+			return true
+		}
+		if strings.HasPrefix(rest, suf+" (") && strings.HasSuffix(rest, ")") && len(rest) > len(suf)+3 {
+			num := rest[len(suf)+2 : len(rest)-1]
+			for _, c := range num {
+				if c < '0' || c > '9' {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func hlsFolderIsWindowsDuplicateVariant(hlsFolder string) bool {
+	if strings.Contains(hlsFolder, "_source (") {
+		return true
+	}
+	for _, s := range []string{"_source - Copy", "_source - kopia"} {
+		if strings.Contains(hlsFolder, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseVideoM3U8Key detects an HLS entry playlist for import.
+// unique_id comes from the path segment …_source or …_source (N) (e.g. abc123_source).
+// hls_folder_path is the directory containing the .m3u8 file (supports nested layouts like …_source/hls/master.m3u8).
+func parseVideoM3U8Key(key string) (uniqueID, hlsFolder string, ok bool) {
+	if !strings.HasSuffix(key, ".m3u8") {
+		return "", "", false
+	}
+	parts := strings.Split(key, "/")
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	base := parts[len(parts)-1]
+	if !isAcceptableHLSEntryPlaylist(base) {
+		return "", "", false
+	}
+	sourceIdx := -1
+	var uid string
+	for i := len(parts) - 2; i >= 0; i-- {
+		if u, ok := parseSourceSegmentUID(parts[i]); ok {
+			sourceIdx = i
+			uid = u
+			break
+		}
+	}
+	if sourceIdx < 0 || uid == "" {
+		return "", "", false
+	}
+	hls := strings.Join(parts[:len(parts)-1], "/")
+	return uid, hls, true
+}
+
 type Service struct {
 	db  *pgxpool.Pool
 	r2  *R2Client
@@ -95,61 +255,26 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 	var imported int
 	log.Printf("[Sync] Scanning %d objects for model %s (Prefix: %s)", len(objects), folderName, prefix)
 
-	// Pre-load existing unique_ids for this model to detect true duplicates
-	existingIDs := make(map[string]bool)
-	existRows, err := s.db.Query(ctx, `SELECT unique_id FROM content_items WHERE model_id = $1`, modelID)
-	if err != nil {
-		log.Printf("[Sync] Query existing content_items for model %s: %v", modelID, err)
-	} else if existRows != nil {
-		for existRows.Next() {
-			var uid string
-			if existRows.Scan(&uid) == nil {
-				existingIDs[uid] = true
-			}
-		}
-		existRows.Close()
+	type videoPick struct {
+		key       string
+		hlsFolder string
+		priority  int
 	}
-
-	// Track unique IDs to avoid duplicate imports for different resolutions
-	processedVideos := make(map[string]bool)
+	videoBest := make(map[string]videoPick)
 
 	for _, obj := range objects {
 		key := obj.Key
 
-		// ── Video Content ───────────────────────────────────────────────────
-		// Match: folder/UNIQUE_ID_source/master-RESOLUTION.m3u8
-		// We pick the "master-1080p.m3u8" as the primary if it exists, or the first one we see.
-		if strings.HasSuffix(key, ".m3u8") && strings.Contains(key, "_source/master-") {
-			parts := strings.Split(key, "/")
-			if len(parts) < 2 {
-				continue
-			}
-			folderPart := parts[len(parts)-2] // e.g. "0h9pjtspoj4o2e4ny06bf_source"
-			uniqueID := strings.TrimSuffix(folderPart, "_source")
-			
-			// If we already imported this video (e.g. 360p), we might want to upgrade it to 1080p
-			// or just skip if already present. For now, let's prioritize 1080p.
-			is1080p := strings.Contains(key, "master-1080p.m3u8")
-			
-			if processedVideos[uniqueID] && !is1080p {
-				continue
-			}
-
-			hlsFolder := strings.Join(parts[:len(parts)-1], "/")
-
-		_, err := s.db.Exec(ctx, `
-			INSERT INTO content_items (model_id, unique_id, content_type, hls_master_path, hls_folder_path, is_active, is_hidden)
-			VALUES ($1, $2, 'VIDEO', $3, $4, true, false)
-			ON CONFLICT (unique_id) DO UPDATE SET hls_master_path = $3, hls_folder_path = $4
-		`, modelID, uniqueID, key, hlsFolder)
-
-			if err == nil {
-				if !processedVideos[uniqueID] {
-					imported++
-				}
-				processedVideos[uniqueID] = true
-
-				go s.populateVideoDuration(context.Background(), uniqueID, key)
+		// ── Video: collect best playlist per unique_id (master.m3u8 > master-720p > 720p.m3u8, etc.)
+		if uniqueID, hlsFolder, ok := parseVideoM3U8Key(key); ok {
+			base := key[strings.LastIndex(key, "/")+1:]
+			pri := playlistImportPriority(base)
+			cur, exists := videoBest[uniqueID]
+			preferCanonical := pri == cur.priority && exists &&
+				!hlsFolderIsWindowsDuplicateVariant(hlsFolder) &&
+				hlsFolderIsWindowsDuplicateVariant(cur.hlsFolder)
+			if !exists || pri > cur.priority || preferCanonical {
+				videoBest[uniqueID] = videoPick{key: key, hlsFolder: hlsFolder, priority: pri}
 			}
 			continue
 		}
@@ -175,16 +300,34 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 			VALUES ($1, $2, 'PHOTO', $3, true, false)
 			ON CONFLICT (unique_id) DO UPDATE SET thumbnail_path = $3
 		`, modelID, fullUniqueID, key)
-			
-			if err == nil {
+
+			if err != nil {
+				log.Printf("[Sync] PHOTO insert/update failed model=%s key=%s: %v", folderName, key, err)
+			} else {
 				imported++
 			}
 		}
 	}
 
-	// Cleanup: remove duplicate content items for this model.
-	// Keep the newest entry (by created_at) for each hls_folder_path (videos)
-	// and each thumbnail_path (photos).
+	for uid, pick := range videoBest {
+		_, err := s.db.Exec(ctx, `
+			INSERT INTO content_items (model_id, unique_id, content_type, hls_master_path, hls_folder_path, is_active, is_hidden)
+			VALUES ($1, $2, 'VIDEO', $3, $4, true, false)
+			ON CONFLICT (unique_id) DO UPDATE SET
+				model_id = EXCLUDED.model_id,
+				hls_master_path = EXCLUDED.hls_master_path,
+				hls_folder_path = EXCLUDED.hls_folder_path
+		`, modelID, uid, pick.key, pick.hlsFolder)
+		if err != nil {
+			log.Printf("[Sync] VIDEO insert/update failed model=%s key=%s: %v", folderName, pick.key, err)
+			continue
+		}
+		imported++
+		go s.populateVideoDuration(context.Background(), uid, pick.key)
+	}
+
+	// Cleanup: remove duplicate rows for this model (same R2 key, different ids — e.g. legacy imports).
+	// Keep the newest entry (by created_at) per hls_folder_path (VIDEO) and per thumbnail_path (PHOTO).
 	_, _ = s.db.Exec(ctx, `
 		DELETE FROM content_items ci
 		WHERE ci.model_id = $1
@@ -195,6 +338,22 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 			WHERE ci2.model_id = ci.model_id
 			AND ci2.hls_folder_path = ci.hls_folder_path
 			AND ci2.content_type = 'VIDEO'
+			AND ci2.id != ci.id
+			AND ci2.created_at > ci.created_at
+		)
+	`, modelID)
+
+	_, _ = s.db.Exec(ctx, `
+		DELETE FROM content_items ci
+		WHERE ci.model_id = $1
+		AND ci.content_type = 'PHOTO'
+		AND ci.thumbnail_path IS NOT NULL
+		AND ci.thumbnail_path <> ''
+		AND EXISTS (
+			SELECT 1 FROM content_items ci2
+			WHERE ci2.model_id = ci.model_id
+			AND ci2.content_type = 'PHOTO'
+			AND ci2.thumbnail_path = ci.thumbnail_path
 			AND ci2.id != ci.id
 			AND ci2.created_at > ci.created_at
 		)

@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,8 +107,18 @@ func (n *Notifier) getWebhookURL(ctx context.Context) string {
 	}
 }
 
+func parseRetryAfterSeconds(h string) int {
+	if h == "" {
+		return 0
+	}
+	if sec, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && sec > 0 {
+		return sec
+	}
+	return 0
+}
+
 func (n *Notifier) send(payload WebhookPayload) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	url := n.getWebhookURL(ctx)
@@ -122,24 +133,45 @@ func (n *Notifier) send(payload WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		log.Printf("[Discord] Failed to create request: %v", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
+	const maxAttempts = 4
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			log.Printf("[Discord] Failed to create request: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := n.httpClient.Do(req)
-	if err != nil {
-		log.Printf("[Discord] Failed to send webhook: %v", err)
-		return
-	}
-	defer resp.Body.Close()
+		resp, err := n.httpClient.Do(req)
+		if err != nil {
+			log.Printf("[Discord] Failed to send webhook: %v", err)
+			return
+		}
 
-	if resp.StatusCode >= 400 {
-		log.Printf("[Discord] Webhook returned status %d", resp.StatusCode)
-	} else {
-		log.Printf("[Discord] Webhook sent successfully (status %d)", resp.StatusCode)
+		status := resp.StatusCode
+		retryAfter := parseRetryAfterSeconds(resp.Header.Get("Retry-After"))
+		remaining := resp.Header.Get("X-Ratelimit-Remaining")
+		_ = resp.Body.Close()
+
+		if status == http.StatusTooManyRequests && attempt < maxAttempts-1 {
+			wait := retryAfter
+			if wait < 1 {
+				wait = 2
+			}
+			if wait > 60 {
+				wait = 60
+			}
+			log.Printf("[Discord] Webhook 429, retry in %ds (attempt %d, x-ratelimit-remaining=%q)", wait, attempt+1, remaining)
+			time.Sleep(time.Duration(wait) * time.Second)
+			continue
+		}
+
+		if status >= 400 {
+			log.Printf("[Discord] Webhook returned status %d", status)
+		} else {
+			log.Printf("[Discord] Webhook sent successfully (status %d)", status)
+		}
+		return
 	}
 }
 
@@ -324,6 +356,43 @@ func (n *Notifier) NotifyBlikCodeUpdated(ctx context.Context, info PurchaseInfo)
 		Title:     fmt.Sprintf("\U0001F504 BLIK Code Updated: %s", info.PackageName),
 		URL:       n.paymentURL(info.PurchaseID),
 		Color:     color,
+		Fields:    fields,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Footer:    &Footer{Text: fmt.Sprintf("ID: %s | Platform: %s", info.PurchaseID, parseOSInfo(info.UserAgent))},
+	}
+
+	var pingContent string
+	if roleID != "" {
+		pingContent = fmt.Sprintf("<@&%s>", roleID)
+	}
+
+	go n.send(WebhookPayload{
+		Content: pingContent,
+		Embeds:  []Embed{embed},
+	})
+}
+
+// NotifyPurchaseExpired fires when a pending purchase times out (EXPIRED).
+func (n *Notifier) NotifyPurchaseExpired(ctx context.Context, info PurchaseInfo) {
+	riskEmail := IsRiskEmail(info.UserEmail)
+	roleID := n.getPingRoleID(ctx)
+
+	fields := []Field{
+		{Name: "\U0001F464 User", Value: fmt.Sprintf("`%s`", displayName(info)), Inline: true},
+		{Name: "\U0001F4E7 Email", Value: fmt.Sprintf("`%s`", info.UserEmail), Inline: true},
+		{Name: "\U0001F4B0 Amount", Value: fmt.Sprintf("`%.2f %s`", info.Amount, currencyLabel(info)), Inline: true},
+		{Name: "\U0001F48E Credits", Value: fmt.Sprintf("`%d`", info.Credits), Inline: true},
+		{Name: "\U0001F4B3 Method", Value: formatMethodEmoji(info), Inline: true},
+		{Name: "\u23F0 Status", Value: "`EXPIRED` — payment window closed without completion", Inline: false},
+	}
+
+	fields = append(fields, insightFields(info, riskEmail)...)
+
+	embed := Embed{
+		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Title:     fmt.Sprintf("\u23F0 Purchase Expired: %s", info.PackageName),
+		URL:       n.paymentURL(info.PurchaseID),
+		Color:     ColorGray,
 		Fields:    fields,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Footer:    &Footer{Text: fmt.Sprintf("ID: %s | Platform: %s", info.PurchaseID, parseOSInfo(info.UserAgent))},

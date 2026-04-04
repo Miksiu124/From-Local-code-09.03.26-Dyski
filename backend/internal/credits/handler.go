@@ -530,12 +530,15 @@ func (h *Handler) ListPurchases(c echo.Context) error {
 	statusFilter := c.QueryParam("status")
 	validStatuses := map[string]bool{"PENDING": true, "APPROVED": true, "REJECTED": true, "EXPIRED": true}
 
-	// Expire old PENDING purchases (skip BLIK with retries remaining)
-	_, _ = h.db.Exec(ctx, `
+	// Expire old PENDING purchases (skip BLIK with retries remaining); notify Discord per transitioned row.
+	if rows, qerr := h.db.Query(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE user_id = $1 AND status = 'PENDING' AND expiration_time < now()
 			AND (payment_method != 'BLIK' OR retry_count >= 5)
-	`, userID)
+		RETURNING id
+	`, userID); qerr == nil {
+		discord.NotifyForExpiredPurchaseRows(rows, h.db, h.discord)
+	}
 
 	query := `
 		SELECT cp.id, cp.credits, cp.amount, cp.payment_method, cp.transaction_code,
@@ -657,11 +660,19 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 	}
 
 	// Auto-expire (skip BLIK with retries remaining)
-	_, _ = h.db.Exec(ctx, `
+	var expiredPurchaseID string
+	if err := h.db.QueryRow(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE id = $1 AND user_id = $2 AND status = 'PENDING' AND expiration_time < now()
 			AND (payment_method != 'BLIK' OR retry_count >= 5)
-	`, purchaseID, userID)
+		RETURNING id
+	`, purchaseID, userID).Scan(&expiredPurchaseID); err == nil {
+		go func(pid string) {
+			bg := context.Background()
+			info := discord.FetchPurchaseInfo(bg, h.db, pid)
+			h.discord.NotifyPurchaseExpired(bg, info)
+		}(expiredPurchaseID)
+	}
 
 	var status, paymentMethod string
 	var expirationTime string

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,6 +38,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	hlsCDN := cfg.HLSUsePublicCDNSegments && cfg.R2PublicURL != ""
+	log.Printf("[config] HLS segments: R2_PUBLIC_URL set=%v HLS_USE_PUBLIC_CDN_SEGMENTS(effective)=%v HLS_USE_API_SEGMENTS=%v → .ts via public CDN=%v",
+		cfg.R2PublicURL != "", cfg.HLSUsePublicCDNSegments, cfg.HLSUseAPISegments, hlsCDN)
 
 	ctx := context.Background()
 
@@ -69,6 +73,15 @@ func main() {
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
 	e.Use(echomw.BodyLimit("2M"))
+	// Gzip JSON responses — skip binary (thumbnails, segments). Level 3 = less CPU than 5
+	e.Use(echomw.GzipWithConfig(echomw.GzipConfig{
+		Level: 3,
+		Skipper: func(c echo.Context) bool {
+			p := c.Path()
+			return strings.Contains(p, "/thumbnail") || strings.Contains(p, "/segment") ||
+				strings.Contains(p, "/avatar") || strings.Contains(p, "/header")
+		},
+	}))
 
 	// Custom HTTP Error Handler to ensure all errors are JSON
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
@@ -135,7 +148,7 @@ func main() {
 	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
 
 	// Models (public)
-	modelsHandler := models.NewHandler(pgPool, cfg)
+	modelsHandler := models.NewHandler(pgPool, cfg, redisClient)
 	api.GET("/models", modelsHandler.List)
 	api.GET("/models/stats", modelsHandler.GetStats) // Added
 	api.GET("/models/:slug", modelsHandler.GetBySlug)
@@ -191,7 +204,7 @@ func main() {
     api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
 
 	// Favorites (requires auth)
-	favoritesHandler := favorites.NewHandler(pgPool)
+	favoritesHandler := favorites.NewHandler(pgPool, cfg)
 	favGroup := api.Group("/favorites", authMW.Authenticate)
 	favGroup.POST("", favoritesHandler.Toggle)
 	favGroup.GET("", favoritesHandler.List)

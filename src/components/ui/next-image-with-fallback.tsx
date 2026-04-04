@@ -5,11 +5,16 @@ import Image from "next/image";
 import { RetryImage } from "./retry-image";
 import { cn } from "@/lib/utils";
 
-const CDN_HOST = "files.dyskiof.net";
+/** Comma-separated hostnames for direct CDN images (unoptimized next/image). */
+const CDN_HOSTS = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
 
 function isCdnUrl(src: string): boolean {
   try {
-    return new URL(src, "https://dummy").hostname === CDN_HOST;
+    const host = new URL(src, "https://dummy").hostname.toLowerCase();
+    return CDN_HOSTS.includes(host);
   } catch {
     return false;
   }
@@ -29,7 +34,8 @@ interface NextImageWithFallbackProps {
 }
 
 /**
- * Uses next/image for CDN URLs (optimization, WebP/AVIF) with fallback to RetryImage on error.
+ * Uses next/image for CDN URLs. For files.dyskiof.net we use unoptimized=true — images are
+ * already WebP from R2, so bypassing _next/image avoids cache misses and 12s+ load times.
  * For non-CDN URLs (e.g. /api/... proxy), uses RetryImage directly.
  */
 export function NextImageWithFallback({
@@ -64,7 +70,7 @@ export function NextImageWithFallback({
     );
   }
 
-  // CDN URL: use next/image for optimization
+  // CDN URL: unoptimized — fetch directly from CDN, skip _next/image pipeline (avoids MISS, 12s lag)
   if (fill) {
     return (
       <Image
@@ -76,7 +82,7 @@ export function NextImageWithFallback({
         loading={priority ? undefined : loading}
         priority={priority}
         onError={handleError}
-        unoptimized={false}
+        unoptimized
       />
     );
   }
@@ -91,7 +97,7 @@ export function NextImageWithFallback({
       loading={priority ? undefined : loading}
       priority={priority}
       onError={handleError}
-      unoptimized={false}
+      unoptimized
     />
   );
 }

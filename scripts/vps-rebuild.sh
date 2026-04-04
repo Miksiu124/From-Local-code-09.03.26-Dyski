@@ -5,10 +5,10 @@
 
 set -e
 
-COMPOSE_FILES="-f docker-compose.yml"
+COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
 if [[ "$1" == "--billionmail" ]]; then
-  COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml"
-  echo "UĹĽywam BillionMail override."
+  COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
+  echo "Używam BillionMail + VPS nginx (production)."
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

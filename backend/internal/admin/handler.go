@@ -73,11 +73,14 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// Auto-expire old pending purchases (skip BLIK with retries remaining)
-	_, _ = h.db.Exec(ctx, `
+	if rows, qerr := h.db.Query(ctx, `
 		UPDATE credit_purchases SET status = 'EXPIRED'
 		WHERE status = 'PENDING' AND expiration_time < now()
 			AND (payment_method != 'BLIK' OR retry_count >= 5)
-	`)
+		RETURNING id
+	`); qerr == nil {
+		discord.NotifyForExpiredPurchaseRows(rows, h.db, h.discord)
+	}
 
 	statusFilter := c.QueryParam("status")
 	sortBy := c.QueryParam("sortBy")
@@ -335,6 +338,9 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 
 	h.publishBlikAction(ctx, purchaseID, "REJECTED")
 	h.publishNotification(ctx, userID, "PAYMENT_REJECTED", "Payment Rejected", msg)
+
+	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
+	h.discord.NotifyPurchaseRejected(ctx, info, req.Reason)
 
 	return common.Success(c, map[string]bool{"success": true})
 }
@@ -1373,10 +1379,69 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 			fmt.Sprintf("%d settings failed to save", errCount))
 	}
 
+	// Invalidate public settings cache so /api/settings/public reflects changes
+	if h.redis != nil {
+		_ = h.redis.Del(ctx, "api:settings:public").Err()
+	}
 	return common.Success(c, map[string]bool{"success": true})
 }
 
 // ═══ R2 Operations ═══════════════════════════════════════════════════════════
+
+// invalidateContentCaches clears Redis caches for models list and all model detail/content.
+// Call after SyncR2, ImportR2, or any bulk content change.
+func (h *Handler) invalidateContentCaches(ctx context.Context) {
+	if h.redis == nil {
+		return
+	}
+	_ = h.redis.Del(ctx, "api:models:first", "api:models:featured").Err()
+	var cursor uint64
+	for {
+		keys, next, err := h.redis.Scan(ctx, cursor, "api:model:*", 100).Result()
+		if err != nil {
+			break
+		}
+		for _, k := range keys {
+			_ = h.redis.Del(ctx, k).Err()
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+// invalidateModelCaches clears caches for a specific model by content item ID.
+// Call after ToggleContentHidden or DeleteContent.
+func (h *Handler) invalidateModelCaches(ctx context.Context, contentItemID string) {
+	if h.redis == nil || contentItemID == "" {
+		return
+	}
+	var slug string
+	err := h.db.QueryRow(ctx, `
+		SELECT m.folder_name FROM content_items ci
+		JOIN models m ON m.id = ci.model_id
+		WHERE ci.id = $1
+	`, contentItemID).Scan(&slug)
+	if err != nil {
+		return
+	}
+	_ = h.redis.Del(ctx, "api:model:slug:"+slug).Err()
+	var cursor uint64
+	for {
+		keys, next, err := h.redis.Scan(ctx, cursor, "api:model:content:"+slug+":*", 50).Result()
+		if err != nil {
+			break
+		}
+		for _, k := range keys {
+			_ = h.redis.Del(ctx, k).Err()
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+}
 
 // ═══ R2 Operations ═══════════════════════════════════════════════════════════
 
@@ -1399,6 +1464,7 @@ func (h *Handler) SyncR2(c echo.Context) error {
 		totalObjects += objects
 	}
 
+	h.invalidateContentCaches(ctx)
 	return common.Success(c, map[string]interface{}{
 		"syncedModels":   len(synced),
 		"newContentItems": totalImported,
@@ -1424,6 +1490,7 @@ func (h *Handler) ImportR2(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	h.invalidateContentCaches(ctx)
 	return common.Success(c, map[string]interface{}{
 		"imported":     imported,
 		"totalObjects": total,
@@ -1642,6 +1709,7 @@ func (h *Handler) ToggleContentHidden(c echo.Context) error {
 		return common.NotFound(c, "Content item not found")
 	}
 
+	h.invalidateModelCaches(ctx, req.ID)
 	return common.Success(c, map[string]bool{"success": true})
 }
 
@@ -1652,6 +1720,9 @@ func (h *Handler) DeleteContent(c echo.Context) error {
 	if id == "" || len(id) < 10 {
 		return common.BadRequest(c, "id is required")
 	}
+
+	// Invalidate cache before delete (need slug from DB)
+	h.invalidateModelCaches(ctx, id)
 
 	err := h.contentService.DeleteContentItem(ctx, id)
 	if err != nil {
@@ -1665,50 +1736,7 @@ func (h *Handler) DeleteContent(c echo.Context) error {
 
 // fetchPurchaseInfoForDiscord loads all fields needed for a Discord webhook embed.
 func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID string) discord.PurchaseInfo {
-	var info discord.PurchaseInfo
-	info.PurchaseID = purchaseID
-	info.Currency = "PLN"
-
-	var blikCode, crypto, txId, uname *string
-	err := h.db.QueryRow(ctx, `
-		SELECT cp.credits, cp.amount, cp.payment_method, cp.transaction_code,
-		       cp.blik_code, cp.crypto_currency, cp.tx_id, cp.retry_count,
-		       u.email, u.name, u.created_at,
-		       pkg.name
-		FROM credit_purchases cp
-		JOIN users u ON u.id = cp.user_id
-		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		WHERE cp.id = $1
-	`, purchaseID).Scan(
-		&info.Credits, &info.Amount, &info.PaymentMethod, &info.TransactionCode,
-		&blikCode, &crypto, &txId, &info.PaymentAttempts,
-		&info.UserEmail, &uname, &info.UserCreatedAt,
-		&info.PackageName,
-	)
-	if err != nil {
-		log.Printf("[Discord] Failed to fetch purchase info for %s: %v", purchaseID, err)
-		return info
-	}
-	// Amount from DB is in PLN
-	if blikCode != nil {
-		info.BlikCode = *blikCode
-	}
-	if crypto != nil {
-		info.CryptoCurrency = *crypto
-	}
-	if txId != nil {
-		info.TxID = *txId
-	}
-	if uname != nil {
-		info.UserName = *uname
-	}
-	// country column may not exist yet if migration hasn't been applied
-	var uCountry *string
-	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE email = $1`, info.UserEmail).Scan(&uCountry)
-	if uCountry != nil {
-		info.UserCountry = *uCountry
-	}
-	return info
+	return discord.FetchPurchaseInfo(ctx, h.db, purchaseID)
 }
 
 // ═══ Analytics ═══════════════════════════════════════════════════════════════

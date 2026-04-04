@@ -51,6 +51,8 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState(0);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
+  const autoplayEnabledRef = useRef(false);
+  autoplayEnabledRef.current = autoplayEnabled;
 
   const [hlsError, setHlsError] = useState<string | null>(null);
   const retryCountRef = useRef(0);
@@ -60,15 +62,29 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   const qualityButtonRef = useRef<HTMLButtonElement>(null);
   const qualityMenuRef = useRef<HTMLDivElement | null>(null);
   const qualityMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [qualityMenuRect, setQualityMenuRect] = useState<{ top: number; right: number } | null>(null);
 
   const MAX_AUTO_RETRIES = 2;
+  const LOADING_TIMEOUT_MS = 25_000;
 
   useEffect(() => {
     const ua = navigator.userAgent;
     setIsIOS(/iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
     setIsMobile("ontouchstart" in window || window.innerWidth < 768);
   }, []);
+
+  // Focus container on mount so keyboard shortcuts (arrows, space, etc.) work immediately
+  // without requiring a click first. Refocus when switching videos.
+  // Small delay ensures overlay is visible and any parent focus trap has run.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const t = setTimeout(() => {
+      el.focus({ preventScroll: true });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [contentItemId]);
 
   // Fullscreen restore removed: ContentViewer now uses in-place nav when fullscreen,
   // so VideoPlayer stays mounted and fullscreen persists on Android.
@@ -87,9 +103,30 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     if (!videoRef.current) return;
     let destroyed = false;
     let nativeErrorHandler: (() => void) | null = null;
+    let loadHandler: (() => void) | null = null;
 
     // Clear previous error on re-init
     setHlsError(null);
+
+    // Po F5 request playlist konkuruje z ładowaniem strony (limit połączeń).
+    // Czekaj na document.load — wtedy strona jest gotowa, request nie blokuje.
+    // Gdy readyState!==complete, dodajemy listener — ale load mógł już wystąpić (race).
+    // Po addEventListener sprawdzamy ponownie i init od razu jeśli complete.
+    function scheduleInit() {
+      const doInit = () => requestAnimationFrame(() => initHls());
+      if (document.readyState === "complete") {
+        doInit();
+      } else {
+        loadHandler = () => doInit();
+        window.addEventListener("load", loadHandler);
+        const rs: string = document.readyState;
+        if (rs === "complete") {
+          window.removeEventListener("load", loadHandler);
+          loadHandler = null;
+          doInit();
+        }
+      }
+    }
 
     async function initHls() {
       // Reset UI state from previous video so we don't show stale progress/time
@@ -98,14 +135,32 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       setBuffered(0);
       setPlaying(false);
       setHlsError(null);
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+      loadingTimeoutRef.current = setTimeout(() => {
+        loadingTimeoutRef.current = null;
+        if (destroyed) return;
+        setHlsError("Video took too long to load. Try again or check your connection.");
+        setLoading(false);
+      }, LOADING_TIMEOUT_MS);
       try {
         const Hls = (await import("hls.js")).default;
         if (destroyed) return;
 
         if (Hls.isSupported() && videoRef.current) {
+          // Credentials only for same-origin (playlist API). Presigned R2 URLs must NOT
+          // use credentials — R2 CORS doesn't support Access-Control-Allow-Credentials,
+          // which causes "blocked by CORS policy" when withCredentials=true.
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
           const hls = new Hls({
-            xhrSetup: (xhr: XMLHttpRequest) => {
-              xhr.withCredentials = true;
+            xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+              const isSameOrigin = !url || url.startsWith("/") || url.startsWith(origin);
+              // Only same-origin (playlist via /api/...) may use credentials. CDN segment URLs carry
+              // ?token=&expires= on every request — withCredentials would require a strict ACAO + credentials
+              // handshake and breaks when the edge returns * or CORS is slightly off (red 200 in DevTools).
+              xhr.withCredentials = isSameOrigin;
             },
           });
 
@@ -114,7 +169,11 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (destroyed) return;
-            if (autoplayEnabled && videoRef.current) {
+            if (loadingTimeoutRef.current) {
+              clearTimeout(loadingTimeoutRef.current);
+              loadingTimeoutRef.current = null;
+            }
+            if (autoplayEnabledRef.current && videoRef.current) {
               videoRef.current.muted = true;
               videoRef.current.play().then(() => {
                 if (videoRef.current) videoRef.current.muted = false;
@@ -149,6 +208,10 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
           hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal: boolean; type: string; details: string }) => {
             if (data.fatal) {
+              if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = null;
+              }
               logger.error("HLS fatal error", { type: data.type, details: data.details });
 
               // Try auto-recovery based on error type
@@ -175,17 +238,32 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           hlsRef.current = hls;
         } else if (videoRef.current?.canPlayType("application/vnd.apple.mpegurl")) {
           const video = videoRef.current;
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
+          loadingTimeoutRef.current = setTimeout(() => {
+            loadingTimeoutRef.current = null;
+            if (!destroyed) {
+              setHlsError("Video took too long to load. Try again or check your connection.");
+              setLoading(false);
+            }
+          }, LOADING_TIMEOUT_MS);
           video.src = `/api/content/${contentItemId}/playlist/master.m3u8`;
 
           nativeErrorHandler = () => {
             if (!destroyed) {
+              if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = null;
+              }
               setHlsError("Could not load the video.");
               setLoading(false);
             }
           };
           video.addEventListener("error", nativeErrorHandler);
 
-          if (autoplayEnabled) {
+          if (autoplayEnabledRef.current) {
             video.muted = true;
             video.play().then(() => {
               if (videoRef.current) videoRef.current.muted = false;
@@ -195,15 +273,24 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           setLoading(false);
         }
       } catch (error) {
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+          loadingTimeoutRef.current = null;
+        }
         logger.error("Failed to load HLS player", error);
         setHlsError("Failed to initialize the video player.");
         setLoading(false);
       }
     }
 
-    initHls();
+    scheduleInit();
     return () => {
       destroyed = true;
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+      if (loadHandler) window.removeEventListener("load", loadHandler);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -213,7 +300,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         videoRef.current.removeEventListener("error", nativeErrorHandler);
       }
     };
-  }, [contentItemId, initKey, autoplayEnabled]);
+  }, [contentItemId, initKey]);
 
   // Manual retry handler
   const handleRetry = useCallback(() => {
@@ -249,7 +336,13 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       }
     };
     const onWaiting = () => setLoading(true);
-    const onCanPlay = () => setLoading(false);
+    const onCanPlay = () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+      setLoading(false);
+    };
     const onVolumeChange = () => {
       setVolume(video.volume);
       setMuted(video.muted);
@@ -652,11 +745,24 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         controls={isIOS}
         controlsList="nodownload"
         onContextMenu={(e) => e.preventDefault()}
+        onError={() => {
+          const el = videoRef.current;
+          if (!el?.error) return;
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
+          setLoading(false);
+          setHlsError((prev) => {
+            if (prev) return prev;
+            return "Video could not be loaded (link may have expired). Try Retry.";
+          });
+        }}
       />
 
       {/* Loading spinner */}
       {loading && !hlsError && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
           <Loader2 className="h-12 w-12 text-white animate-spin" />
         </div>
       )}
@@ -668,7 +774,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           <p className="text-white text-sm max-w-sm">{hlsError}</p>
           <button
             onClick={(e) => { e.stopPropagation(); handleRetry(); }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium"
           >
             <RotateCcw className="h-4 w-4" />
             Retry

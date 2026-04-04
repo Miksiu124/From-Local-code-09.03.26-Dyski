@@ -1,0 +1,15 @@
+# VPS / produkcja — zawsze łącz z bazowym plikiem:
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
+#
+# Wymusza nginx.conf.production (HTTPS, Cloudflare, BFF /api → frontend).
+# Lokalnie: samo `docker-compose.yml` → nginx/nginx.conf (HTTP, prosty proxy).
+#
+# Z BillionMail:
+#   docker compose -f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml up -d
+
+services:
+  nginx:
+    volumes:
+      - ./nginx/nginx.conf.production:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/certs/security:/etc/nginx/certs/security:ro

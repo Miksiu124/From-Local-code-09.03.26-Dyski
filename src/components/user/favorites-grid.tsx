@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
+import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
 
 interface FavoriteItem {
   id: string;
   contentItemId: string;
   contentType: string;
-  thumbnailPath: string | null;
+  thumbnailUrl?: string;
   duration: number | null;
   modelName: string;
   modelSlug: string;
@@ -237,7 +238,8 @@ export function FavoritesGrid() {
               >
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
                   <LazyRetryImage
-                    src={`/api/content/${item.contentItemId}/thumbnail`}
+                    src={contentThumbnailSrc(item.contentItemId, item.thumbnailUrl)}
+                    fallbackSrc={contentThumbnailProxySrc(item.contentItemId)}
                     alt=""
                     className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
                     rootMargin="600px"

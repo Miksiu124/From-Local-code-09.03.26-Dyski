@@ -2,10 +2,22 @@ name = "avatars-cdn"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
+# Secrets: wrangler secret put MEDIA_CDN_SIGNING_SECRET
+#   (same value as Go STREAMING_TOKEN_SECRET or MEDIA_CDN_SIGNING_SECRET)
+# Required in prod if frontend uses HLS xhr.withCredentials to this host (see README):
+#   MEDIA_CDN_ALLOWED_ORIGINS=https://dyskiof.net,https://www.dyskiof.net
+# Optional vars (Dashboard or [vars] below):
+#   MEDIA_GATEKEEPER_DISABLED=1   # dev only — disables HMAC (public bucket read)
+#
+# [vars]
+# MEDIA_CDN_ALLOWED_ORIGINS = "https://dyskiof.net,https://www.dyskiof.net"
+
 # R2 bucket binding — tylko odczyt z bucketa "files"
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "files"
 
-# Domena: avatars.twojadomena.com (ustaw w Cloudflare po deploy)
-# workers_dev = true  # tymczasowo: *.workers.dev
+# Custom domain — Worker: avatars + treści modeli (zdjęcia/HLS); zablokowane m.in. proofs/*
+[[routes]]
+pattern = "files.dyskiof.net"
+custom_domain = true

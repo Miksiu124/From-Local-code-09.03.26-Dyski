@@ -127,7 +127,7 @@ export default function MyPurchasesPage() {
                                         </div>
 
                                         {purchase.isActive && purchase.purchaseType === "INDIVIDUAL_MODEL" && purchase.folderName && (
-                                            <Link href={`/models/${purchase.folderName}`} className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}>
+                                            <Link href={`/models/${purchase.folderName}`} prefetch={false} className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}>
                                                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                                                 View Content
                                             </Link>

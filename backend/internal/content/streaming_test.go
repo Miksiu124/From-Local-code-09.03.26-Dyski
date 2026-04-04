@@ -153,3 +153,58 @@ func TestRewritePlaylist_CommentsPreserved(t *testing.T) {
 		t.Error("#EXT-X-ENDLIST comment not preserved")
 	}
 }
+
+func TestRewritePlaylistWithPresignedSegments_PublicCDN(t *testing.T) {
+	playlist := "#EXTM3U\nsegment_000.ts\n"
+	out := RewritePlaylistWithPresignedSegments(
+		playlist,
+		"folder/vid_source",
+		"https://example.com/api",
+		"user-1",
+		"content-1",
+		testSecret,
+		3600,
+		true,
+		"https://files.example.com",
+		false,
+		func(string) (string, error) {
+			t.Fatal("presigner must not run when public CDN is on")
+			return "", nil
+		},
+		"", 1800, false,
+	)
+	wantSub := "https://files.example.com/folder/vid_source/segment_000.ts"
+	if !strings.Contains(out, wantSub) {
+		t.Fatalf("expected public URL in output, got:\n%s", out)
+	}
+}
+
+func TestRewritePlaylistWithPresignedSegments_PublicCDN_Signed(t *testing.T) {
+	mediaSecret := "test-media-cdn-signing-secret-min-32-chars!!"
+	playlist := "#EXTM3U\nsegment_000.ts\n"
+	out := RewritePlaylistWithPresignedSegments(
+		playlist,
+		"folder/vid_source",
+		"https://example.com/api",
+		"user-1",
+		"content-1",
+		testSecret,
+		3600,
+		true,
+		"https://files.example.com",
+		false,
+		func(string) (string, error) {
+			t.Fatal("presigner must not run when public CDN is on")
+			return "", nil
+		},
+		mediaSecret,
+		3600,
+		true,
+	)
+	if !strings.Contains(out, "token=") || !strings.Contains(out, "expires=") {
+		t.Fatalf("expected signed query in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "https://files.example.com/folder/vid_source/segment_000.ts") {
+		t.Fatalf("expected CDN base path, got:\n%s", out)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"content-platform-backend/internal/config"
 
@@ -95,6 +96,22 @@ func (r *R2Client) GetObject(ctx context.Context, key string) (io.ReadCloser, st
 	}
 
 	return output.Body, contentType, nil
+}
+
+// PresignGetObject returns a presigned URL for direct R2 access. Client fetches segment
+// from R2, bypassing API — reduces CPU/bandwidth load significantly.
+func (r *R2Client) PresignGetObject(ctx context.Context, key string, expiresIn time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(r.client)
+	presigned, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiresIn
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign %s: %w", key, err)
+	}
+	return presigned.URL, nil
 }
 
 // ListFolders lists all "folder" prefixes at a given prefix

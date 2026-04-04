@@ -15,6 +15,7 @@ interface ContentDetailsResponse {
     thumbnailPath: string | null;
     hlsMasterPath: string | null;
     duration: number | null;
+    thumbnailUrl?: string;
   };
   hasAccess: boolean;
   prevItemId: string | null;
@@ -46,6 +47,7 @@ export default async function ContentViewPage({ params }: Props) {
         modelSlug={data.model.folderName}
         prevItemId={data.prevItemId}
         nextItemId={data.nextItemId}
+        thumbnailUrl={data.contentItem.thumbnailUrl ?? null}
       />
     </div>
   );

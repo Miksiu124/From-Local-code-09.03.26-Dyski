@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { RetryImage } from "./retry-image";
 
 interface LazyRetryImageProps extends Omit<React.ComponentProps<typeof RetryImage>, "src"> {
@@ -50,19 +50,31 @@ export function LazyRetryImage({
     });
   }, [rootMargin]);
 
+  // After infinite scroll / grid reflow, layout can complete after IO's first pass — recover before paint.
+  useLayoutEffect(() => {
+    tryLoad();
+  }, [tryLoad, src]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
+        const e = entries[0];
+        if (e?.isIntersecting) {
           setShouldLoad(true);
+        } else {
+          // IO false-negative (fast scroll, sub-pixel, containment): rect check still loads when in extended band.
+          tryLoad();
         }
       },
-      { root: null, rootMargin, threshold: 0 }
+      { root: null, rootMargin, threshold: [0, 0.01, 0.25, 0.5, 1] }
     );
     observer.observe(el);
+
+    const ro = new ResizeObserver(() => tryLoad());
+    ro.observe(el);
 
     // Initial check: above-fold items may not trigger IO immediately; run once after layout
     const raf = requestAnimationFrame(() => tryLoad());
@@ -85,6 +97,7 @@ export function LazyRetryImage({
 
     return () => {
       cancelAnimationFrame(raf);
+      ro.disconnect();
       observer.disconnect();
       window.removeEventListener("resize", resizeHandler);
       window.removeEventListener("scroll", scrollHandler);
@@ -92,7 +105,7 @@ export function LazyRetryImage({
   }, [rootMargin, tryLoad]);
 
   return (
-    <div ref={containerRef} className="absolute inset-0">
+    <div ref={containerRef} className="absolute inset-0 min-h-0 min-w-0">
       {shouldLoad ? (
         <RetryImage
           src={src}

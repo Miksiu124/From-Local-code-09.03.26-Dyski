@@ -5,10 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"content-platform-backend/internal/thumbnailpub"
 )
 
 var resolutionFromFilename = regexp.MustCompile(`(\d{3,4})p`)
@@ -90,17 +94,95 @@ func RewritePlaylist(playlistContent, baseURL, userID, contentItemID, tokenSecre
 
 		segmentPath := trimmed
 		token := GenerateStreamingToken(tokenSecret, userID, contentItemID, segmentPath, tokenTTL)
+		segmentPathEnc := url.PathEscape(segmentPath)
 
 		if strings.HasSuffix(segmentPath, ".ts") || strings.HasSuffix(segmentPath, ".m4s") || strings.HasSuffix(segmentPath, ".mp4") {
 			rewritten := fmt.Sprintf("%s/content/%s/segment/%s?token=%s&uid=%s",
-				baseURL, contentItemID, segmentPath, token, userID)
+				baseURL, contentItemID, segmentPathEnc, token, userID)
 			result = append(result, rewritten)
 		} else if strings.HasSuffix(segmentPath, ".m3u8") {
 			rewritten := fmt.Sprintf("%s/content/%s/playlist/%s?token=%s&uid=%s",
-				baseURL, contentItemID, segmentPath, token, userID)
+				baseURL, contentItemID, segmentPathEnc, token, userID)
 			result = append(result, rewritten)
 		} else {
 			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// RewritePlaylistWithPresignedSegments rewrites .ts/.m4s/.mp4 to public CDN URLs, presigned URLs, or API URLs.
+// .m3u8 (variant playlists) stay as API URLs (auth required).
+// usePublicCDN + publicCDNBase: https://R2_PUBLIC_URL/key URLs; when signMediaCDN + mediaCDNSecret set, appends ?token=&expires=.
+// usePresigned: R2 presigned GET when public CDN is off.
+// If both off, segment lines use API proxy URLs.
+func RewritePlaylistWithPresignedSegments(playlistContent, hlsFolderPath, baseURL, userID, contentItemID, tokenSecret string, tokenTTL int, usePublicCDN bool, publicCDNBase string, usePresigned bool, presigner func(key string) (string, error), mediaCDNSecret string, mediaCDNTTL int, signMediaCDN bool) string {
+	lines := strings.Split(playlistContent, "\n")
+	var result []string
+
+	resMap := map[string]string{
+		"360": "640x360", "480": "854x480", "720": "1280x720",
+		"1080": "1920x1080", "1440": "2560x1440", "2160": "3840x2160",
+	}
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			if strings.HasPrefix(trimmed, "#EXT-X-STREAM-INF:") && !strings.Contains(trimmed, "RESOLUTION=") {
+				if i+1 < len(lines) {
+					nextLine := strings.TrimSpace(lines[i+1])
+					if m := resolutionFromFilename.FindStringSubmatch(nextLine); len(m) > 1 {
+						if res, ok := resMap[m[1]]; ok {
+							trimmed += ",RESOLUTION=" + res
+							line = trimmed
+						}
+					}
+				}
+			}
+			result = append(result, line)
+			continue
+		}
+
+		segmentPath := trimmed
+		// Skip already absolute URLs (from R2 or custom transcoder) — avoid corrupting keys
+		if strings.HasPrefix(segmentPath, "http://") || strings.HasPrefix(segmentPath, "https://") {
+			result = append(result, line)
+			continue
+		}
+
+		if strings.HasSuffix(segmentPath, ".ts") || strings.HasSuffix(segmentPath, ".m4s") || strings.HasSuffix(segmentPath, ".mp4") {
+			key := strings.TrimSuffix(hlsFolderPath, "/") + "/" + segmentPath
+			if usePublicCDN && publicCDNBase != "" {
+				ttl := time.Duration(mediaCDNTTL) * time.Second
+				if signMediaCDN && mediaCDNSecret != "" {
+					if pub := thumbnailpub.PublicSignedObjectURL(publicCDNBase, key, mediaCDNSecret, ttl); pub != "" {
+						result = append(result, pub)
+						continue
+					}
+				} else if pub := thumbnailpub.PublicObjectURL(publicCDNBase, key); pub != "" {
+					result = append(result, pub)
+					continue
+				}
+			}
+			if usePresigned {
+				presignedURL, err := presigner(key)
+				if err == nil {
+					result = append(result, presignedURL)
+					continue
+				}
+				log.Printf("[HLS] presign failed for %q, falling back to API: %v", key, err)
+			}
+		}
+		// .m3u8 or presign failed: use absolute API URL
+		token := GenerateStreamingToken(tokenSecret, userID, contentItemID, segmentPath, tokenTTL)
+		segmentPathEnc := url.PathEscape(segmentPath) // handle paths with slashes (e.g. subfolder/segment.ts)
+		if strings.HasSuffix(segmentPath, ".m3u8") {
+			result = append(result, fmt.Sprintf("%s/content/%s/playlist/%s?token=%s&uid=%s", baseURL, contentItemID, segmentPathEnc, token, userID))
+		} else {
+			result = append(result, fmt.Sprintf("%s/content/%s/segment/%s?token=%s&uid=%s", baseURL, contentItemID, segmentPathEnc, token, userID))
 		}
 	}
 

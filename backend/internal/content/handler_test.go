@@ -57,3 +57,35 @@ func TestSanitizeFilename_EmptyAndDot(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeSegmentPath_ValidPaths(t *testing.T) {
+	cases := []struct {
+		input, want string
+	}{
+		{"media_1080p_00000.ts", "media_1080p_00000.ts"},
+		{"bds-VIDEO%2Fmedia_1080p_00000.ts", "bds-VIDEO/media_1080p_00000.ts"},
+		{"subfolder%2Fsegment.ts", "subfolder/segment.ts"},
+	}
+	for _, tc := range cases {
+		got, err := sanitizeSegmentPath(tc.input)
+		if err != nil {
+			t.Errorf("sanitizeSegmentPath(%q) unexpected error: %v", tc.input, err)
+		}
+		if got != tc.want {
+			t.Errorf("sanitizeSegmentPath(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestSanitizeSegmentPath_RejectsPathTraversal(t *testing.T) {
+	cases := []string{
+		"..", "../secret.ts", "sub/../file.ts", "sub/..", "/absolute.ts",
+		"sub%2F..%2Ffile.ts", "..%2Ffile.ts",
+	}
+	for _, tc := range cases {
+		_, err := sanitizeSegmentPath(tc)
+		if err == nil {
+			t.Errorf("sanitizeSegmentPath(%q) expected error, got nil", tc)
+		}
+	}
+}

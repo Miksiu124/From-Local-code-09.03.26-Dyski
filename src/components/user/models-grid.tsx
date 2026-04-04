@@ -75,6 +75,7 @@ const ModelCard = memo(function ModelCard({
       <Link
         href={`/models/${model.folderName}`}
         onClick={(e) => onModelClick(model, e)}
+        prefetch={false}
         className="group block"
       >
         <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
@@ -490,9 +491,10 @@ export function ModelsGrid({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:h-[420px]">
-            {/* Main Hero Card */}
-            <div className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card min-h-[280px] sm:min-h-[340px]">
-              <Link href={`/models/${heroModel.folderName}`} onClick={(e) => handleModelClick(heroModel, e)}>
+            {/* Main Hero Card — aspect-video prevents empty stretched tile before image loads */}
+            <div className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card w-full aspect-video lg:aspect-auto lg:min-h-0 lg:h-full min-h-[200px]">
+              <div className="absolute inset-0 bg-gradient-to-br from-muted/50 via-muted/30 to-card animate-pulse lg:animate-none" aria-hidden />
+              <Link href={`/models/${heroModel.folderName}`} onClick={(e) => handleModelClick(heroModel, e)} prefetch={false} className="absolute inset-0 z-[1]">
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={heroModel.id}
@@ -513,10 +515,10 @@ export function ModelsGrid({
                     />
                   </motion.div>
                 </AnimatePresence>
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none z-[2]" />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent pointer-events-none z-[2]" />
 
-                <div className="absolute bottom-0 left-0 p-6 sm:p-8 w-full">
+                <div className="absolute bottom-0 left-0 p-6 sm:p-8 w-full z-[3]">
                   <div className="mb-3">
                     <Badge className="bg-primary/80 backdrop-blur-sm text-white border-none rounded-lg px-2.5 py-1 text-[10px] tracking-widest uppercase font-semibold">
                       {t("featured")}
@@ -541,7 +543,7 @@ export function ModelsGrid({
 
                 {/* Carousel indicators */}
                 {displayFeatured.length > 1 && (
-                  <div className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 flex items-center gap-1.5">
+                  <div className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 z-[4] flex items-center gap-1.5 pointer-events-auto">
                     {displayFeatured.map((_, i) => (
                       <button
                         key={i}
@@ -567,6 +569,7 @@ export function ModelsGrid({
                   key={model.id}
                   href={`/models/${model.folderName}`}
                   onClick={(e) => handleModelClick(model, e)}
+                  prefetch={false}
                   className="flex-shrink-0 w-[260px] lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
                 >
                   <div className="flex h-full min-h-[100px]">

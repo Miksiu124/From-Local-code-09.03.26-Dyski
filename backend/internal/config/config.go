@@ -46,7 +46,16 @@ type Config struct {
 
 	// HLS Streaming
 	StreamingTokenSecret string
-	StreamingTokenTTL    int // seconds
+	StreamingTokenTTL    int  // seconds
+	HLSUseAPISegments    bool // if true, proxy segments via API (skip presigned/public URLs) — use when R2 CORS fails
+	// HLSUsePublicCDNSegments: rewrite .ts/.m4s/.mp4 lines to R2_PUBLIC_URL/... (no presign). Unset env defaults to on when R2PublicURL is set.
+	HLSUsePublicCDNSegments bool
+
+	// Media CDN (R2 public URL / Worker gatekeeper): HMAC ?token=&expires= on object URLs.
+	// MEDIA_CDN_SIGNING_SECRET: optional; if empty, STREAMING_TOKEN_SECRET is used (same key as edge Worker).
+	MediaCDNSigningSecret string
+	MediaCDNUrlTTL        int  // seconds, default 1800 (30m)
+	MediaCDNSignURLs      bool // MEDIA_CDN_SIGN_URLS=0 disables signing (unsigned CDN URLs; emergency only)
 
 	// Admin
 	AdminEmails []string
@@ -94,7 +103,10 @@ func Load() (*Config, error) {
 		R2ProofBucketName:     getEnvOrDefault("R2_PROOF_BUCKET_NAME", ""),
 		R2ProofEndpoint:       getEnvOrDefault("R2_PROOF_ENDPOINT", ""),
 		StreamingTokenSecret:  requireEnv("STREAMING_TOKEN_SECRET"),
-		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600), // 6 hours
+		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600),   // 6 hours
+		HLSUseAPISegments:     getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "true" || getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "1",
+		MediaCDNSigningSecret: getEnvOrDefault("MEDIA_CDN_SIGNING_SECRET", ""),
+		MediaCDNUrlTTL:        getEnvOrDefaultInt("MEDIA_CDN_URL_TTL_SEC", 1800),
 		BlikExpirationMinutes: getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
 		SMTPHost:              getEnvOrDefault("SMTP_HOST", "smtp"),
 		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 587),
@@ -110,6 +122,28 @@ func Load() (*Config, error) {
 	// Normalize URLs: strip trailing slashes to prevent double-slash bugs
 	cfg.FrontendURL = strings.TrimRight(cfg.FrontendURL, "/")
 	cfg.DiscordRedirectURI = strings.TrimRight(cfg.DiscordRedirectURI, "/")
+	cfg.R2PublicURL = strings.TrimRight(cfg.R2PublicURL, "/")
+
+	// HLS segments: point at R2_PUBLIC_URL (Worker) when set; presign if public URL empty.
+	// HLS_USE_PUBLIC_CDN_SEGMENTS=0 keeps presigned URLs even when R2_PUBLIC_URL is set.
+	switch strings.ToLower(strings.TrimSpace(getEnvOrDefault("HLS_USE_PUBLIC_CDN_SEGMENTS", ""))) {
+	case "true", "1", "yes":
+		cfg.HLSUsePublicCDNSegments = true
+	case "false", "0", "no":
+		cfg.HLSUsePublicCDNSegments = false
+	default:
+		cfg.HLSUsePublicCDNSegments = cfg.R2PublicURL != ""
+	}
+	if cfg.HLSUseAPISegments {
+		cfg.HLSUsePublicCDNSegments = false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(getEnvOrDefault("MEDIA_CDN_SIGN_URLS", ""))) {
+	case "false", "0", "no":
+		cfg.MediaCDNSignURLs = false
+	default:
+		cfg.MediaCDNSignURLs = true
+	}
 
 	// R2 endpoint fallback
 	if cfg.R2Endpoint == "" && cfg.R2AccountID != "" {
@@ -165,6 +199,14 @@ func (c *Config) Validate() error {
 
 func (c *Config) IsProduction() bool {
 	return c.Environment == "production"
+}
+
+// EffectiveMediaCDNSigningSecret returns MEDIA_CDN_SIGNING_SECRET or falls back to STREAMING_TOKEN_SECRET.
+func (c *Config) EffectiveMediaCDNSigningSecret() string {
+	if strings.TrimSpace(c.MediaCDNSigningSecret) != "" {
+		return c.MediaCDNSigningSecret
+	}
+	return c.StreamingTokenSecret
 }
 
 func (c *Config) IsAdmin(email string) bool {
