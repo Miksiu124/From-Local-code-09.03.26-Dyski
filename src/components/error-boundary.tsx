@@ -2,6 +2,7 @@
 
 import React from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
+import { buildClientErrorReport } from "@/lib/client-error-report";
 
 interface Props {
   children: React.ReactNode;
@@ -26,6 +27,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
         ? new Error("An unexpected error occurred")
         : error;
     return { hasError: true, error: sanitized };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    const payload = buildClientErrorReport({
+      message: error.message || "React render error",
+      stack: error.stack || "",
+      component: errorInfo.componentStack || "",
+    });
+    void fetch("/api/public/client-errors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
   }
 
   handleReset = () => {

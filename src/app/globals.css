@@ -218,6 +218,21 @@ img {
   outline: none;
 }
 
+/* Product tour — subtle primary ring pulse (spotlight, Option A) */
+@keyframes tour-spotlight-ring {
+  0%,
+  100% {
+    border-color: rgb(124 58 237 / 0.72);
+  }
+  50% {
+    border-color: rgb(124 58 237 / 1);
+  }
+}
+
+.tour-spotlight-pulse {
+  animation: tour-spotlight-ring 2.4s ease-in-out infinite;
+}
+
 /* Reduced motion for users with vestibular sensitivity */
 @media (prefers-reduced-motion: reduce) {
   *,

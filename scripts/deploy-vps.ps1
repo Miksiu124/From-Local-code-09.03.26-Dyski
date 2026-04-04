@@ -1,4 +1,5 @@
 # ContentVault — deploy na VPS (PowerShell)
+# Konfiguracja polaczenia: ContentManager/.env.deploy (VPS_HOST, VPS_USER, VPS_PATH) — wczytywane automatycznie.
 # Uzycie: .\scripts\deploy-vps.ps1 [-Build] [-Rebuild] [-RebuildFresh] [-PgUpgrade] [-Billionmail]
 #   -Build       = sync + docker compose build + up
 #   -Rebuild     = sync + pelna przebudowa od zera (zachowuje tylko postgres_data)
@@ -14,7 +15,8 @@ $deployEnv = Join-Path (Split-Path -Parent $PSScriptRoot) ".env.deploy"
 if (Test-Path $deployEnv) {
   Get-Content $deployEnv | ForEach-Object {
     if ($_ -match '^\s*([^#=]+)=(.*)$' -and $matches[1].Trim()) {
-      [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), 'Process')
+      $val = $matches[2].Trim() -replace "`r`$", ''
+      [Environment]::SetEnvironmentVariable($matches[1].Trim(), $val, 'Process')
     }
   }
 }
@@ -48,12 +50,22 @@ if ($rsync) {
 } else {
   Write-Host "Brak rsync. Uzywam tar+scp (bez .env)..."
   $archive = Join-Path $env:TEMP "contentvault-deploy.tar"
+  $remoteTar = "$VPS_PATH/contentvault-deploy.tar"
   Push-Location $RepoRoot
   tar -cf $archive --exclude=node_modules --exclude=.next --exclude=.git --exclude=uploads --exclude="*.log" --exclude=.env --exclude=.env.local .
   Pop-Location
-  scp $archive "${VPS_USER}@${VPS_HOST}:/tmp/"
+  scp $archive "${VPS_USER}@${VPS_HOST}:$remoteTar"
+  if ($LASTEXITCODE -ne 0) {
+    Remove-Item $archive -ErrorAction SilentlyContinue
+    Write-Error "scp nie powiodl sie (ostatni kod: $LASTEXITCODE). Zainstaluj rsync (np. Git for Windows) albo sprawdz prawa do $remoteTar na VPS."
+    exit $LASTEXITCODE
+  }
   Remove-Item $archive -ErrorAction SilentlyContinue
-  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && tar xf /tmp/contentvault-deploy.tar && rm /tmp/contentvault-deploy.tar"
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && tar xf contentvault-deploy.tar --no-same-owner --no-same-permissions && rm -f contentvault-deploy.tar"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Rozpakowanie archiwum na VPS nie powiodlo sie."
+    exit $LASTEXITCODE
+  }
 }
 
 Write-Host ""

@@ -1,7 +1,7 @@
 # 🚀 VPS Deployment Guide — ContentVault
 
 > **Last updated:** 2026-02-26  
-> **Stack:** Next.js 16 · Go 1.24 · PostgreSQL 16 · Redis 7 · Nginx · Docker Compose  
+> **Stack:** Next.js 16 · Go 1.24 · PostgreSQL 18 · Redis 7 · Nginx · Docker Compose  
 > **Ścieżka na VPS:** `/opt/contentvault` · **Deploy:** `./scripts/deploy-vps.sh --build`
 
 ---

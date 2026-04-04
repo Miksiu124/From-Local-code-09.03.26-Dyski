@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,6 +29,9 @@ type Service struct {
 func NewService(cfg *config.Config, db *pgxpool.Pool, redis *redis.Client) *Service {
 	return &Service{cfg: cfg, db: db, redis: redis}
 }
+
+// ErrEmailNotVerified is returned from Login when the account password is valid but email is not verified.
+var ErrEmailNotVerified = errors.New("email not verified")
 
 type UserRow struct {
 	ID            string
@@ -127,6 +131,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, *U
 		return "", nil, fmt.Errorf("account suspended")
 	}
 
+	if !user.EmailVerified && !s.cfg.IsAdmin(user.Email) {
+		return "", nil, ErrEmailNotVerified
+	}
+
 	// Update last login
 	_, _ = s.db.Exec(ctx, `UPDATE users SET last_login_at = now() WHERE id = $1`, user.ID)
 
@@ -172,6 +180,31 @@ func (s *Service) GetUser(ctx context.Context, userID string) (*UserRow, error) 
 	return &user, nil
 }
 
+// GetUserByEmail loads a user row by email (for public resend-verification).
+func (s *Service) GetUserByEmail(ctx context.Context, email string) (*UserRow, error) {
+	var user UserRow
+	err := s.db.QueryRow(ctx, `
+		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
+		FROM users WHERE email = $1
+	`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// CountApprovedCreditPurchases returns how many credit purchases the user has had approved.
+func (s *Service) CountApprovedCreditPurchases(ctx context.Context, userID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*)::int FROM credit_purchases WHERE user_id = $1 AND status = 'APPROVED'
+	`, userID).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // CheckEmailExists returns true if the email is already in use
 func (s *Service) CheckEmailExists(ctx context.Context, email string) (bool, error) {
 	var exists bool
@@ -201,7 +234,8 @@ func generateSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-// CreatePasswordResetToken generates a reset token and stores it in Redis (1 hour TTL)
+// CreatePasswordResetToken generates a reset token and stores it in Redis with TTL from config.
+// Any previously issued reset link for this user is invalidated immediately.
 func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) (string, error) {
 	var userID string
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&userID)
@@ -209,9 +243,24 @@ func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) (s
 		return "", nil // User not found, but don't reveal this
 	}
 
+	ttl := time.Duration(s.cfg.PasswordResetTokenTTLSecs) * time.Second
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	activeKey := fmt.Sprintf("password-reset:active:%s", userID)
+	if oldTok, err := s.redis.Get(ctx, activeKey).Result(); err == nil && oldTok != "" {
+		_ = s.redis.Del(ctx, fmt.Sprintf("password-reset:%s", oldTok))
+	}
+
 	token := generateSessionID()
 	key := fmt.Sprintf("password-reset:%s", token)
-	s.redis.Set(ctx, key, userID, 1*time.Hour)
+	if err := s.redis.Set(ctx, key, userID, ttl).Err(); err != nil {
+		return "", fmt.Errorf("store password reset token: %w", err)
+	}
+	if err := s.redis.Set(ctx, activeKey, token, ttl).Err(); err != nil {
+		_ = s.redis.Del(ctx, key)
+		return "", fmt.Errorf("store password reset pointer: %w", err)
+	}
 
 	return token, nil
 }
@@ -301,16 +350,32 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 	return token, &user, nil
 }
 
-// CreateEmailVerificationToken creates a token for email verification (24h TTL)
+// CreateEmailVerificationToken creates a token for email verification (Redis TTL from config).
+// Any previously issued verification link for this user is invalidated immediately.
 func (s *Service) CreateEmailVerificationToken(ctx context.Context, email string) (string, error) {
 	var userID string
 	err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&userID)
 	if err != nil {
 		return "", fmt.Errorf("user not found: %w", err)
 	}
+	ttl := time.Duration(s.cfg.EmailVerificationTokenTTLSecs) * time.Second
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	activeKey := fmt.Sprintf("email-verify:active:%s", userID)
+	if oldTok, err := s.redis.Get(ctx, activeKey).Result(); err == nil && oldTok != "" {
+		_ = s.redis.Del(ctx, fmt.Sprintf("email-verify:%s", oldTok))
+	}
+
 	token := generateSessionID()
 	key := fmt.Sprintf("email-verify:%s", token)
-	s.redis.Set(ctx, key, userID, 24*time.Hour)
+	if err := s.redis.Set(ctx, key, userID, ttl).Err(); err != nil {
+		return "", fmt.Errorf("store email verify token: %w", err)
+	}
+	if err := s.redis.Set(ctx, activeKey, token, ttl).Err(); err != nil {
+		_ = s.redis.Del(ctx, key)
+		return "", fmt.Errorf("store email verify pointer: %w", err)
+	}
 	return token, nil
 }
 
@@ -326,6 +391,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		return fmt.Errorf("failed to verify email")
 	}
 	s.redis.Del(ctx, key)
+	s.redis.Del(ctx, fmt.Sprintf("email-verify:active:%s", userID))
 	return nil
 }
 
@@ -347,8 +413,9 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 
-	// Invalidate the token
+	// Invalidate the token and active pointer
 	s.redis.Del(ctx, key)
+	s.redis.Del(ctx, fmt.Sprintf("password-reset:active:%s", userID))
 
 	// Invalidate all sessions for this user
 	sessionKey := fmt.Sprintf("session:%s", userID)

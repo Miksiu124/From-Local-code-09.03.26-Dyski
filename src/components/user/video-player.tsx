@@ -17,6 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { logger } from "@/lib/logger";
+import { trackVideoPlayStarted, trackVideoPlaySubsequent } from "@/lib/growth-analytics";
 
 interface QualityLevel {
   index: number;
@@ -57,6 +58,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   const [hlsError, setHlsError] = useState<string | null>(null);
   const retryCountRef = useRef(0);
   const [initKey, setInitKey] = useState(0);
+  const GF_VIDEO_PLAY_KEY = "gf_video_play_ids";
   const [isIOS, setIsIOS] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const qualityButtonRef = useRef<HTMLButtonElement>(null);
@@ -300,6 +302,30 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         videoRef.current.removeEventListener("error", nativeErrorHandler);
       }
     };
+  }, [contentItemId, initKey]);
+
+  // First play per content id in tab session → video_play_started; later plays → video_play_subsequent
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onPlaying = () => {
+      try {
+        const raw = sessionStorage.getItem(GF_VIDEO_PLAY_KEY);
+        const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+        const seen = new Set(arr);
+        if (seen.has(contentItemId)) {
+          trackVideoPlaySubsequent(contentItemId);
+        } else {
+          seen.add(contentItemId);
+          sessionStorage.setItem(GF_VIDEO_PLAY_KEY, JSON.stringify([...seen]));
+          trackVideoPlayStarted(contentItemId);
+        }
+      } catch {
+        trackVideoPlayStarted(contentItemId);
+      }
+    };
+    video.addEventListener("playing", onPlaying);
+    return () => video.removeEventListener("playing", onPlaying);
   }, [contentItemId, initKey]);
 
   // Manual retry handler

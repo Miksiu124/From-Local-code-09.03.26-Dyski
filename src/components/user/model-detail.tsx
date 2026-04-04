@@ -17,6 +17,7 @@ import { VideoPlayer } from "@/components/user/video-player";
 import { RetryImage } from "@/components/ui/retry-image";
 import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
+import { trackFavoriteToggled, trackModelPageViewed } from "@/lib/growth-analytics";
 
 interface ContentItem {
   id: string;
@@ -74,6 +75,10 @@ export function ModelDetail({
   const t = useTranslations("models");
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  useEffect(() => {
+    trackModelPageViewed(model.id, { folder_name: model.folderName });
+  }, [model.id, model.folderName]);
 
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -320,6 +325,7 @@ export function ModelDetail({
       });
       if (res.ok) {
         const data = await res.json();
+        trackFavoriteToggled(selectedItemId, !!data.favorited, { model_id: model.id });
         setOverlayFavorited(data.favorited);
         setFavoritedIds((prev) => {
           const next = new Set(prev);
@@ -334,7 +340,7 @@ export function ModelDetail({
       }
     } catch { /* ignore */ }
     finally { setOverlayTogglingFav(false); }
-  }, [selectedItemId, overlayTogglingFav, activeFilter]);
+  }, [selectedItemId, overlayTogglingFav, activeFilter, model.id]);
 
   const handleDeleteContent = useCallback(async () => {
     if (!selectedItemId || overlayDeleting) return;

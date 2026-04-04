@@ -27,6 +27,10 @@ type Config struct {
 	JWTExpirySecs   int
 	SessionTokenTTL int // seconds
 
+	// One-time email links (Redis TTL, seconds)
+	PasswordResetTokenTTLSecs      int // forgot-password link; default 3600
+	EmailVerificationTokenTTLSecs int // verify-email link; default 86400
+
 	// Security (optional, see SECURITY_AUDIT.md)
 	DisableBearerAuth bool // if true, only accept cookie (no Authorization: Bearer) — reduces token leakage risk
 
@@ -116,7 +120,9 @@ func Load() (*Config, error) {
 		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
-		TurnstileSecretKey:    getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
+		TurnstileSecretKey:            getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
+		PasswordResetTokenTTLSecs:     getEnvOrDefaultInt("PASSWORD_RESET_TOKEN_TTL_SEC", 3600),
+		EmailVerificationTokenTTLSecs: getEnvOrDefaultInt("EMAIL_VERIFICATION_TOKEN_TTL_SEC", 86400),
 	}
 
 	// Normalize URLs: strip trailing slashes to prevent double-slash bugs
@@ -193,6 +199,26 @@ func (c *Config) Validate() error {
 	}
 	if len(c.StreamingTokenSecret) < 32 {
 		return errors.New("STREAMING_TOKEN_SECRET must be at least 32 characters")
+	}
+	// Password reset link TTL (Redis): clamp 5 min … 7 days
+	if c.PasswordResetTokenTTLSecs <= 0 {
+		c.PasswordResetTokenTTLSecs = 3600
+	}
+	if c.PasswordResetTokenTTLSecs < 300 {
+		c.PasswordResetTokenTTLSecs = 300
+	}
+	if c.PasswordResetTokenTTLSecs > 7*24*3600 {
+		c.PasswordResetTokenTTLSecs = 7 * 24 * 3600
+	}
+	// Email verification link TTL: clamp 1 h … 14 days
+	if c.EmailVerificationTokenTTLSecs <= 0 {
+		c.EmailVerificationTokenTTLSecs = 86400
+	}
+	if c.EmailVerificationTokenTTLSecs < 3600 {
+		c.EmailVerificationTokenTTLSecs = 3600
+	}
+	if c.EmailVerificationTokenTTLSecs > 14*24*3600 {
+		c.EmailVerificationTokenTTLSecs = 14 * 24 * 3600
 	}
 	return nil
 }

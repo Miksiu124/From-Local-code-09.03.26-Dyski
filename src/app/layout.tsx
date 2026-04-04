@@ -6,6 +6,11 @@ import { Header } from "@/components/layout/header";
 import { ConditionalFooter } from "@/components/layout/conditional-footer";
 import { CookieBanner } from "@/components/cookie-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { ClientErrorReporter } from "@/components/client-error-reporter";
+import { GrowthFunnelChrome } from "@/components/growth/growth-funnel-chrome";
+import { ReferralProgramNudge } from "@/components/growth/referral-program-nudge";
+import { PostAuthGuideAutostart } from "@/components/onboarding/post-auth-guide-autostart";
+import { ProductTourAutostart } from "@/components/onboarding/product-tour-autostart";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -110,11 +115,16 @@ export default async function RootLayout({
               Skip to main content
             </a>
             <Header />
+            <ReferralProgramNudge />
             <main id="main" className="flex-1 pb-24 md:pb-0">
               <ErrorBoundary>{children}</ErrorBoundary>
             </main>
             <ConditionalFooter />
             <CookieBanner />
+            <ClientErrorReporter />
+            <GrowthFunnelChrome />
+            <PostAuthGuideAutostart />
+            <ProductTourAutostart />
           </div>
         </Providers>
       </body>

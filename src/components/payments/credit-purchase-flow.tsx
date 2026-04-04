@@ -1,16 +1,32 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2 } from "lucide-react";
+import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaymentCountdown } from "@/components/payments/payment-countdown";
 import { formatPrice } from "@/lib/utils";
+import { emitGrowthEvent } from "@/lib/growth-events";
+import {
+  trackBlikPaymentExpired,
+  trackCheckoutAbandoned,
+  trackCreditsCredited,
+  trackPaymentAbandoned,
+  trackPaymentProofUploaded,
+  trackPaymentRejected,
+  trackPromoApplied,
+  trackPromoFailed,
+  trackPurchaseApiError,
+  trackPurchaseCreated,
+  trackReferralProgramNudge,
+} from "@/lib/growth-analytics";
+import { dismissFirstPurchaseNudge, hasDismissedFirstPurchaseNudge } from "@/lib/referral-nudge-storage";
 
 interface CreditPackage {
   id: string;
@@ -39,10 +55,21 @@ interface PaymentResult {
   paymentMethod: string;
 }
 
-export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages: CreditPackage[]; blikEnabled?: boolean }) {
+export function CreditPurchaseFlow({
+  packages,
+  blikEnabled = true,
+  priorApprovedCreditPurchases = 0,
+}: {
+  packages: CreditPackage[];
+  blikEnabled?: boolean;
+  /** Approved credit purchases before this page load (used for first-purchase referral prompt). */
+  priorApprovedCreditPurchases?: number;
+}) {
   const t = useTranslations("credits");
   const router = useRouter();
   const [step, setStep] = useState<Step>("select-package");
+  const pricingViewLogged = useRef(false);
+  const checkoutStartedLogged = useRef(false);
   const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [selectedCrypto, setSelectedCrypto] = useState<CryptoCurrency>("BTC");
@@ -63,6 +90,112 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
   const [promoLoading, setPromoLoading] = useState(false);
   const proofInputRef = useRef<HTMLInputElement>(null);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const paymentAbandonLoggedRef = useRef<string | null>(null);
+  const creditsLoggedRef = useRef<string | null>(null);
+  const rejectedLoggedRef = useRef<string | null>(null);
+  const priorApprovedAtMountRef = useRef(priorApprovedCreditPurchases);
+  const [approvedPurchaseIdsThisSession, setApprovedPurchaseIdsThisSession] = useState<string[]>([]);
+  const firstPurchaseReferralShownRef = useRef(false);
+  const [referralPromptHidden, setReferralPromptHidden] = useState(false);
+  const checkoutStateRef = useRef({
+    step,
+    paymentStatus,
+    selectedPackage,
+    selectedMethod,
+    paymentResult,
+  });
+  checkoutStateRef.current = { step, paymentStatus, selectedPackage, selectedMethod, paymentResult };
+
+  function emitPaymentAbandonedOnce(purchaseId: string, trigger: "unmount" | "pagehide") {
+    if (paymentAbandonLoggedRef.current === purchaseId) return;
+    paymentAbandonLoggedRef.current = purchaseId;
+    const tier = checkoutStateRef.current.selectedPackage?.tier;
+    trackPaymentAbandoned(purchaseId, trigger, tier != null ? { tier } : {});
+  }
+
+  const skipFirstUnmountRef = useRef(
+    typeof process !== "undefined" && process.env.NODE_ENV === "development",
+  );
+  useEffect(() => {
+    return () => {
+      if (skipFirstUnmountRef.current) {
+        skipFirstUnmountRef.current = false;
+        return;
+      }
+      const s = checkoutStateRef.current;
+      if (s.paymentStatus === "APPROVED") return;
+      if (s.step === "select-package") return;
+      const pendingWait =
+        s.step === "waiting" &&
+        s.paymentResult?.id &&
+        (!s.paymentStatus || s.paymentStatus === "PENDING" || s.paymentStatus === "EXPIRED");
+      if (pendingWait) {
+        emitPaymentAbandonedOnce(s.paymentResult.id, "unmount");
+        return;
+      }
+      trackCheckoutAbandoned(s.step, {
+        tier: s.selectedPackage?.tier,
+        method: s.selectedMethod,
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const onPageHide = () => {
+      const s = checkoutStateRef.current;
+      if (s.paymentStatus === "APPROVED") return;
+      const pendingWait =
+        s.step === "waiting" &&
+        s.paymentResult?.id &&
+        (!s.paymentStatus || s.paymentStatus === "PENDING" || s.paymentStatus === "EXPIRED");
+      if (pendingWait) emitPaymentAbandonedOnce(s.paymentResult.id, "pagehide");
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, []);
+
+  useEffect(() => {
+    if (paymentStatus !== "APPROVED" || !paymentResult?.id) return;
+    if (creditsLoggedRef.current === paymentResult.id) return;
+    creditsLoggedRef.current = paymentResult.id;
+    trackCreditsCredited(paymentResult.id, {
+      tier: selectedPackage?.tier,
+      method: paymentResult.paymentMethod,
+      credits: paymentResult.credits,
+    });
+  }, [paymentStatus, paymentResult, selectedPackage?.tier]);
+
+  useEffect(() => {
+    if (paymentStatus !== "APPROVED" || !paymentResult?.id) return;
+    if (priorApprovedAtMountRef.current !== 0) return;
+    setApprovedPurchaseIdsThisSession((prev) =>
+      prev.includes(paymentResult.id) ? prev : [...prev, paymentResult.id],
+    );
+  }, [paymentStatus, paymentResult?.id]);
+
+  const isFirstApprovedPurchaseEver =
+    priorApprovedAtMountRef.current === 0 && approvedPurchaseIdsThisSession.length === 1;
+
+  const showFirstPurchaseReferral =
+    paymentStatus === "APPROVED" &&
+    isFirstApprovedPurchaseEver &&
+    !referralPromptHidden &&
+    !hasDismissedFirstPurchaseNudge();
+
+  useEffect(() => {
+    if (!isFirstApprovedPurchaseEver) return;
+    if (hasDismissedFirstPurchaseNudge()) return;
+    if (firstPurchaseReferralShownRef.current) return;
+    firstPurchaseReferralShownRef.current = true;
+    trackReferralProgramNudge("first_purchase_success", "shown");
+  }, [isFirstApprovedPurchaseEver]);
+
+  useEffect(() => {
+    if (paymentStatus !== "REJECTED" || !paymentResult?.id) return;
+    if (rejectedLoggedRef.current === paymentResult.id) return;
+    rejectedLoggedRef.current = paymentResult.id;
+    trackPaymentRejected(paymentResult.id, { tier: selectedPackage?.tier });
+  }, [paymentStatus, paymentResult, selectedPackage?.tier]);
 
   const BLIK_MAX_RETRIES = 5;
   const BLIK_COOLDOWN_SECONDS = 20;
@@ -72,6 +205,18 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
     setPromoApplied(null);
     setPromoError("");
   }, [selectedPackage?.id]);
+
+  useEffect(() => {
+    if (step !== "select-package" || pricingViewLogged.current) return;
+    pricingViewLogged.current = true;
+    emitGrowthEvent("pricing_viewed", { surface: "credit_purchase" });
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== "select-method" || !selectedPackage || checkoutStartedLogged.current) return;
+    checkoutStartedLogged.current = true;
+    emitGrowthEvent("checkout_started", { tier: selectedPackage.tier });
+  }, [step, selectedPackage]);
 
   // Sync proofUploaded from server when entering waiting step (e.g. after refresh)
   useEffect(() => {
@@ -192,12 +337,20 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
         body: JSON.stringify({ code: promoCode.trim(), creditPackageId: selectedPackage.id }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        trackPromoFailed({ tier: selectedPackage.tier, reason: "api_error", http_status: res.status });
+        setPromoError(data.message || "Invalid promo code");
+        return;
+      }
       if (data.valid && data.promoCodeId) {
         setPromoApplied({ promoCodeId: data.promoCodeId, finalCredits: data.finalCredits, finalPrice: data.finalPrice });
+        trackPromoApplied({ tier: selectedPackage.tier });
       } else {
+        trackPromoFailed({ tier: selectedPackage.tier, reason: "invalid", http_status: res.status });
         setPromoError(data.message || "Invalid promo code");
       }
     } catch {
+      trackPromoFailed({ tier: selectedPackage?.tier, reason: "network", http_status: 0 });
       setPromoError("Failed to validate promo");
     } finally {
       setPromoLoading(false);
@@ -220,6 +373,10 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
     setError("");
 
     try {
+      emitGrowthEvent("payment_method_selected", {
+        method: selectedMethod,
+        crypto: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
+      });
       const res = await fetch("/api/credits/purchase", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -236,14 +393,24 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
       const data = await res.json();
 
       if (!res.ok) {
+        trackPurchaseApiError(res.status, { tier: selectedPackage?.tier });
         const errorMessage = data.message || data.error || t("paymentFailed");
         setError(errorMessage);
         return;
       }
 
+      const purchaseId = data?.id as string | undefined;
+      if (purchaseId) {
+        trackPurchaseCreated(purchaseId, {
+          tier: selectedPackage.tier,
+          method: selectedMethod,
+          crypto: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
+        });
+      }
       setPaymentResult(data);
       setStep("waiting");
     } catch {
+      trackPurchaseApiError(0, { error_class: "network", tier: selectedPackage?.tier });
       setError(t("createPurchaseFailed"));
     } finally {
       setLoading(false);
@@ -293,6 +460,7 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
         return;
       }
 
+      trackPaymentProofUploaded(paymentResult.id);
       setProofUploaded(true);
     } catch {
       setError(t("uploadProofFailed"));
@@ -594,6 +762,40 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   <p className="text-muted-foreground">
                     {t("creditsAdded", { credits: paymentResult.credits })}
                   </p>
+                  {showFirstPurchaseReferral && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4 text-left">
+                      <div className="flex gap-3">
+                        <UserPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="text-sm font-medium">{t("referralPromptTitle")}</p>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{t("referralPromptDesc")}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button asChild size="sm" className="h-9">
+                          <Link
+                            href="/referral"
+                            onClick={() => trackReferralProgramNudge("first_purchase_success", "cta_click")}
+                          >
+                            {t("referralPromptCta")}
+                          </Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 text-muted-foreground"
+                          onClick={() => {
+                            dismissFirstPurchaseNudge();
+                            setReferralPromptHidden(true);
+                            trackReferralProgramNudge("first_purchase_success", "dismissed");
+                          }}
+                        >
+                          {t("referralPromptDismiss")}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-3 pt-4">
                     <Button
                       className="flex-1"
@@ -670,7 +872,10 @@ export function CreditPurchaseFlow({ packages, blikEnabled = true }: { packages:
                   <PaymentCountdown
                     expirationTime={paymentResult.expirationTime}
                     isBlik={paymentResult.paymentMethod === "BLIK"}
-                    onBlikExpired={(expired) => setBlikExpired(expired)}
+                    onBlikExpired={(expired) => {
+                      setBlikExpired(expired);
+                      if (expired) trackBlikPaymentExpired();
+                    }}
                   />
 
                   {/* Transaction code */}

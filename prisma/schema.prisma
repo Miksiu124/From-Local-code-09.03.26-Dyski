@@ -120,6 +120,7 @@ model User {
   referralLinkVisits   ReferralLinkVisit[]
   referralLinkVariants ReferralLinkVariant[]
   customLink           CustomLink?         @relation(fields: [customLinkId], references: [id], onDelete: SetNull)
+  growthEvents         GrowthEvent[]
 
   @@index([email])
   @@index([discordId])
@@ -537,4 +538,21 @@ model LinkVisit {
   @@index([customLinkId, createdAt])
   @@index([createdAt])
   @@map("link_visits")
+}
+
+// ─── Growth / funnel (written by Go POST /api/growth-hacker) ────────────────
+
+model GrowthEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  eventName String   @map("event_name")
+  userId    String?  @map("user_id")
+  props     Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([eventName])
+  @@index([userId])
+  @@map("growth_events")
 }

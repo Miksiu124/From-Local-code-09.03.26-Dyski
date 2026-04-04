@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
+  Activity,
   CreditCard,
   FolderOpen,
   Users,
   BarChart3,
+  LineChart,
   Settings,
   Coins,
   Tag,
@@ -27,6 +29,8 @@ export function AdminSidebar() {
     { href: "/admin/models", label: t("models"), icon: FolderOpen },
     { href: "/admin/users", label: t("users"), icon: Users },
     { href: "/admin/analytics", label: t("analytics"), icon: BarChart3 },
+    { href: "/admin/funnel", label: t("funnelEventsNav"), icon: LineChart },
+    { href: "/admin/observability", label: t("observability"), icon: Activity },
     { href: "/admin/settings", label: t("settings"), icon: Settings },
   ];
 

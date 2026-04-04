@@ -9,6 +9,7 @@ import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { trackLoginPageViewed, trackLoginSuccess, trackLoginFailed } from "@/lib/growth-analytics";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
@@ -21,6 +22,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
+  const [needVerifyHint, setNeedVerifyHint] = useState(false);
+  const [verifyMessage, setVerifyMessage] = useState("");
 
   const registered = searchParams.get("registered") === "1";
   const verified = searchParams.get("verified") === "1";
@@ -38,9 +41,46 @@ export default function LoginPage() {
     if (verified) setSuccessMessage(t("emailVerifiedSuccess"));
   }, [registered, verified, t]);
 
+  useEffect(() => {
+    trackLoginPageViewed({
+      registered_banner: registered,
+      verified_banner: verified,
+    });
+  }, [registered, verified]);
+
+  const handleResendVerification = async () => {
+    const addr = email.trim().toLowerCase();
+    if (!addr) return;
+    setResendLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/resend-verification-public", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: addr }),
+      });
+      const data = (await res.json()) as { error?: string; message?: string };
+      if (res.status === 429) {
+        setError(data.message || t("resetFailed"));
+        return;
+      }
+      if (res.ok) {
+        setSuccessMessage(t("checkEmailVerify"));
+        setNeedVerifyHint(false);
+        setVerifyMessage("");
+      }
+    } catch {
+      setError(t("resetFailed"));
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setNeedVerifyHint(false);
+    setVerifyMessage("");
     setLoading(true);
 
     try {
@@ -50,12 +90,35 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as { error?: string; message?: string };
 
       if (!res.ok) {
-        setError(data.error || t("invalidCredentials"));
+        if (res.status === 403 && data.error === "EMAIL_NOT_VERIFIED") {
+          trackLoginFailed("email_not_verified");
+          setNeedVerifyHint(true);
+          setVerifyMessage(data.message || t("verifyEmailRequired"));
+          return;
+        }
+        if (res.status === 429) {
+          trackLoginFailed("rate_limited", { http_status: res.status });
+        } else if (data.error === "Invalid credentials" || res.status === 401) {
+          trackLoginFailed("invalid_credentials", { http_status: res.status });
+        } else {
+          trackLoginFailed("api_error", { http_status: res.status });
+        }
+        setError(
+          data.message && data.message !== data.error
+            ? data.message
+            : data.error === "Invalid credentials"
+              ? t("invalidCredentials")
+              : data.error || t("invalidCredentials"),
+        );
       } else {
         const user = data.user;
+        trackLoginSuccess({ role: user?.role === "ADMIN" ? "admin" : "user" });
+        if (typeof window !== "undefined" && user?.role !== "ADMIN") {
+          sessionStorage.setItem("dyskiof_show_post_auth_guide", "1");
+        }
         window.dispatchEvent(new CustomEvent("auth-change", { detail: user }));
         router.refresh();
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -68,6 +131,7 @@ export default function LoginPage() {
         }
       }
     } catch {
+      trackLoginFailed("network");
       setError(t("invalidCredentials"));
     } finally {
       setLoading(false);
@@ -110,6 +174,25 @@ export default function LoginPage() {
                   {successMessage}
                 </motion.div>
               )}
+              {needVerifyHint && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-xl bg-amber-500/10 border border-amber-500/25 p-3 text-sm text-amber-100/90 space-y-3"
+                >
+                  <p>{verifyMessage}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-amber-500/30 text-amber-100 hover:bg-amber-500/10"
+                    onClick={handleResendVerification}
+                    disabled={resendLoading || !email.trim()}
+                  >
+                    {resendLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("resendVerification")}
+                  </Button>
+                </motion.div>
+              )}
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
@@ -129,7 +212,11 @@ export default function LoginPage() {
                     type="email"
                     placeholder="you@example.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setNeedVerifyHint(false);
+                      setVerifyMessage("");
+                    }}
                     className="pl-11"
                     required
                   />

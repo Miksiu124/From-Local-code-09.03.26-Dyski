@@ -213,8 +213,35 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 	return lastErr
 }
 
-func (m *Mailer) SendPasswordReset(to, resetURL string) error {
+// humanTTLLine formats seconds into a short English phrase for email copy (e.g. "1 hour", "24 hours").
+func humanTTLLine(ttlSecs int) string {
+	if ttlSecs <= 0 {
+		return "1 hour"
+	}
+	if ttlSecs < 3600 {
+		m := (ttlSecs + 59) / 60
+		if m <= 1 {
+			return "1 minute"
+		}
+		return fmt.Sprintf("%d minutes", m)
+	}
+	if ttlSecs < 86400 {
+		h := (ttlSecs + 3599) / 3600
+		if h == 1 {
+			return "1 hour"
+		}
+		return fmt.Sprintf("%d hours", h)
+	}
+	d := (ttlSecs + 86399) / 86400
+	if d == 1 {
+		return "24 hours"
+	}
+	return fmt.Sprintf("%d days", d)
+}
+
+func (m *Mailer) SendPasswordReset(to, resetURL string, ttlSecs int) error {
 	subject := "Reset Your Password - ContentVault"
+	expires := humanTTLLine(ttlSecs)
 	body := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
@@ -228,21 +255,22 @@ func (m *Mailer) SendPasswordReset(to, resetURL string) error {
       Reset Password
     </a>
     <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
+      This link expires in %s. If you didn't request this, you can safely ignore this email.
     </p>
   </div>
 </body>
-</html>`, resetURL)
+</html>`, resetURL, expires)
 
 	return m.Send(to, subject, body)
 }
 
-func (m *Mailer) SendVerificationEmail(to, name, verifyURL string) error {
+func (m *Mailer) SendVerificationEmail(to, name, verifyURL string, ttlSecs int) error {
 	subject := "Verify Your Email - ContentVault"
 	displayName := name
 	if displayName == "" {
 		displayName = "there"
 	}
+	expires := humanTTLLine(ttlSecs)
 	body := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
@@ -256,11 +284,11 @@ func (m *Mailer) SendVerificationEmail(to, name, verifyURL string) error {
       Verify Email
     </a>
     <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      This link expires in 24 hours. If you didn't create an account, you can safely ignore this email.
+      This link expires in %s. If you didn't create an account, you can safely ignore this email.
     </p>
   </div>
 </body>
-</html>`, displayName, verifyURL)
+</html>`, displayName, verifyURL, expires)
 	return m.Send(to, subject, body)
 }
 

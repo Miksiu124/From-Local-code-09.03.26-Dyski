@@ -8,16 +8,24 @@
 #   --pg-resume   = sync + upgrade --resume (gdy poprzedni upgrade się przerwał)
 #   --billionmail  = użyj docker-compose.billionmail.yml
 # Wymaga: rsync, ssh
-# Przed: export VPS_HOST=... (lub: [ -f .env.deploy ] && set -a && . ./.env.deploy && set +a)
+# Polaczenie: domyslnie z ContentManager/.env.deploy (VPS_HOST, VPS_USER, VPS_PATH). Mozesz nadpisac zmienne srodowiskowe.
 
 set -e
 
-# IP/host NIE w repo - VPS_HOST wymagane
-VPS_USER="${VPS_USER:-marek}"
-VPS_HOST="${VPS_HOST:?Set VPS_HOST (e.g. export VPS_HOST=your-vps.example.com)}"
-VPS_PATH="${VPS_PATH:-/opt/contentvault}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [[ -f "$REPO_ROOT/.env.deploy" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env.deploy"
+  set +a
+fi
+
+# IP/host: z .env.deploy lub export VPS_HOST=... przed uruchomieniem
+VPS_USER="${VPS_USER:-marek}"
+VPS_HOST="${VPS_HOST:?Set VPS_HOST in .env.deploy or export VPS_HOST=...}"
+VPS_PATH="${VPS_PATH:-/opt/contentvault}"
 
 REBUILD=false
 REBUILD_FRESH=false

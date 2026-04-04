@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/security"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 )
@@ -216,7 +218,7 @@ func (h *Handler) Register(c echo.Context) error {
 			return
 		}
 		verifyURL := h.cfg.FrontendURL + "/verify-email?token=" + url.QueryEscape(token)
-		if err := h.mailer.SendVerificationEmail(req.Email, req.Name, verifyURL); err != nil {
+		if err := h.mailer.SendVerificationEmail(req.Email, req.Name, verifyURL, h.cfg.EmailVerificationTokenTTLSecs); err != nil {
 			log.Printf("[Register] Failed to send verification email to %s after retries: %v", req.Email, err)
 		}
 	}()
@@ -264,6 +266,9 @@ func (h *Handler) Login(c echo.Context) error {
 
 	token, user, err := h.service.Login(c.Request().Context(), req.Email, req.Password)
 	if err != nil {
+		if errors.Is(err, ErrEmailNotVerified) {
+			return common.JSONError(c, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Please verify your email before signing in.")
+		}
 		security.Emit("auth.login.failed", ip, "/api/auth/login", map[string]interface{}{"email_hash": security.HashEmail(req.Email)})
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
@@ -325,7 +330,8 @@ func (h *Handler) Me(c echo.Context) error {
 		return common.Unauthorized(c)
 	}
 
-	user, err := h.service.GetUser(c.Request().Context(), userID)
+	ctx := c.Request().Context()
+	user, err := h.service.GetUser(ctx, userID)
 	if err != nil {
 		return common.Unauthorized(c)
 	}
@@ -335,15 +341,21 @@ func (h *Handler) Me(c echo.Context) error {
 		role = "ADMIN"
 	}
 
+	approvedPurchases := 0
+	if n, err := h.service.CountApprovedCreditPurchases(ctx, userID); err == nil {
+		approvedPurchases = n
+	}
+
 	return common.Success(c, map[string]interface{}{
-		"id":            user.ID,
-		"email":         user.Email,
-		"name":          user.Name,
-		"role":          role,
-		"creditBalance": user.CreditBalance,
-		"avatarUrl":     user.AvatarURL,
-		"autoplay":      user.Autoplay,
-		"emailVerified": user.EmailVerified,
+		"id":                           user.ID,
+		"email":                        user.Email,
+		"name":                         user.Name,
+		"role":                         role,
+		"creditBalance":                user.CreditBalance,
+		"avatarUrl":                    user.AvatarURL,
+		"autoplay":                     user.Autoplay,
+		"emailVerified":                user.EmailVerified,
+		"approvedCreditPurchasesCount": approvedPurchases,
 	})
 }
 
@@ -380,8 +392,69 @@ func (h *Handler) ResendVerification(c echo.Context) error {
 	if user.Name != nil {
 		name = *user.Name
 	}
-	if err := h.mailer.SendVerificationEmail(user.Email, name, verifyURL); err != nil {
+	if err := h.mailer.SendVerificationEmail(user.Email, name, verifyURL, h.cfg.EmailVerificationTokenTTLSecs); err != nil {
 		log.Printf("[ResendVerification] Failed to send verification email: %v", err)
+	}
+	return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+}
+
+// ResendVerificationPublic sends a verification email by address (no session). Rate-limited; response is generic.
+func (h *Handler) ResendVerificationPublic(c echo.Context) error {
+	ip := c.RealIP()
+	rl, err := h.rateLimiter.Check("resend-verify-pub-ip:"+ip, 5, 15*60*1000)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if rl != nil && !rl.Allowed {
+		security.Emit("auth.resend_verify_pub.rate_limited", ip, "/api/auth/resend-verification-public", map[string]interface{}{"limit_type": "ip"})
+		retrySecs := retryAfterSeconds(rl.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many requests. Please try again later.")
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return common.BadRequest(c, "Invalid request body")
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" || !emailRegex.MatchString(req.Email) {
+		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+	}
+
+	rl2, err := h.rateLimiter.Check("resend-verify-pub-email:"+req.Email, 3, 60*60*1000)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if rl2 != nil && !rl2.Allowed {
+		retrySecs := retryAfterSeconds(rl2.ResetAt)
+		return common.RateLimited(c, retrySecs, "Too many requests for this email. Please try again later.")
+	}
+
+	ctx := c.Request().Context()
+	user, err := h.service.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+		}
+		return common.InternalError(c)
+	}
+	if user.EmailVerified || user.Password == nil {
+		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+	}
+
+	token, err := h.service.CreateEmailVerificationToken(ctx, user.Email)
+	if err != nil || token == "" {
+		log.Printf("[ResendVerificationPublic] token error for %s: %v", req.Email, err)
+		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
+	}
+	verifyURL := h.cfg.FrontendURL + "/verify-email?token=" + url.QueryEscape(token)
+	name := ""
+	if user.Name != nil {
+		name = *user.Name
+	}
+	if err := h.mailer.SendVerificationEmail(user.Email, name, verifyURL, h.cfg.EmailVerificationTokenTTLSecs); err != nil {
+		log.Printf("[ResendVerificationPublic] send failed: %v", err)
 	}
 	return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 }
@@ -437,7 +510,7 @@ func (h *Handler) ForgotPassword(c echo.Context) error {
 					log.Printf("[ForgotPassword] Panic sending reset email: %v", r)
 				}
 			}()
-			if err := h.mailer.SendPasswordReset(req.Email, resetURL); err != nil {
+			if err := h.mailer.SendPasswordReset(req.Email, resetURL, h.cfg.PasswordResetTokenTTLSecs); err != nil {
 				log.Printf("[ForgotPassword] Failed to send reset email: %v", err)
 			}
 		}()

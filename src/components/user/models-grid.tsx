@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AccessRequiredPopup } from "@/components/access-required-popup";
 import { cn } from "@/lib/utils";
+import { trackCatalogViewed } from "@/lib/growth-analytics";
 import { RetryImage } from "@/components/ui/retry-image";
 import { NextImageWithFallback } from "@/components/ui/next-image-with-fallback";
 
@@ -160,6 +161,16 @@ export function ModelsGrid({
 }: ModelsGridProps) {
   const t = useTranslations("models");
   const router = useRouter();
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("gf_catalog_viewed")) return;
+      sessionStorage.setItem("gf_catalog_viewed", "1");
+      trackCatalogViewed();
+    } catch {
+      trackCatalogViewed();
+    }
+  }, []);
 
   const [models, setModels] = useState<ModelItem[]>(() => {
     if (typeof window === "undefined") return initialModels;
@@ -658,7 +669,7 @@ export function ModelsGrid({
 
       {/* Search + Country Filters */}
       <div className="flex flex-col gap-3 mb-6 slide-up" style={{ animationDelay: "0.15s" }}>
-        <div className="relative">
+        <div className="relative" data-tour="tour-guest-search">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
           <Input
             placeholder={t("allModels")}
@@ -668,7 +679,7 @@ export function ModelsGrid({
           />
         </div>
         {countriesWithModels.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap" data-tour="tour-guest-filters">
             <button
               onClick={() => { setSelectedCountry(null); setShowPurchasedOnly(false); }}
               className={cn(

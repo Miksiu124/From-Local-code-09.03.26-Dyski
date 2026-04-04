@@ -7,6 +7,7 @@ import { Coins } from "lucide-react";
 
 type MeResponse = {
   creditBalance: number;
+  approvedCreditPurchasesCount?: number;
 };
 
 type CreditPackage = {
@@ -43,6 +44,7 @@ export default async function PurchasePage() {
       </div>
 
       <CreditPurchaseFlow
+        priorApprovedCreditPurchases={me.approvedCreditPurchasesCount ?? 0}
         packages={packages.map((p) => ({
           id: p.id,
           name: p.name,

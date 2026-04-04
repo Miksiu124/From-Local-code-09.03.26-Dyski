@@ -18,12 +18,14 @@ import (
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
+	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/links"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
+	"content-platform-backend/internal/observability"
 	"content-platform-backend/internal/purchases"
 	"content-platform-backend/internal/referral"
 	"content-platform-backend/internal/user"
@@ -142,6 +144,7 @@ func main() {
 	authGroup.GET("/me", authHandler.Me, authMW.Authenticate)
 	authGroup.GET("/verify-email", authHandler.VerifyEmail)
 	authGroup.POST("/resend-verification", authHandler.ResendVerification, authMW.Authenticate)
+	authGroup.POST("/resend-verification-public", authHandler.ResendVerificationPublic)
 	authGroup.POST("/forgot-password", authHandler.ForgotPassword)
 	authGroup.POST("/reset-password", authHandler.ResetPassword)
 	authGroup.GET("/discord", authHandler.DiscordRedirect)
@@ -158,6 +161,10 @@ func main() {
 	// Meta & Helpers
 	geoHandler := geo.NewHandler()
 	api.GET("/geo/country", geoHandler.GetUserCountry)
+
+	// Funnel / growth events (browser → DB; optional auth for user_id)
+	growthHandler := growth.NewHandler(pgPool, rateLimiter)
+	api.POST("/growth-hacker", growthHandler.Ingest, authMW.OptionalAuth)
 	api.GET("/countries", modelsHandler.ListCountries)
 	api.GET("/settings/public", modelsHandler.GetPublicSettings)
 	api.GET("/user/access", modelsHandler.GetUserAccess, authMW.OptionalAuth)
@@ -235,6 +242,9 @@ func main() {
 	// Public referral link tracking (no auth) - /r/[code] redirects here
 	api.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
 
+	obsHandler := observability.NewHandler(pgPool, rateLimiter)
+	api.POST("/public/client-errors", obsHandler.PostClientError)
+
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
 	adminHandler := admin.NewHandler(pgPool, r2Client, r2ProofClient, cfg, redisClient, contentService, mailService)
@@ -275,6 +285,11 @@ func main() {
 	adminGroup.POST("/r2/import", adminHandler.ImportR2)
 	adminGroup.POST("/r2/avatars", adminHandler.UploadAvatar, echomw.BodyLimit("6M"))
 	adminGroup.GET("/analytics", adminHandler.GetAnalytics)
+	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
+	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
+	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)
+	adminGroup.DELETE("/observability/client-errors", obsHandler.ClearClientErrors)
+	adminGroup.GET("/observability/runtime", obsHandler.GetRuntimeStats)
 
 	// ── Health check ─────────────────────────────────────────────────────
 	e.GET("/health", func(c echo.Context) error {

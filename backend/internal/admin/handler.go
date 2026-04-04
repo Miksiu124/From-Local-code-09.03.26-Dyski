@@ -15,6 +15,7 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
+	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/mailer"
@@ -194,12 +195,16 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	var credits int
 	var amount float64
 	var promoCodeID *string
+	var paymentMethod string
+	var tier int
 	err = tx.QueryRow(ctx, `
-		SELECT cp.user_id, cp.credits, cp.amount, u.email, cp.status, cp.promo_code_id
+		SELECT cp.user_id, cp.credits, cp.amount, u.email, cp.status, cp.promo_code_id,
+		       cp.payment_method::text, COALESCE(pkg.tier, 0)
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
+		LEFT JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
 		WHERE cp.id = $1 FOR UPDATE
-	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status, &promoCodeID)
+	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status, &promoCodeID, &paymentMethod, &tier)
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
@@ -254,6 +259,20 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	uid := userID
+	purchaseProps := map[string]interface{}{
+		"surface":            "credit_purchase",
+		"credits":            credits,
+		"amount":             amount,
+		"payment_method":     paymentMethod,
+		"tier":               tier,
+		"credit_purchase_id": purchaseID,
+	}
+	if err := growth.InsertEvent(ctx, h.db, "purchase_completed", &uid, purchaseProps); err != nil {
+		log.Printf("[ApprovePurchase] growth event: %v", err)
+	}
+	growth.EmitJSON("purchase_completed", &uid, purchaseProps)
+
 	h.publishBlikAction(ctx, purchaseID, "APPROVED")
 	h.publishNotification(ctx, userID, "PAYMENT_APPROVED", "Payment Approved", approveMsg)
 	if referrerID != "" && referralCredits > 0 {
@@ -302,9 +321,10 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 
 	var userID, status string
 	var credits int
+	var paymentMethod string
 	err = tx.QueryRow(ctx, `
-		SELECT user_id, credits, status FROM credit_purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&userID, &credits, &status)
+		SELECT user_id, credits, status, payment_method::text FROM credit_purchases WHERE id = $1 FOR UPDATE
+	`, purchaseID).Scan(&userID, &credits, &status, &paymentMethod)
 	if err != nil {
 		return common.NotFound(c, "Purchase not found")
 	}
@@ -335,6 +355,17 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 	if err := tx.Commit(ctx); err != nil {
 		return common.InternalError(c)
 	}
+
+	ruid := userID
+	rejectProps := map[string]interface{}{
+		"surface":        "credit_purchase",
+		"credits":        credits,
+		"payment_method": paymentMethod,
+	}
+	if err := growth.InsertEvent(ctx, h.db, "purchase_rejected", &ruid, rejectProps); err != nil {
+		log.Printf("[RejectPurchase] growth event: %v", err)
+	}
+	growth.EmitJSON("purchase_rejected", &ruid, rejectProps)
 
 	h.publishBlikAction(ctx, purchaseID, "REJECTED")
 	h.publishNotification(ctx, userID, "PAYMENT_REJECTED", "Payment Rejected", msg)

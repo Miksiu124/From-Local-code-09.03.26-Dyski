@@ -23,6 +23,7 @@ import { formatCredits } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { trackLogout } from "@/lib/growth-analytics";
 
 interface UserSession {
   id: string;
@@ -106,6 +107,7 @@ export function Header() {
 
   const handleLogout = async () => {
     try {
+      trackLogout({ role: user?.role === "ADMIN" ? "admin" : "user" });
       await fetch("/api/auth/logout", { method: "POST" });
       setUser(null);
       router.push("/");
@@ -152,6 +154,9 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
+              data-tour={
+                link.href === "/" ? "tour-models" : link.href === "/purchase" ? "tour-buy" : undefined
+              }
               className={cn(
                 "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                 pathname === link.href
@@ -168,7 +173,7 @@ export function Header() {
         <div ref={rightSideRef} className="flex items-center gap-2 relative">
           {/* Credit Balance */}
           {user && (
-            <Link href="/purchase" className="hidden sm:flex">
+            <Link href="/purchase" className="hidden sm:flex" data-tour="tour-credits">
               <div className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.06] px-3 py-1.5 text-sm font-medium hover:bg-white/[0.08] transition-colors">
                 <Coins className="h-3.5 w-3.5 text-primary" />
                 <span className="text-foreground/90">{formatCredits(user.creditBalance)}</span>
@@ -188,6 +193,8 @@ export function Header() {
           ) : user ? (
             <div className="relative" ref={userMenuRef}>
               <button
+                type="button"
+                data-tour="tour-account"
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 aria-label={t("nav.userMenu")}
                 aria-expanded={userMenuOpen}
@@ -257,7 +264,7 @@ export function Header() {
               </AnimatePresence>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-tour="tour-guest-auth">
               <Link href="/login">
                 <Button variant="ghost" size="sm">
                   {t("nav.login")}

@@ -11,6 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
+import {
+  trackSignupPageViewed,
+  trackSignupSubmitAttempt,
+  trackSignupCompleted,
+  trackSignupFailed,
+  trackSignupClientFailed,
+} from "@/lib/growth-analytics";
 
 export default function RegisterPage() {
   const t = useTranslations("auth");
@@ -25,6 +32,11 @@ export default function RegisterPage() {
       if (fromCookie) setRefCode(fromCookie);
     }
   }, [refFromUrl]);
+
+  useEffect(() => {
+    trackSignupPageViewed({ has_ref: refCode ? true : false });
+  }, [refCode]);
+
   const redirectParam = searchParams.get("redirect");
   const safeRedirect = useMemo(() => {
     if (!redirectParam || typeof redirectParam !== "string") return null;
@@ -49,16 +61,19 @@ export default function RegisterPage() {
     setError("");
 
     if (password !== confirmPassword) {
+      trackSignupClientFailed("password_mismatch");
       setError(t("passwordMismatch"));
       return;
     }
 
     if (password.length < 8) {
+      trackSignupClientFailed("password_length");
       setError(t("passwordMinLength"));
       return;
     }
 
     setLoading(true);
+    trackSignupSubmitAttempt();
 
     try {
       const resRegister = await fetch("/api/auth/register", {
@@ -77,22 +92,34 @@ export default function RegisterPage() {
 
       if (!resRegister.ok) {
         const msg = dataRegister.message || dataRegister.error || "Registration failed";
+        trackSignupFailed(resRegister.status, msg);
         if (resRegister.status === 429) {
-          throw new Error("Too many attempts. Please wait a few minutes and try again.");
+          const e = new Error("Too many attempts. Please wait a few minutes and try again.") as Error & { fromApi?: boolean };
+          e.fromApi = true;
+          throw e;
         }
         // Reset Turnstile widget so user gets a fresh challenge
         if (msg.toLowerCase().includes("verification") || msg.toLowerCase().includes("captcha") || msg.toLowerCase().includes("turnstile")) {
           turnstileRef.current?.reset();
           setTurnstileToken("");
           setTurnstileExpired(true);
-          throw new Error(msg);
+          const e = new Error(msg) as Error & { fromApi?: boolean };
+          e.fromApi = true;
+          throw e;
         }
-        throw new Error(msg);
+        const e = new Error(msg) as Error & { fromApi?: boolean };
+        e.fromApi = true;
+        throw e;
       }
 
+      trackSignupCompleted({ has_ref: !!refCode });
       router.push(safeRedirect ? `/login?registered=1&redirect=${encodeURIComponent(safeRedirect)}` : "/login?registered=1");
     } catch (err: any) {
-      setError(err.message || "Registration failed. Please try again.");
+      const msg = err?.message || "Registration failed. Please try again.";
+      if (!err?.fromApi) {
+        trackSignupFailed(0, msg);
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
