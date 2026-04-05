@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
 import { RetryImage } from "@/components/ui/retry-image";
+import { trackPhotoViewFirst } from "@/lib/growth-analytics";
 
 const VideoPlayer = dynamic(
   () => import("@/components/user/video-player").then((m) => ({ default: m.VideoPlayer })),
@@ -129,6 +130,20 @@ export function ContentViewer({
   const effectiveNextId = displayedState?.nextItemId ?? nextItemId;
   const effectiveThumbUrl =
     displayedState?.thumbnailUrl ?? initialThumbnailUrl ?? null;
+
+  const GF_PHOTO_FIRST_KEY = "gf_photo_first_ids";
+  useEffect(() => {
+    if (effectiveContentType !== "PHOTO") return;
+    try {
+      const raw = sessionStorage.getItem(GF_PHOTO_FIRST_KEY);
+      const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+      if (arr.includes(effectiveItemId)) return;
+      sessionStorage.setItem(GF_PHOTO_FIRST_KEY, JSON.stringify([...arr, effectiveItemId]));
+      trackPhotoViewFirst(effectiveItemId, { model_slug: modelSlug });
+    } catch {
+      trackPhotoViewFirst(effectiveItemId, { model_slug: modelSlug });
+    }
+  }, [effectiveContentType, effectiveItemId, modelSlug]);
 
   useEffect(() => {
     if (displayedState) setDisplayedState(null);

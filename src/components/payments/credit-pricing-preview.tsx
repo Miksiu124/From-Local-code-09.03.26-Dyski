@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn, formatPrice } from "@/lib/utils";
+import { GROWTH } from "@/lib/growth-event-names";
 import { emitGrowthEvent } from "@/lib/growth-events";
 
 export type PricingPackage = {
@@ -27,7 +28,7 @@ export function CreditPricingPreview({ packages }: { packages: PricingPackage[] 
   useEffect(() => {
     if (logged.current) return;
     logged.current = true;
-    emitGrowthEvent("pricing_viewed", { surface: "credit_pricing_public" });
+    emitGrowthEvent(GROWTH.PRICING_VIEWED, { surface: "credit_pricing_public" });
   }, []);
 
   return (

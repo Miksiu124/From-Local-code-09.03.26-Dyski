@@ -22,8 +22,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
+  /** Client-side countdown after resend success or 429 Retry-After (matches server cooldown). */
+  const [resendCooldownSec, setResendCooldownSec] = useState(0);
   const [needVerifyHint, setNeedVerifyHint] = useState(false);
   const [verifyMessage, setVerifyMessage] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
 
   const registered = searchParams.get("registered") === "1";
   const verified = searchParams.get("verified") === "1";
@@ -48,6 +51,14 @@ export default function LoginPage() {
     });
   }, [registered, verified]);
 
+  useEffect(() => {
+    if (resendCooldownSec <= 0) return;
+    const id = setInterval(() => {
+      setResendCooldownSec((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [resendCooldownSec]);
+
   const handleResendVerification = async () => {
     const addr = email.trim().toLowerCase();
     if (!addr) return;
@@ -61,6 +72,9 @@ export default function LoginPage() {
       });
       const data = (await res.json()) as { error?: string; message?: string };
       if (res.status === 429) {
+        const ra = res.headers.get("Retry-After");
+        const secs = ra ? Math.max(1, parseInt(ra, 10) || 0) : 0;
+        if (secs > 0) setResendCooldownSec(secs);
         setError(data.message || t("resetFailed"));
         return;
       }
@@ -68,6 +82,7 @@ export default function LoginPage() {
         setSuccessMessage(t("checkEmailVerify"));
         setNeedVerifyHint(false);
         setVerifyMessage("");
+        setResendCooldownSec(120);
       }
     } catch {
       setError(t("resetFailed"));
@@ -87,7 +102,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, rememberMe }),
       });
 
       const data = (await res.json()) as {
@@ -191,9 +206,15 @@ export default function LoginPage() {
                     size="sm"
                     className="w-full border-amber-500/30 text-amber-100 hover:bg-amber-500/10"
                     onClick={handleResendVerification}
-                    disabled={resendLoading || !email.trim()}
+                    disabled={resendLoading || !email.trim() || resendCooldownSec > 0}
                   >
-                    {resendLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("resendVerification")}
+                    {resendLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : resendCooldownSec > 0 ? (
+                      t("resendVerificationWait", { seconds: resendCooldownSec })
+                    ) : (
+                      t("resendVerification")
+                    )}
                   </Button>
                 </motion.div>
               )}
@@ -251,8 +272,17 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="text-right">
-                <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-primary transition-colors">
+              <div className="flex items-center justify-between gap-3 pt-0.5">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border border-white/20 bg-background/80 text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  />
+                  <span>{t("rememberMe")}</span>
+                </label>
+                <Link href="/forgot-password" className="shrink-0 text-xs text-muted-foreground hover:text-primary transition-colors">
                   {t("forgotPassword")}
                 </Link>
               </div>

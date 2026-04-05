@@ -4,6 +4,22 @@ import (
 	"testing"
 )
 
+func TestParseUUIDParam(t *testing.T) {
+	lower := "550e8400-e29b-41d4-a716-446655440000"
+	upper := "550E8400-E29B-41D4-A716-446655440000"
+	got, ok := ParseUUIDParam(upper)
+	if !ok || got != lower {
+		t.Errorf("ParseUUIDParam(%q) = %q, %v want %q, true", upper, got, ok, lower)
+	}
+	got2, ok2 := ParseUUIDParam("  " + lower + " ")
+	if !ok2 || got2 != lower {
+		t.Errorf("ParseUUIDParam(trim) = %q, %v want %q, true", got2, ok2, lower)
+	}
+	if _, ok := ParseUUIDParam("not-a-uuid"); ok {
+		t.Error("ParseUUIDParam invalid should be false")
+	}
+}
+
 func TestIsValidUUID(t *testing.T) {
 	valid := []string{
 		"550e8400-e29b-41d4-a716-446655440000",

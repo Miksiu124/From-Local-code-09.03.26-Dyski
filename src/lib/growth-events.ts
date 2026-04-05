@@ -3,6 +3,8 @@
  * Event names: lowercase [a-z0-9_], must start with a letter. No PII in props.
  */
 
+import { GROWTH } from "@/lib/growth-event-names";
+
 export type GrowthProps = Record<string, unknown>;
 
 function sessionReferrerHost(): string {
@@ -45,7 +47,7 @@ export function emitSessionStart(extra: GrowthProps = {}): void {
   } catch {
     // storage blocked
   }
-  emitGrowthEvent("session_start", {
+  emitGrowthEvent(GROWTH.SESSION_START, {
     source: sessionReferrerHost(),
     path: typeof window !== "undefined" ? window.location.pathname : "",
     ...extra,

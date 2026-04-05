@@ -13,12 +13,13 @@ import (
 
 func testConfig() *config.Config {
 	return &config.Config{
-		JWTSecret:       "test-secret-key-for-testing-only",
-		JWTExpirySecs:   3600,
-		SessionTokenTTL: 3600,
-		AdminEmails:     []string{"admin@test.com"},
-		Environment:     "development",
-		FrontendURL:     "http://localhost:3000",
+		JWTSecret:                "test-secret-key-for-testing-only",
+		JWTExpirySecs:            3600,
+		SessionTokenTTL:          3600,
+		RememberMeSessionTTLSecs: 30 * 24 * 3600,
+		AdminEmails:              []string{"admin@test.com"},
+		Environment:              "development",
+		FrontendURL:              "http://localhost:3000",
 	}
 }
 
@@ -40,7 +41,7 @@ func TestGenerateJWT_ValidToken(t *testing.T) {
 	cfg := testConfig()
 	s := &Service{cfg: cfg}
 
-	token, err := s.generateJWT("user-123", "test@example.com", "USER", "session-abc")
+	token, err := s.generateJWT("user-123", "test@example.com", "USER", "session-abc", cfg.JWTExpirySecs)
 	if err != nil {
 		t.Fatalf("generateJWT failed: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestGenerateJWT_ExpiryIsSet(t *testing.T) {
 	cfg.JWTExpirySecs = 7200
 	s := &Service{cfg: cfg}
 
-	token, err := s.generateJWT("user-1", "a@b.com", "USER", "sess")
+	token, err := s.generateJWT("user-1", "a@b.com", "USER", "sess", 7200)
 	if err != nil {
 		t.Fatalf("generateJWT failed: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestGenerateJWT_UsesHMAC(t *testing.T) {
 	cfg := testConfig()
 	s := &Service{cfg: cfg}
 
-	token, _ := s.generateJWT("u", "e@e.com", "USER", "s")
+	token, _ := s.generateJWT("u", "e@e.com", "USER", "s", cfg.JWTExpirySecs)
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		t.Fatalf("token has %d parts, want 3", len(parts))

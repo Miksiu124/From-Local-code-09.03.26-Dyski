@@ -11,7 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AccessRequiredPopup } from "@/components/access-required-popup";
 import { cn } from "@/lib/utils";
-import { trackCatalogViewed } from "@/lib/growth-analytics";
+import {
+  trackCatalogHomeViewed,
+  trackCatalogFilterUsed,
+  trackSearchUsed,
+} from "@/lib/growth-analytics";
 import { RetryImage } from "@/components/ui/retry-image";
 import { NextImageWithFallback } from "@/components/ui/next-image-with-fallback";
 
@@ -164,11 +168,11 @@ export function ModelsGrid({
 
   useEffect(() => {
     try {
-      if (sessionStorage.getItem("gf_catalog_viewed")) return;
-      sessionStorage.setItem("gf_catalog_viewed", "1");
-      trackCatalogViewed();
+      if (sessionStorage.getItem("gf_catalog_home_viewed")) return;
+      sessionStorage.setItem("gf_catalog_home_viewed", "1");
+      trackCatalogHomeViewed();
     } catch {
-      trackCatalogViewed();
+      trackCatalogHomeViewed();
     }
   }, []);
 
@@ -264,6 +268,8 @@ export function ModelsGrid({
 
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const searchQueriesEmittedRef = useRef<Set<string>>(new Set());
+  const countryEmittedRef = useRef<string | null>(null);
 
   const displayFeatured = featuredModels.length > 0 ? featuredModels : initialModels.slice(0, 6);
 
@@ -308,6 +314,22 @@ export function ModelsGrid({
           });
         }
         setCursor(data.nextCursor ?? null);
+
+        if (opts.reset) {
+          if (opts.search && opts.search.trim().length >= 2) {
+            const q = opts.search.trim().toLowerCase();
+            if (!searchQueriesEmittedRef.current.has(q)) {
+              searchQueriesEmittedRef.current.add(q);
+              trackSearchUsed({ surface: "catalog_home", query_len: q.length });
+            }
+          }
+          if (opts.country) {
+            if (countryEmittedRef.current !== opts.country) {
+              countryEmittedRef.current = opts.country;
+              trackCatalogFilterUsed({ surface: "catalog_home", kind: "country" });
+            }
+          }
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         throw err;

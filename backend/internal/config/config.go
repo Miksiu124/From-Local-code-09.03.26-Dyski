@@ -23,9 +23,10 @@ type Config struct {
 	RedisURL string
 
 	// JWT
-	JWTSecret       string
-	JWTExpirySecs   int
-	SessionTokenTTL int // seconds
+	JWTSecret                string
+	JWTExpirySecs            int
+	SessionTokenTTL          int // seconds (default session when not using "remember me")
+	RememberMeSessionTTLSecs int // seconds for password login with rememberMe (default 30d)
 
 	// One-time email links (Redis TTL, seconds)
 	PasswordResetTokenTTLSecs      int // forgot-password link; default 3600
@@ -92,9 +93,10 @@ func Load() (*Config, error) {
 		FrontendURL:           getEnvOrDefault("FRONTEND_URL", "http://localhost:3000"),
 		DatabaseURL:           requireEnv("DATABASE_URL"),
 		RedisURL:              getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:             requireEnv("JWT_SECRET"),
-		JWTExpirySecs:         resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
-		SessionTokenTTL:       resolveSessionTTL(),
+		JWTSecret:                requireEnv("JWT_SECRET"),
+		JWTExpirySecs:            resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
+		SessionTokenTTL:          resolveSessionTTL(),
+		RememberMeSessionTTLSecs: resolveRememberMeTTL(),
 		DisableBearerAuth:     getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "true" || getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "1",
 		R2AccountID:           getEnvOrDefault("R2_ACCOUNT_ID", ""),
 		R2AccessKeyID:         requireEnv("R2_ACCESS_KEY_ID"),
@@ -284,4 +286,25 @@ func resolveSessionTTL() int {
 		return v
 	}
 	return 7 * 24 * 3600
+}
+
+// resolveRememberMeTTL returns TTL in seconds for "remember me" logins (long-lived session).
+// Order: REMEMBER_ME_TTL_DAYS > REMEMBER_ME_SESSION_TTL > 30 days. Capped at 365 days.
+func resolveRememberMeTTL() int {
+	var sec int
+	if days := getEnvOrDefaultInt("REMEMBER_ME_TTL_DAYS", 0); days > 0 {
+		sec = days * 24 * 3600
+	} else if v := getEnvOrDefaultInt("REMEMBER_ME_SESSION_TTL", 0); v > 0 {
+		sec = v
+	} else {
+		sec = 30 * 24 * 3600
+	}
+	const maxSec = 365 * 24 * 3600
+	if sec > maxSec {
+		sec = maxSec
+	}
+	if sec < 60 {
+		sec = 30 * 24 * 3600
+	}
+	return sec
 }

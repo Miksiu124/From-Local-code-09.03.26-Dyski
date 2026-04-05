@@ -180,8 +180,8 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 
 func (h *Handler) ApprovePurchase(c echo.Context) error {
 	ctx := c.Request().Context()
-	purchaseID := c.Param("id")
-	if !common.IsValidUUID(purchaseID) {
+	purchaseID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
 		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
@@ -203,10 +203,14 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
 		LEFT JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		WHERE cp.id = $1 FOR UPDATE
+		WHERE cp.id = $1 FOR UPDATE OF cp, u
 	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status, &promoCodeID, &paymentMethod, &tier)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[ApprovePurchase] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 	if status != "PENDING" {
 		return common.BadRequest(c, "Purchase is not pending")
@@ -303,8 +307,8 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 
 func (h *Handler) RejectPurchase(c echo.Context) error {
 	ctx := c.Request().Context()
-	purchaseID := c.Param("id")
-	if !common.IsValidUUID(purchaseID) {
+	purchaseID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
 		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
@@ -326,7 +330,11 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 		SELECT user_id, credits, status, payment_method::text FROM credit_purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&userID, &credits, &status, &paymentMethod)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[RejectPurchase] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 	if status != "PENDING" {
 		return common.BadRequest(c, "Purchase is not pending")
@@ -379,9 +387,9 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 // GetPurchaseProof streams the payment proof file from R2 for admin viewing.
 func (h *Handler) GetPurchaseProof(c echo.Context) error {
 	ctx := c.Request().Context()
-	purchaseID := c.Param("id")
-	if !common.IsValidUUID(purchaseID) {
-		return common.NotFound(c, "Purchase not found")
+	purchaseID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	var proofKey string

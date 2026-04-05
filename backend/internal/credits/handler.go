@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -415,13 +416,13 @@ func sanitizeProofFilename(s string) string {
 func (h *Handler) UploadProof(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
 	}
-	if !common.IsValidUUID(purchaseID) {
-		return common.NotFound(c, "Purchase not found")
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	file, err := c.FormFile("file")
@@ -462,7 +463,11 @@ func (h *Handler) UploadProof(c echo.Context) error {
 		WHERE cp.id = $1 AND cp.user_id = $2
 	`, purchaseID, userID).Scan(&status, &userName, &userEmail, &amount, &createdAt, &paymentMethod)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[UploadProof] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 	if status != "PENDING" {
 		return common.BadRequest(c, "Can only upload proof for PENDING purchases")
@@ -653,10 +658,13 @@ func (h *Handler) ListPackages(c echo.Context) error {
 func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	// Auto-expire (skip BLIK with retries remaining)
@@ -682,7 +690,11 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 		FROM credit_purchases WHERE id = $1 AND user_id = $2
 	`, purchaseID, userID).Scan(&status, &paymentMethod, &expirationTime, &paymentProofUrl)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[GetPurchaseStatus] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 
 	return common.Success(c, map[string]interface{}{
@@ -697,10 +709,13 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	// Verify ownership
@@ -709,7 +724,11 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 		SELECT status FROM credit_purchases WHERE id = $1 AND user_id = $2
 	`, purchaseID, userID).Scan(&status)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[StreamPurchaseStatus] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 
 	// If already resolved, return immediately
@@ -779,10 +798,13 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 func (h *Handler) SubmitTxId(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	var req struct {
@@ -810,10 +832,13 @@ func (h *Handler) SubmitTxId(c echo.Context) error {
 func (h *Handler) UpdateBlikCode(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	var req struct {

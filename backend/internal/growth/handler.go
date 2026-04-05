@@ -3,6 +3,7 @@ package growth
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -103,46 +104,42 @@ func (h *Handler) ListGrowthEvents(c echo.Context) error {
 		}
 	}
 	eventFilter := strings.TrimSpace(c.QueryParam("event"))
+	userIDParam, userFilterOK := common.ParseUUIDParam(c.QueryParam("userId"))
+
+	conds := []string{adminGrowthFilterSQL}
+	args := []interface{}{}
+	if eventFilter != "" {
+		args = append(args, eventFilter)
+		conds = append(conds, fmt.Sprintf("g.event_name = $%d", len(args)))
+	}
+	if userFilterOK {
+		args = append(args, userIDParam)
+		conds = append(conds, fmt.Sprintf("g.user_id = $%d", len(args)))
+	}
+	whereClause := strings.Join(conds, " AND ")
 	ctx := c.Request().Context()
 
 	var total int64
-	var err error
-	if eventFilter != "" {
-		err = h.db.QueryRow(ctx, `
-			SELECT COUNT(*) FROM growth_events g
-			LEFT JOIN users u ON u.id = g.user_id
-			WHERE `+adminGrowthFilterSQL+` AND g.event_name = $1
-		`, eventFilter).Scan(&total)
-	} else {
-		err = h.db.QueryRow(ctx, `
-			SELECT COUNT(*) FROM growth_events g
-			LEFT JOIN users u ON u.id = g.user_id
-			WHERE `+adminGrowthFilterSQL).Scan(&total)
-	}
+	err := h.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM growth_events g
+		LEFT JOIN users u ON u.id = g.user_id
+		WHERE `+whereClause+`
+	`, args...).Scan(&total)
 	if err != nil {
 		return common.InternalError(c)
 	}
 
-	var rows pgx.Rows
-	if eventFilter != "" {
-		rows, err = h.db.Query(ctx, `
-			SELECT g.id, g.event_name, g.user_id, g.props, g.created_at
-			FROM growth_events g
-			LEFT JOIN users u ON u.id = g.user_id
-			WHERE `+adminGrowthFilterSQL+` AND g.event_name = $1
-			ORDER BY g.created_at DESC
-			LIMIT $2 OFFSET $3
-		`, eventFilter, limit, offset)
-	} else {
-		rows, err = h.db.Query(ctx, `
-			SELECT g.id, g.event_name, g.user_id, g.props, g.created_at
-			FROM growth_events g
-			LEFT JOIN users u ON u.id = g.user_id
-			WHERE `+adminGrowthFilterSQL+`
-			ORDER BY g.created_at DESC
-			LIMIT $1 OFFSET $2
-		`, limit, offset)
-	}
+	limitArg := len(args) + 1
+	offsetArg := len(args) + 2
+	selArgs := append(append([]interface{}{}, args...), limit, offset)
+	rows, err := h.db.Query(ctx, fmt.Sprintf(`
+		SELECT g.id, g.event_name, g.user_id, g.props, g.created_at
+		FROM growth_events g
+		LEFT JOIN users u ON u.id = g.user_id
+		WHERE %s
+		ORDER BY g.created_at DESC
+		LIMIT $%d OFFSET $%d
+	`, whereClause, limitArg, offsetArg), selArgs...)
 	if err != nil {
 		return common.InternalError(c)
 	}

@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { logger } from "@/lib/logger";
-import { trackVideoPlayStarted, trackVideoPlaySubsequent } from "@/lib/growth-analytics";
+import { trackFirstPlay, trackVideoPlayRepeat } from "@/lib/growth-analytics";
 
 interface QualityLevel {
   index: number;
@@ -304,7 +304,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     };
   }, [contentItemId, initKey]);
 
-  // First play per content id in tab session → video_play_started; later plays → video_play_subsequent
+  // First play per content id in tab session → first_play; later → video_play_repeat
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -314,14 +314,14 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
         const seen = new Set(arr);
         if (seen.has(contentItemId)) {
-          trackVideoPlaySubsequent(contentItemId);
+          trackVideoPlayRepeat(contentItemId);
         } else {
           seen.add(contentItemId);
           sessionStorage.setItem(GF_VIDEO_PLAY_KEY, JSON.stringify([...seen]));
-          trackVideoPlayStarted(contentItemId);
+          trackFirstPlay(contentItemId);
         }
       } catch {
-        trackVideoPlayStarted(contentItemId);
+        trackFirstPlay(contentItemId);
       }
     };
     video.addEventListener("playing", onPlaying);

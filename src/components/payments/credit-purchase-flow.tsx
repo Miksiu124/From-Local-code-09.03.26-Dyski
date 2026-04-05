@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaymentCountdown } from "@/components/payments/payment-countdown";
 import { cn, formatPrice } from "@/lib/utils";
+import { GROWTH } from "@/lib/growth-event-names";
 import { emitGrowthEvent } from "@/lib/growth-events";
 import {
   trackBlikPaymentExpired,
@@ -211,13 +212,13 @@ export function CreditPurchaseFlow({
   useEffect(() => {
     if (step !== "select-package" || pricingViewLogged.current) return;
     pricingViewLogged.current = true;
-    emitGrowthEvent("pricing_viewed", { surface: "credit_purchase" });
+    emitGrowthEvent(GROWTH.PRICING_VIEWED, { surface: "credit_purchase" });
   }, [step]);
 
   useEffect(() => {
     if (step !== "select-method" || !selectedPackage || checkoutStartedLogged.current) return;
     checkoutStartedLogged.current = true;
-    emitGrowthEvent("checkout_started", { tier: selectedPackage.tier });
+    emitGrowthEvent(GROWTH.CHECKOUT_STARTED, { tier: selectedPackage.tier });
   }, [step, selectedPackage]);
 
   // Sync proofUploaded from server when entering waiting step (e.g. after refresh)
@@ -375,7 +376,7 @@ export function CreditPurchaseFlow({
     setError("");
 
     try {
-      emitGrowthEvent("payment_method_selected", {
+      emitGrowthEvent(GROWTH.PAYMENT_METHOD_SELECTED, {
         method: selectedMethod,
         crypto: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
       });

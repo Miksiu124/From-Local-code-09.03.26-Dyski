@@ -1,51 +1,50 @@
 /**
  * Growth funnel helpers → POST /api/growth-hacker (see growth-events.ts).
- * Event names: lowercase [a-z0-9_], max 128 chars; no PII in props.
+ * Używaj stałych GROWTH.* dla spójnych nazw zdarzeń.
  */
 
 import { emitGrowthEvent, type GrowthProps } from "@/lib/growth-events";
+import { GROWTH } from "@/lib/growth-event-names";
 
 export type { GrowthProps } from "@/lib/growth-events";
 export { emitGrowthEvent, emitSessionStart } from "@/lib/growth-events";
+export { GROWTH } from "@/lib/growth-event-names";
 
 const isDev =
   typeof process !== "undefined" && process.env.NODE_ENV === "development";
 
-/** Dev console breadcrumb; optional server event when NEXT_PUBLIC_GROWTH_INSIGHT=1 */
+/** Dev console breadcrumb; opcjonalnie server gdy NEXT_PUBLIC_GROWTH_INSIGHT=1 */
 export function growthInsight(tag: string, props: GrowthProps = {}): void {
   if (isDev && typeof console !== "undefined" && console.debug) {
     console.debug(`[growth-insight] ${tag}`, props);
   }
   if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_GROWTH_INSIGHT === "1") {
-    emitGrowthEvent("growth_insight", { tag, ...props });
+    emitGrowthEvent(GROWTH.GROWTH_INSIGHT, { tag, ...props });
   }
 }
 
-/** Register page mounted */
+/** Wejście na stronę rejestracji (lejek: signup_started) */
 export function trackSignupPageViewed(extra: GrowthProps = {}): void {
   growthInsight("signup_page", extra);
-  emitGrowthEvent("signup_viewed", { surface: "register", ...extra });
+  emitGrowthEvent(GROWTH.SIGNUP_STARTED, { surface: "register", phase: "page", ...extra });
 }
 
-/** User submitted the signup form (before API response) */
+/** Wysłanie formularza (opcjonalnie; nie dublować licznika — osobna faza) */
 export function trackSignupSubmitAttempt(extra: GrowthProps = {}): void {
-  emitGrowthEvent("signup_submit_attempt", { surface: "register", ...extra });
+  emitGrowthEvent(GROWTH.SIGNUP_STARTED, { surface: "register", phase: "submit", ...extra });
 }
 
-/** Registration API returned success (no email in props) */
 export function trackSignupCompleted(extra: GrowthProps = {}): void {
-  emitGrowthEvent("signup_completed", { surface: "register", ...extra });
+  emitGrowthEvent(GROWTH.SIGNUP_COMPLETED, { surface: "register", ...extra });
 }
 
-/** Login page mounted */
 export function trackLoginPageViewed(extra: GrowthProps = {}): void {
   growthInsight("login_page", extra);
-  emitGrowthEvent("login_viewed", { surface: "login", ...extra });
+  emitGrowthEvent(GROWTH.LOGIN_VIEWED, { surface: "login", ...extra });
 }
 
-/** Login API returned success */
 export function trackLoginSuccess(extra: GrowthProps = {}): void {
-  emitGrowthEvent("login_success", { surface: "login", ...extra });
+  emitGrowthEvent(GROWTH.LOGIN_SUCCESS, { surface: "login", ...extra });
 }
 
 export type LoginFailReason =
@@ -55,58 +54,83 @@ export type LoginFailReason =
   | "api_error"
   | "network";
 
-/** Login API failed or network error (no raw messages) */
 export function trackLoginFailed(reason: LoginFailReason, extra: GrowthProps = {}): void {
-  emitGrowthEvent("login_failed", { surface: "login", reason, ...extra });
+  emitGrowthEvent(GROWTH.LOGIN_FAILED, { surface: "login", reason, ...extra });
 }
 
-/** Explicit logout (POST /api/auth/logout) */
 export function trackLogout(extra: GrowthProps = {}): void {
-  emitGrowthEvent("logout", { surface: "header", ...extra });
+  emitGrowthEvent(GROWTH.LOGOUT, { surface: "header", ...extra });
 }
 
-/** First playback start for this content item in the tab session (see sessionStorage in video player) */
+/** Pierwsze odtworzenie wideo dla danego content_item w sesji karty */
+export function trackFirstPlay(contentItemId: string, extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.FIRST_PLAY, {
+    content_item_id: contentItemId,
+    ...extra,
+  });
+}
+
+/** Kolejne odtworzenia tego samego materiału w sesji */
+export function trackVideoPlayRepeat(contentItemId: string, extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.VIDEO_PLAY_REPEAT, {
+    content_item_id: contentItemId,
+    ...extra,
+  });
+}
+
+/** @deprecated użyj trackFirstPlay / trackVideoPlayRepeat */
 export function trackVideoPlayStarted(contentItemId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("video_play_started", {
-    content_item_id: contentItemId,
-    ...extra,
-  });
+  trackFirstPlay(contentItemId, extra);
 }
 
-/** Second and later plays of the same item in the same tab session */
+/** @deprecated użyj trackVideoPlayRepeat */
 export function trackVideoPlaySubsequent(contentItemId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("video_play_subsequent", {
-    content_item_id: contentItemId,
-    ...extra,
-  });
+  trackVideoPlayRepeat(contentItemId, extra);
 }
 
-/** Home / catalog grid viewed once per tab session */
+/** Strona główna z katalogiem modeli (raz na sesję — wołające miejsce pilnuje tego) */
+export function trackCatalogHomeViewed(extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.CATALOG_HOME_VIEWED, { surface: "home", ...extra });
+}
+
+/** @deprecated użyj trackCatalogHomeViewed */
 export function trackCatalogViewed(extra: GrowthProps = {}): void {
-  emitGrowthEvent("catalog_viewed", { surface: "home", ...extra });
+  trackCatalogHomeViewed(extra);
 }
 
-/** Model profile page mounted */
+export function trackCatalogFilterUsed(extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.CATALOG_FILTER_USED, extra);
+}
+
+export function trackSearchUsed(extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.SEARCH_USED, extra);
+}
+
 export function trackModelPageViewed(modelId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("model_page_viewed", { model_id: modelId, ...extra });
+  emitGrowthEvent(GROWTH.MODEL_PAGE_VIEWED, { model_id: modelId, ...extra });
 }
 
-/** User toggled favorite on a content item (after API success) */
 export function trackFavoriteToggled(
   contentItemId: string,
   favorited: boolean,
   extra: GrowthProps = {},
 ): void {
-  emitGrowthEvent("favorite_toggled", {
+  emitGrowthEvent(GROWTH.FAVORITE_TOGGLED, {
     content_item_id: contentItemId,
     favorited,
     ...extra,
   });
 }
 
-/** Client-side validation before register API (password mismatch, length, …) */
+export function trackPhotoViewFirst(contentItemId: string, extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.PHOTO_VIEW_FIRST, {
+    content_item_id: contentItemId,
+    ...extra,
+  });
+}
+
 export function trackSignupClientFailed(field: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("signup_failed", {
+  emitGrowthEvent(GROWTH.SIGNUP_FAILED, {
     surface: "register",
     reason: "client_validation",
     field,
@@ -114,7 +138,6 @@ export function trackSignupClientFailed(field: string, extra: GrowthProps = {}):
   });
 }
 
-/** Map API failure to a small reason (no raw message — avoid PII / noise in props) */
 export function trackSignupFailed(httpStatus: number, message: string, extra: GrowthProps = {}): void {
   const m = (message || "").toLowerCase();
   let reason = "unknown";
@@ -124,7 +147,7 @@ export function trackSignupFailed(httpStatus: number, message: string, extra: Gr
   else if (m.includes("captcha") || m.includes("turnstile") || m.includes("verification")) reason = "captcha";
   else if (httpStatus === 400) reason = "validation";
   else if (httpStatus === 401 || httpStatus === 403) reason = "auth_error";
-  emitGrowthEvent("signup_failed", {
+  emitGrowthEvent(GROWTH.SIGNUP_FAILED, {
     surface: "register",
     http_status: httpStatus,
     reason,
@@ -132,31 +155,27 @@ export function trackSignupFailed(httpStatus: number, message: string, extra: Gr
   });
 }
 
-/** Purchase row created (POST /api/credits/purchase success) */
 export function trackPurchaseCreated(purchaseId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("purchase_created", { surface: "credit_purchase", purchase_id: purchaseId, ...extra });
+  emitGrowthEvent(GROWTH.PURCHASE_CREATED, { surface: "credit_purchase", purchase_id: purchaseId, ...extra });
 }
 
-/** Credits applied after payment approved */
 export function trackCreditsCredited(purchaseId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("credits_credited", { surface: "credit_purchase", purchase_id: purchaseId, ...extra });
+  emitGrowthEvent(GROWTH.CREDITS_CREDITED, { surface: "credit_purchase", purchase_id: purchaseId, ...extra });
 }
 
-/** Create-purchase API returned error or fetch failed */
 export function trackPurchaseApiError(
   httpStatus: number,
   extra: GrowthProps & { tier?: number; error_class?: string } = {},
 ): void {
-  emitGrowthEvent("purchase_api_error", {
+  emitGrowthEvent(GROWTH.PURCHASE_API_ERROR, {
     surface: "credit_purchase",
     http_status: httpStatus,
     ...extra,
   });
 }
 
-/** Admin/system rejected the payment */
 export function trackPaymentRejected(purchaseId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("payment_failed", {
+  emitGrowthEvent(GROWTH.PAYMENT_FAILED, {
     surface: "credit_purchase",
     purchase_id: purchaseId,
     reason: "rejected",
@@ -164,13 +183,12 @@ export function trackPaymentRejected(purchaseId: string, extra: GrowthProps = {}
   });
 }
 
-/** User left while still waiting for payment confirmation */
 export function trackPaymentAbandoned(
   purchaseId: string,
   trigger: "unmount" | "pagehide",
   extra: GrowthProps = {},
 ): void {
-  emitGrowthEvent("payment_abandoned", {
+  emitGrowthEvent(GROWTH.PAYMENT_ABANDONED, {
     surface: "credit_purchase",
     purchase_id: purchaseId,
     trigger,
@@ -178,38 +196,58 @@ export function trackPaymentAbandoned(
   });
 }
 
-/** Promo code validated successfully (no code string in props) */
 export function trackPromoApplied(extra: GrowthProps = {}): void {
-  emitGrowthEvent("promo_applied", { surface: "credit_purchase", ...extra });
+  emitGrowthEvent(GROWTH.PROMO_APPLIED, { surface: "credit_purchase", ...extra });
 }
 
 export function trackPromoFailed(extra: GrowthProps = {}): void {
-  emitGrowthEvent("promo_failed", { surface: "credit_purchase", ...extra });
+  emitGrowthEvent(GROWTH.PROMO_FAILED, { surface: "credit_purchase", ...extra });
 }
 
-/** Proof of payment file uploaded successfully */
 export function trackPaymentProofUploaded(purchaseId: string, extra: GrowthProps = {}): void {
-  emitGrowthEvent("proof_uploaded", { surface: "credit_purchase", purchase_id: purchaseId, ...extra });
+  emitGrowthEvent(GROWTH.PROOF_UPLOADED, { surface: "credit_purchase", purchase_id: purchaseId, ...extra });
 }
 
-/** User left the purchase flow before approval (unmount while past package selection) */
 export function trackCheckoutAbandoned(
   step: string,
   extra: GrowthProps & { tier?: number; method?: string | null } = {},
 ): void {
-  emitGrowthEvent("checkout_abandoned", { surface: "credit_purchase", step, ...extra });
+  emitGrowthEvent(GROWTH.CHECKOUT_ABANDONED, { surface: "credit_purchase", step, ...extra });
 }
 
-/** BLIK code expired while waiting for admin approval */
 export function trackBlikPaymentExpired(extra: GrowthProps = {}): void {
-  emitGrowthEvent("blik_payment_expired", { surface: "credit_purchase", ...extra });
+  emitGrowthEvent(GROWTH.BLIK_PAYMENT_EXPIRED, { surface: "credit_purchase", ...extra });
 }
 
-/** Referral program prompt shown (first purchase success, periodic banner, or promo modal). */
+/** Modal / banner referral — jasne nazwy jak na panelu */
+export function trackReferralPromptShown(
+  surface: "first_purchase_success" | "periodic_banner" | "promo_modal",
+  extra: GrowthProps = {},
+): void {
+  emitGrowthEvent(GROWTH.REFERRAL_PROMPT_SHOWN, { surface, ...extra });
+}
+
+export function trackReferralPromptDismissed(
+  surface: "first_purchase_success" | "periodic_banner" | "promo_modal",
+  extra: GrowthProps = {},
+): void {
+  emitGrowthEvent(GROWTH.REFERRAL_PROMPT_DISMISSED, { surface, ...extra });
+}
+
+export function trackReferralPromptCta(
+  surface: "first_purchase_success" | "periodic_banner" | "promo_modal",
+  extra: GrowthProps = {},
+): void {
+  emitGrowthEvent(GROWTH.REFERRAL_PROMPT_CTA, { surface, ...extra });
+}
+
+/** @deprecated użyj trackReferralPromptShown / Dismissed / Cta */
 export function trackReferralProgramNudge(
   surface: "first_purchase_success" | "periodic_banner" | "promo_modal",
   action: "shown" | "dismissed" | "cta_click",
   extra: GrowthProps = {},
 ): void {
-  emitGrowthEvent("referral_program_nudge", { surface, action, ...extra });
+  if (action === "dismissed") trackReferralPromptDismissed(surface, extra);
+  else if (action === "cta_click") trackReferralPromptCta(surface, extra);
+  else trackReferralPromptShown(surface, extra);
 }

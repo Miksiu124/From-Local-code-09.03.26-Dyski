@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/middleware"
 
 	"github.com/gorilla/websocket"
@@ -57,10 +58,13 @@ func (h *Handler) newUpgrader() websocket.Upgrader {
 //  5. If admin approves -> send APPROVED -> close
 func (h *Handler) BlikWebSocket(c echo.Context) error {
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	if !uuidOK {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid purchase ID format"})
 	}
 
 	// Verify purchase belongs to user and is PENDING BLIK

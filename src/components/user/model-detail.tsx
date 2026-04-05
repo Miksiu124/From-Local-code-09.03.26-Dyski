@@ -17,7 +17,11 @@ import { VideoPlayer } from "@/components/user/video-player";
 import { RetryImage } from "@/components/ui/retry-image";
 import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
-import { trackFavoriteToggled, trackModelPageViewed } from "@/lib/growth-analytics";
+import {
+  trackFavoriteToggled,
+  trackModelPageViewed,
+  trackCatalogFilterUsed,
+} from "@/lib/growth-analytics";
 
 interface ContentItem {
   id: string;
@@ -667,6 +671,11 @@ export function ModelDetail({
 
   const handleFilterChange = (filter: ContentFilter) => {
     if (filter === activeFilter) return;
+    trackCatalogFilterUsed({
+      surface: "model_folder",
+      model_id: model.id,
+      filter,
+    });
     setSelectedItemId(null);
     setViewItemFallback(null);
     setActiveFilter(filter);

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Outfit } from "next/font/google";
 import { getLocale, getMessages } from "next-intl/server";
 import { Providers } from "@/components/providers";
@@ -116,7 +117,9 @@ export default async function RootLayout({
               Skip to main content
             </a>
             <Header />
-            <ReferralProgramModal />
+            <Suspense fallback={null}>
+              <ReferralProgramModal />
+            </Suspense>
             <ReferralProgramNudge />
             <main id="main" className="flex-1 pb-24 md:pb-0">
               <ErrorBoundary>{children}</ErrorBoundary>

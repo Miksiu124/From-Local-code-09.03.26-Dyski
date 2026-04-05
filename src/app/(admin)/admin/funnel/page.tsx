@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   Activity,
@@ -10,6 +12,9 @@ import {
   Copy,
   Check,
   TrendingUp,
+  ExternalLink,
+  X,
+  Filter,
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -36,14 +41,30 @@ type FunnelSummary = {
 /** Keys shown in aggregate cards (aligned with backend funnel summary). */
 const GROUP_CORE = [
   "session_start",
+  "signup_started",
   "signup_completed",
+  "email_verified",
+  "verification_sent",
   "checkout_started",
   "purchase_completed",
   "purchase_created",
   "credits_credited",
+  "content_unlocked",
 ] as const;
 
-const GROUP_ENGAGEMENT = ["catalog_viewed", "model_page_viewed", "video_play_started"] as const;
+const GROUP_ENGAGEMENT = [
+  "pricing_viewed",
+  "catalog_home_viewed",
+  "catalog_filter_used",
+  "search_used",
+  "model_page_viewed",
+  "first_play",
+  "photo_view_first",
+  "payment_method_selected",
+  "referral_prompt_shown",
+  "referral_prompt_dismissed",
+  "referral_prompt_cta",
+] as const;
 
 const GROUP_RISK = [
   "checkout_abandoned",
@@ -72,26 +93,45 @@ function toneClasses(tone: "core" | "engagement" | "risk") {
   }
 }
 
+function isUuidLike(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim());
+}
+
 function MetricTile({
   name,
   value,
+  onDrillDown,
+  active,
 }: {
   name: string;
   value: number;
+  onDrillDown?: (eventName: string) => void;
+  active?: boolean;
 }) {
   const tone = eventTone(name);
+  const reduceMotion = useReducedMotion();
+  const interactive = typeof onDrillDown === "function" && value > 0;
+
   return (
-    <div
+    <motion.button
+      type="button"
+      disabled={!interactive}
+      onClick={() => interactive && onDrillDown?.(name)}
+      whileTap={interactive && !reduceMotion ? { scale: 0.97 } : undefined}
       className={cn(
-        "rounded-xl border px-3 py-2.5 transition-colors hover:border-white/10",
+        "w-full text-left rounded-xl border px-3 py-2.5 transition-colors",
+        interactive && "cursor-pointer hover:border-white/20 hover:bg-white/[0.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+        !interactive && "cursor-default",
+        active && "ring-2 ring-primary/50 border-primary/40",
         toneClasses(tone),
       )}
+      title={interactive ? name : undefined}
     >
       <p className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground/90 truncate" title={name}>
         {name}
       </p>
       <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight">{value}</p>
-    </div>
+    </motion.button>
   );
 }
 
@@ -131,7 +171,17 @@ function RateBarRow({
   );
 }
 
-function DayCountsCell({ counts, emptyLabel }: { counts: Record<string, number>; emptyLabel: string }) {
+function DayCountsCell({
+  counts,
+  emptyLabel,
+  onEventClick,
+  activeEvent,
+}: {
+  counts: Record<string, number>;
+  emptyLabel: string;
+  onEventClick?: (eventName: string) => void;
+  activeEvent?: string;
+}) {
   const entries = useMemo(
     () =>
       Object.entries(counts)
@@ -146,20 +196,30 @@ function DayCountsCell({ counts, emptyLabel }: { counts: Record<string, number>;
 
   return (
     <div className="flex flex-wrap gap-1.5 max-w-[min(100vw-6rem,52rem)]">
-      {entries.map(([k, v]) => (
-        <span
-          key={k}
-          className={cn(
-            "inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-1 text-[11px] leading-none",
-            toneClasses(eventTone(k)),
-          )}
-        >
-          <span className="font-mono text-muted-foreground truncate max-w-[10rem]" title={k}>
-            {k}
-          </span>
-          <span className="tabular-nums font-semibold text-foreground">{v}</span>
-        </span>
-      ))}
+      {entries.map(([k, v]) => {
+        const interactive = typeof onEventClick === "function" && v > 0;
+        return (
+          <motion.button
+            key={k}
+            type="button"
+            disabled={!interactive}
+            onClick={() => interactive && onEventClick?.(k)}
+            whileTap={interactive ? { scale: 0.96 } : undefined}
+            className={cn(
+              "inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-1 text-[11px] leading-none transition-colors",
+              interactive && "cursor-pointer hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/35",
+              !interactive && "cursor-default",
+              activeEvent === k && "ring-2 ring-primary/45",
+              toneClasses(eventTone(k)),
+            )}
+          >
+            <span className="font-mono text-muted-foreground truncate max-w-[10rem]" title={k}>
+              {k}
+            </span>
+            <span className="tabular-nums font-semibold text-foreground">{v}</span>
+          </motion.button>
+        );
+      })}
     </div>
   );
 }
@@ -221,18 +281,50 @@ function PropsCell({
   );
 }
 
-export default function AdminFunnelEventsPage() {
+function FunnelPageContent() {
   const t = useTranslations("admin");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const liveEventsRef = useRef<HTMLElement | null>(null);
   const [events, setEvents] = useState<GrowthEventRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState("");
   const [filterApplied, setFilterApplied] = useState("");
+  const [userFilterInput, setUserFilterInput] = useState("");
+  const [userFilterApplied, setUserFilterApplied] = useState("");
   const [page, setPage] = useState(0);
   const [funnelDays, setFunnelDays] = useState(7);
   const [summary, setSummary] = useState<FunnelSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
+
+  const syncFiltersFromUrl = useCallback(() => {
+    const ev = searchParams.get("event") ?? "";
+    const uid = searchParams.get("userId") ?? "";
+    setFilterInput(ev);
+    setFilterApplied(ev);
+    setUserFilterInput(uid);
+    setUserFilterApplied(uid);
+    setPage(0);
+  }, [searchParams]);
+
+  useEffect(() => {
+    syncFiltersFromUrl();
+  }, [syncFiltersFromUrl]);
+
+  const drillDownToEvent = useCallback(
+    (eventName: string) => {
+      const p = new URLSearchParams();
+      p.set("event", eventName);
+      if (userFilterApplied.trim() && isUuidLike(userFilterApplied)) p.set("userId", userFilterApplied.trim().toLowerCase());
+      router.replace(`/admin/funnel?${p.toString()}`, { scroll: false });
+      window.requestAnimationFrame(() => {
+        liveEventsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [router, userFilterApplied],
+  );
 
   const fetchSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -266,6 +358,9 @@ export default function AdminFunnelEventsPage() {
           offset: String(page * PAGE_SIZE),
         });
         if (filterApplied.trim()) params.set("event", filterApplied.trim());
+        if (userFilterApplied.trim() && isUuidLike(userFilterApplied)) {
+          params.set("userId", userFilterApplied.trim().toLowerCase());
+        }
         const res = await fetch(`/api/admin/growth-events?${params.toString()}`, {
           credentials: "include",
         });
@@ -303,7 +398,7 @@ export default function AdminFunnelEventsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, filterApplied, t]);
+  }, [page, filterApplied, userFilterApplied, t]);
 
   const fmtPct = (x: number | undefined) =>
     x == null || Number.isNaN(x) ? "—" : `${(x * 100).toFixed(1)}%`;
@@ -364,7 +459,13 @@ export default function AdminFunnelEventsPage() {
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3">
                     {GROUP_CORE.map((key) => (
-                      <MetricTile key={key} name={key} value={summary.totals[key] ?? 0} />
+                      <MetricTile
+                        key={key}
+                        name={key}
+                        value={summary.totals[key] ?? 0}
+                        onDrillDown={drillDownToEvent}
+                        active={filterApplied === key}
+                      />
                     ))}
                   </div>
                 </div>
@@ -374,7 +475,13 @@ export default function AdminFunnelEventsPage() {
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {GROUP_ENGAGEMENT.map((key) => (
-                      <MetricTile key={key} name={key} value={summary.totals[key] ?? 0} />
+                      <MetricTile
+                        key={key}
+                        name={key}
+                        value={summary.totals[key] ?? 0}
+                        onDrillDown={drillDownToEvent}
+                        active={filterApplied === key}
+                      />
                     ))}
                   </div>
                 </div>
@@ -384,7 +491,13 @@ export default function AdminFunnelEventsPage() {
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     {GROUP_RISK.map((key) => (
-                      <MetricTile key={key} name={key} value={summary.totals[key] ?? 0} />
+                      <MetricTile
+                        key={key}
+                        name={key}
+                        value={summary.totals[key] ?? 0}
+                        onDrillDown={drillDownToEvent}
+                        active={filterApplied === key}
+                      />
                     ))}
                   </div>
                 </div>
@@ -442,7 +555,12 @@ export default function AdminFunnelEventsPage() {
                               {row.date}
                             </td>
                             <td className="py-3 px-3 align-top">
-                              <DayCountsCell counts={row.counts} emptyLabel={t("growthFunnelDayNoActivity")} />
+                              <DayCountsCell
+                                counts={row.counts}
+                                emptyLabel={t("growthFunnelDayNoActivity")}
+                                onEventClick={drillDownToEvent}
+                                activeEvent={filterApplied}
+                              />
                             </td>
                           </tr>
                         ))}
@@ -459,8 +577,8 @@ export default function AdminFunnelEventsPage() {
       </section>
 
       {/* Live events */}
-      <section className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <section ref={liveEventsRef} id="growth-live-events" className="space-y-4 scroll-mt-6">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/[0.04] ring-1 ring-white/[0.08]">
               <Activity className="h-6 w-6 text-primary" />
@@ -468,44 +586,105 @@ export default function AdminFunnelEventsPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">{t("funnelEventsPageTitle")}</h1>
               <p className="text-sm text-muted-foreground mt-0.5 max-w-prose">{t("growthEventsHint")}</p>
+              <p className="text-xs text-muted-foreground/80 mt-1 flex items-center gap-1.5">
+                <Filter className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                {t("growthFunnelDrillHint")}
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              placeholder={t("growthEventsFilter")}
-              value={filterInput}
-              onChange={(e) => setFilterInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setPage(0);
-                  setFilterApplied(filterInput.trim());
-                }
-              }}
-              className="w-full sm:w-64 h-9 text-sm bg-background/50"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setPage(0);
-                setFilterApplied(filterInput.trim());
-              }}
-            >
-              {t("growthEventsApply")}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setPage(0);
-                setFilterInput("");
-                setFilterApplied("");
-              }}
-            >
-              {t("growthEventsClear")}
-            </Button>
+          <div className="flex flex-col gap-2 w-full lg:max-w-xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                placeholder={t("growthEventsFilter")}
+                value={filterInput}
+                onChange={(e) => setFilterInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const p = new URLSearchParams();
+                    if (filterInput.trim()) p.set("event", filterInput.trim());
+                    if (userFilterInput.trim() && isUuidLike(userFilterInput)) p.set("userId", userFilterInput.trim().toLowerCase());
+                    router.replace(p.toString() ? `/admin/funnel?${p.toString()}` : "/admin/funnel", { scroll: false });
+                  }
+                }}
+                className="w-full sm:flex-1 sm:min-w-[12rem] h-9 text-sm bg-background/50 font-mono text-[11px]"
+              />
+              <Input
+                placeholder={t("growthEventsFilterUserId")}
+                value={userFilterInput}
+                onChange={(e) => setUserFilterInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const p = new URLSearchParams();
+                    if (filterInput.trim()) p.set("event", filterInput.trim());
+                    if (userFilterInput.trim() && isUuidLike(userFilterInput)) p.set("userId", userFilterInput.trim().toLowerCase());
+                    router.replace(p.toString() ? `/admin/funnel?${p.toString()}` : "/admin/funnel", { scroll: false });
+                  }
+                }}
+                className="w-full sm:w-52 h-9 text-sm bg-background/50 font-mono text-[11px]"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const p = new URLSearchParams();
+                  if (filterInput.trim()) p.set("event", filterInput.trim());
+                  if (userFilterInput.trim() && isUuidLike(userFilterInput)) p.set("userId", userFilterInput.trim().toLowerCase());
+                  router.replace(p.toString() ? `/admin/funnel?${p.toString()}` : "/admin/funnel", { scroll: false });
+                }}
+              >
+                {t("growthEventsApply")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  router.replace("/admin/funnel", { scroll: false });
+                }}
+              >
+                {t("growthEventsClear")}
+              </Button>
+            </div>
+            {(filterApplied || (userFilterApplied && isUuidLike(userFilterApplied))) && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">{t("growthFunnelActiveFilters")}</span>
+                {filterApplied ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
+                    {filterApplied}
+                    <button
+                      type="button"
+                      className="rounded p-0.5 hover:bg-white/10"
+                      aria-label={t("growthFunnelClearEventFilter")}
+                      onClick={() => {
+                        const p = new URLSearchParams();
+                        if (userFilterApplied.trim() && isUuidLike(userFilterApplied)) p.set("userId", userFilterApplied.trim().toLowerCase());
+                        router.replace(p.toString() ? `/admin/funnel?${p.toString()}` : "/admin/funnel", { scroll: false });
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ) : null}
+                {userFilterApplied && isUuidLike(userFilterApplied) ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300/90">
+                    user:{userFilterApplied.slice(0, 8)}…
+                    <button
+                      type="button"
+                      className="rounded p-0.5 hover:bg-white/10"
+                      aria-label={t("growthFunnelClearUserFilter")}
+                      onClick={() => {
+                        const p = new URLSearchParams();
+                        if (filterApplied.trim()) p.set("event", filterApplied.trim());
+                        router.replace(p.toString() ? `/admin/funnel?${p.toString()}` : "/admin/funnel", { scroll: false });
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
 
@@ -541,20 +720,32 @@ export default function AdminFunnelEventsPage() {
                             {new Date(ev.createdAt).toLocaleString()}
                           </td>
                           <td className="py-3 px-4 align-top">
-                            <span
+                            <button
+                              type="button"
+                              onClick={() => drillDownToEvent(ev.eventName)}
                               className={cn(
-                                "inline-flex max-w-[14rem] rounded-lg border px-2 py-1 font-mono text-[11px] leading-tight",
+                                "inline-flex max-w-[14rem] rounded-lg border px-2 py-1 font-mono text-[11px] leading-tight text-left transition-colors",
+                                "hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 cursor-pointer",
+                                filterApplied === ev.eventName && "ring-2 ring-primary/45",
                                 toneClasses(tone),
                               )}
                             >
                               {ev.eventName}
-                            </span>
+                            </button>
                           </td>
-                          <td
-                            className="py-3 px-4 font-mono text-[11px] text-muted-foreground max-w-[160px] truncate align-top"
-                            title={ev.userId ?? ""}
-                          >
-                            {ev.userId ?? "—"}
+                          <td className="py-3 px-4 align-top max-w-[200px]">
+                            {ev.userId ? (
+                              <Link
+                                href={`/admin/users?userId=${encodeURIComponent(ev.userId)}`}
+                                className="group inline-flex items-center gap-1.5 font-mono text-[11px] text-primary hover:text-primary/90 hover:underline underline-offset-2 max-w-full"
+                                title={ev.userId}
+                              >
+                                <span className="truncate">{ev.userId}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />
+                              </Link>
+                            ) : (
+                              <span className="font-mono text-[11px] text-muted-foreground">—</span>
+                            )}
                           </td>
                           <td className="py-3 px-4 align-top">
                             <PropsCell props={ev.props} t={t} />
@@ -598,5 +789,19 @@ export default function AdminFunnelEventsPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function AdminFunnelEventsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center gap-2 text-muted-foreground text-sm">
+          <RefreshCw className="h-4 w-4 animate-spin" aria-hidden />
+        </div>
+      }
+    >
+      <FunnelPageContent />
+    </Suspense>
   );
 }

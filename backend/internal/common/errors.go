@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -12,6 +13,17 @@ var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 
 func IsValidUUID(s string) bool {
 	return uuidRegex.MatchString(s)
+}
+
+// ParseUUIDParam trims whitespace, validates UUID format, and returns the canonical
+// lowercase form. TEXT primary keys use case-sensitive equality in PostgreSQL; IDs
+// from some clients may use uppercase A–F and must match stored lowercase rows.
+func ParseUUIDParam(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if !IsValidUUID(s) {
+		return "", false
+	}
+	return strings.ToLower(s), true
 }
 
 // ── Standard error response ─────────────────────────────────────────────────
