@@ -101,6 +101,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
   const [selectedPurchase, setSelectedPurchase] = useState<PurchaseItem | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [blikEnabled, setBlikEnabled] = useState(initialBlikEnabled);
   const [blikSaving, setBlikSaving] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -291,9 +292,12 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
   }, []);
 
   const handleAction = async (id: string, action: "approve" | "reject") => {
+    setActionError(null);
     setLoading(true);
+    // Use /complete instead of /approve — some CDNs/WAFs block the literal path "approve" on payment URLs
+    const segment = action === "approve" ? "complete" : "reject";
     try {
-      const res = await fetch(`/api/admin/credits/purchases/${id}/${action}`, {
+      const res = await fetch(`/api/admin/credits/purchases/${id}/${segment}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -304,9 +308,22 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
         setSelectedPurchase(null);
         setNotes("");
         router.refresh();
+        return;
       }
+      const text = await res.text();
+      let detail = `${res.status}`;
+      try {
+        const data = JSON.parse(text) as { message?: string; error?: string };
+        if (data?.message) detail = data.message;
+        else if (data?.error) detail = data.error;
+      } catch {
+        if (text) detail = text.slice(0, 200);
+      }
+      setActionError(detail);
+      logger.error("Purchase action failed", { status: res.status, segment, id });
     } catch (error) {
       logger.error("Failed to update purchase status", error);
+      setActionError(error instanceof Error ? error.message : "Network error");
     } finally {
       setLoading(false);
     }
@@ -336,6 +353,15 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
 
   return (
     <>
+      {actionError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground"
+        >
+          <p className="font-medium">Could not update purchase</p>
+          <p className="mt-1 opacity-90 break-words">{actionError}</p>
+        </div>
+      )}
       {/* BLIK Shop Toggle */}
       <Card
         className={`mb-8 border-2 transition-colors ${
@@ -494,6 +520,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                     {/* Actions */}
                     <div className="flex gap-2 pt-3 border-t border-border">
                       <Button
+                        type="button"
                         className="flex-1"
                         variant="success"
                         size="sm"
@@ -504,6 +531,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                         {t("approve")}
                       </Button>
                       <Button
+                        type="button"
                         className="flex-1"
                         variant="destructive"
                         size="sm"
@@ -638,6 +666,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
 
           <DialogFooter>
             <Button
+              type="button"
               variant="destructive"
               onClick={() => handleAction(selectedPurchase.id, "reject")}
               disabled={loading}
@@ -646,6 +675,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
               {t("reject")}
             </Button>
             <Button
+              type="button"
               variant="success"
               onClick={() => handleAction(selectedPurchase.id, "approve")}
               disabled={loading}

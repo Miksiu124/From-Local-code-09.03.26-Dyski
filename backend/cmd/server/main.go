@@ -253,6 +253,8 @@ func main() {
 	adminGroup.GET("/credits/purchases/stream", adminHandler.StreamPendingPurchases)
 	adminGroup.GET("/credits/purchases/:id/proof", adminHandler.GetPurchaseProof)
 	adminGroup.POST("/credits/purchases/:id/approve", adminHandler.ApprovePurchase)
+	// Alias: some proxies/WAFs block path segment "approve"; UI uses /complete
+	adminGroup.POST("/credits/purchases/:id/complete", adminHandler.ApprovePurchase)
 	adminGroup.POST("/credits/purchases/:id/reject", adminHandler.RejectPurchase)
 	adminGroup.GET("/users", adminHandler.ListUsers)
 	adminGroup.GET("/users/:id", adminHandler.GetUser)
