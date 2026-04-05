@@ -14,6 +14,10 @@ import {
   dismissPeriodicNudge,
   shouldShowPeriodicNudge,
 } from "@/lib/referral-nudge-storage";
+import { SESSION_BANNER_SUPPRESS_KEY } from "@/lib/referral-modal-storage";
+
+/** Delay before the periodic banner may appear so the referral promo modal can show first. */
+const BANNER_DELAY_MS = 2800;
 
 type Me = {
   id?: string;
@@ -42,8 +46,18 @@ export function ReferralProgramNudge() {
   const pathname = usePathname();
   const t = useTranslations("referral");
   const [visible, setVisible] = useState(false);
+  const [bannerAllowed, setBannerAllowed] = useState(false);
 
   useEffect(() => {
+    const tmr = window.setTimeout(() => setBannerAllowed(true), BANNER_DELAY_MS);
+    return () => window.clearTimeout(tmr);
+  }, []);
+
+  useEffect(() => {
+    if (!bannerAllowed) {
+      setVisible(false);
+      return;
+    }
     if (pathHidesNudge(pathname)) {
       setVisible(false);
       return;
@@ -56,6 +70,13 @@ export function ReferralProgramNudge() {
     let cancelled = false;
     (async () => {
       try {
+        if (
+          typeof sessionStorage !== "undefined" &&
+          sessionStorage.getItem(SESSION_BANNER_SUPPRESS_KEY) === "1"
+        ) {
+          setVisible(false);
+          return;
+        }
         const res = await fetch("/api/auth/me", { credentials: "include" });
         if (!res.ok || cancelled) {
           setVisible(false);
@@ -80,7 +101,7 @@ export function ReferralProgramNudge() {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, bannerAllowed]);
 
   useEffect(() => {
     if (!visible) return;

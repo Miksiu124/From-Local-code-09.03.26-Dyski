@@ -142,7 +142,12 @@ export function Header() {
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         {/* Logo — resets search and returns to main page */}
-        <Link href="/" className="flex items-center gap-2 shrink-0" onClick={handleLogoClick}>
+        <Link
+          href="/"
+          className="flex items-center gap-2 shrink-0"
+          onClick={handleLogoClick}
+          data-tour="tour-models-mobile"
+        >
           <span className="text-xl font-bold bg-gradient-to-r from-primary via-purple-400 to-primary bg-clip-text text-transparent">
             {t("common.appName")}
           </span>
@@ -154,9 +159,7 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
-              data-tour={
-                link.href === "/" ? "tour-models" : link.href === "/purchase" ? "tour-buy" : undefined
-              }
+              data-tour={link.href === "/" ? "tour-models" : link.href === "/purchase" ? "tour-buy" : undefined}
               className={cn(
                 "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                 pathname === link.href
@@ -173,16 +176,42 @@ export function Header() {
         <div ref={rightSideRef} className="flex items-center gap-2 relative">
           {/* Credit Balance */}
           {user && (
-            <Link href="/purchase" className="hidden sm:flex" data-tour="tour-credits">
-              <div className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.06] px-3 py-1.5 text-sm font-medium hover:bg-white/[0.08] transition-colors">
-                <Coins className="h-3.5 w-3.5 text-primary" />
-                <span className="text-foreground/90">{formatCredits(user.creditBalance)}</span>
-              </div>
-            </Link>
+            <>
+              <Link href="/purchase" className="hidden sm:flex" data-tour="tour-credits">
+                <div className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.06] px-3 py-1.5 text-sm font-medium hover:bg-white/[0.08] transition-colors">
+                  <Coins className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-foreground/90">{formatCredits(user.creditBalance)}</span>
+                </div>
+              </Link>
+              <Link
+                href="/purchase"
+                className="flex sm:hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] text-primary hover:bg-white/[0.08] transition-colors"
+                aria-label={t("nav.buyCredits")}
+                data-tour="tour-buy-mobile"
+              >
+                <Coins className="h-4 w-4" />
+              </Link>
+            </>
           )}
 
           {/* Notifications */}
           {user && <NotificationBell dropdownAnchorRef={rightSideRef} />}
+
+          {/* Guest: pricing / buy credits — always visible (incl. mobile) for tour spotlight */}
+          {!loading && !user && (
+            <Link
+              href="/purchase"
+              data-tour="tour-guest-credits"
+              className={cn(
+                "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 shrink-0",
+                pathname === "/purchase"
+                  ? "text-foreground bg-white/[0.06]"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+              )}
+            >
+              {t("nav.buyCredits")}
+            </Link>
+          )}
 
           {/* Language Switcher */}
           <LanguageSwitcher />
@@ -207,8 +236,14 @@ export function Header() {
                 <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary/30 to-purple-600/30 flex items-center justify-center border border-primary/20">
                   <User className="h-3.5 w-3.5 text-primary" />
                 </div>
+                <span
+                  className="sm:hidden text-xs font-medium tabular-nums text-muted-foreground max-w-[4.5rem] truncate"
+                  data-tour="tour-credits-mobile"
+                >
+                  {formatCredits(user.creditBalance)}
+                </span>
                 <ChevronDown className={cn(
-                  "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                  "hidden sm:block h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
                   userMenuOpen && "rotate-180"
                 )} />
               </button>
@@ -315,6 +350,20 @@ export function Header() {
                   {link.label}
                 </Link>
               ))}
+              {!user && (
+                <Link
+                  href="/purchase"
+                  className={cn(
+                    "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
+                    pathname === "/purchase"
+                      ? "bg-white/[0.06] text-foreground"
+                      : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                  )}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {t("nav.buyCredits")}
+                </Link>
+              )}
               {user && (
                 <>
                   <Link

@@ -205,9 +205,9 @@ export function trackBlikPaymentExpired(extra: GrowthProps = {}): void {
   emitGrowthEvent("blik_payment_expired", { surface: "credit_purchase", ...extra });
 }
 
-/** Referral program prompt shown (first purchase success screen or periodic banner). */
+/** Referral program prompt shown (first purchase success, periodic banner, or promo modal). */
 export function trackReferralProgramNudge(
-  surface: "first_purchase_success" | "periodic_banner",
+  surface: "first_purchase_success" | "periodic_banner" | "promo_modal",
   action: "shown" | "dismissed" | "cta_click",
   extra: GrowthProps = {},
 ): void {

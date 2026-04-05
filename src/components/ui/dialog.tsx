@@ -3,15 +3,19 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 
 interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
+  /** Stronger dim/blur for promotional overlays (e.g. referral modal). */
+  overlayClassName?: string;
 }
 
-function Dialog({ open, onOpenChange, children }: DialogProps) {
+function Dialog({ open, onOpenChange, children, overlayClassName }: DialogProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <AnimatePresence>
       {open && (
@@ -20,16 +24,21 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+            transition={{ duration: reduceMotion ? 0 : 0.2 }}
+            className={cn(
+              "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm",
+              overlayClassName,
+            )}
             onClick={() => onOpenChange(false)}
           />
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
             <motion.div
-              initial={{ opacity: 0, y: 40, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.97 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40, scale: 0.97 }}
+              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.97 }}
+              transition={
+                reduceMotion ? { duration: 0.15 } : { type: "spring", damping: 25, stiffness: 300 }
+              }
               className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-white/[0.08] bg-card p-6 shadow-2xl shadow-black/40 max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >

@@ -241,7 +241,12 @@
     "referralPromptTitle": "Poleć znajomych, zarabiaj kredyty",
     "referralPromptDesc": "Udostępnij link polecający — gdy ktoś się zarejestruje i kupi kredyty, oboje dostaniecie nagrody.",
     "referralPromptCta": "Program poleceń",
-    "referralPromptDismiss": "Nie teraz"
+    "referralPromptDismiss": "Nie teraz",
+    "publicTitle": "Cennik kredytów",
+    "publicSubtitle": "Poniżej aktualne pakiety i ceny. Zaloguj się lub załóż konto, żeby kupić kredyty i odblokować treści.",
+    "publicLoginCta": "Zaloguj się",
+    "publicRegisterCta": "Zarejestruj się",
+    "publicNoPackages": "Chwilowo brak pakietów — sprawdź ponownie później."
   },
   "referral": {
     "title": "Program poleceń",
@@ -267,7 +272,13 @@
     "nudgePeriodicTitle": "Zarabiaj kredyty z poleceniami",
     "nudgePeriodicDesc": "Udostępnij swój link — nagrody, gdy znajomi założą konto i zrobią pierwszy zakup.",
     "nudgeOpenProgram": "Program poleceń",
-    "nudgeDismiss": "Zamknij"
+    "nudgeDismiss": "Zamknij",
+    "modalTitle": "Zaproś znajomych — zarabiaj kredyty",
+    "modalBody": "Dostaniesz {creditsReferrer} kredytów, gdy zrobią pierwszy zakup; oni dostaną {bonusPercentReferee}% bonusu od kredytów. Skopiuj link poniżej.",
+    "modalCopyLink": "Kopiuj link",
+    "modalCopied": "Skopiowano",
+    "modalLater": "Później",
+    "modalReferralPage": "Strona poleceń"
   },
   "dashboard": {
     "title": "Panel",
@@ -374,6 +385,23 @@
     "growthEventUserId": "ID użytkownika",
     "growthEventProps": "Props (JSON)",
     "growthEventTime": "Czas",
+    "growthFunnelGroupCore": "Lejek główny",
+    "growthFunnelGroupEngagement": "Zaangażowanie",
+    "growthFunnelGroupRisk": "Odpady i błędy",
+    "growthFunnelTotalEvents": "Łącznie zdarzeń w okresie",
+    "growthFunnelRateLabelSignupSession": "Rejestracja / sesja",
+    "growthFunnelRateLabelCheckoutSession": "Koszyk / sesja",
+    "growthFunnelRateLabelPurchaseSession": "Zakup / sesja",
+    "growthFunnelRateLabelCheckoutSignup": "Koszyk / rejestracja",
+    "growthFunnelRateLabelPurchaseCheckout": "Zakup / koszyk",
+    "growthEventPropsShort": "Dane (JSON)",
+    "growthEventExpand": "Rozwiń",
+    "growthEventCollapse": "Zwiń",
+    "growthEventCopyJson": "Kopiuj",
+    "growthEventCopied": "Skopiowano",
+    "growthEventsPrev": "Wstecz",
+    "growthEventsNext": "Dalej",
+    "growthFunnelDayNoActivity": "Brak zdarzeń",
     "settings": "Ustawienia",
     "syncR2": "Synchronizuj R2",
     "importR2": "Importuj z R2",
@@ -520,7 +548,9 @@
     "guestTourStep2Body": "Wpisz nazwę, żeby przefiltrować siatkę i szybciej znaleźć twórcę.",
     "guestTourStep3Title": "Filtry krajów",
     "guestTourStep3Body": "Wybierz kraj albo zostaw „Wszystkie”, żeby zobaczyć pełną listę.",
-    "guestTourStep4Title": "Logowanie i rejestracja",
-    "guestTourStep4Body": "Załóż konto, kup kredyty, odblokuj treści i zarządzaj zakupami w panelu."
+    "guestTourStep4Title": "Cennik kredytów",
+    "guestTourStep4Body": "„Kup kredyty” prowadzi do aktualnych pakietów i cen — zobacz, ile kosztuje dostęp, zanim założysz konto.",
+    "guestTourStep5Title": "Logowanie i rejestracja",
+    "guestTourStep5Body": "Załóż konto, dokonaj zakupu kredytów, odblokuj treści i zarządzaj zakupami w panelu."
   }
 }

@@ -8,6 +8,7 @@ import { CookieBanner } from "@/components/cookie-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ClientErrorReporter } from "@/components/client-error-reporter";
 import { GrowthFunnelChrome } from "@/components/growth/growth-funnel-chrome";
+import { ReferralProgramModal } from "@/components/growth/referral-program-modal";
 import { ReferralProgramNudge } from "@/components/growth/referral-program-nudge";
 import { PostAuthGuideAutostart } from "@/components/onboarding/post-auth-guide-autostart";
 import { ProductTourAutostart } from "@/components/onboarding/product-tour-autostart";
@@ -115,6 +116,7 @@ export default async function RootLayout({
               Skip to main content
             </a>
             <Header />
+            <ReferralProgramModal />
             <ReferralProgramNudge />
             <main id="main" className="flex-1 pb-24 md:pb-0">
               <ErrorBoundary>{children}</ErrorBoundary>

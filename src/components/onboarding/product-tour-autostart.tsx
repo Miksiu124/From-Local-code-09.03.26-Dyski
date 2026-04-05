@@ -10,7 +10,7 @@ import {
 } from "@/components/onboarding/product-tour";
 
 /**
- * Home page spotlight tour: guests get a 4-step intro; logged-in non-admins get the member tour.
+ * Home page spotlight tour: guests get a 5-step intro (incl. pricing link); logged-in non-admins get the member tour.
  */
 export function ProductTourAutostart() {
   const pathname = usePathname();
@@ -96,7 +96,7 @@ export function ProductTourAutostart() {
 
   if (!tourMode) return null;
 
-  const maxStep = 3;
+  const maxStep = tourMode === "guest" ? 4 : 3;
 
   return (
     <ProductTour

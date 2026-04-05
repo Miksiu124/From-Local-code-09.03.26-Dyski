@@ -3,13 +3,27 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, type Transition } from "framer-motion";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const STEP_TARGETS_MEMBER = ["tour-models", "tour-credits", "tour-buy", "tour-account"] as const;
-const STEP_TARGETS_GUEST = ["tour-models", "tour-guest-search", "tour-guest-filters", "tour-guest-auth"] as const;
+/** Single id or fallback chain — first matching element with non-zero layout wins (fixes hidden `md:` / `sm:` targets on mobile). */
+type TourStepTarget = string | readonly string[];
+
+const STEP_TARGETS_MEMBER: readonly TourStepTarget[] = [
+  ["tour-models", "tour-models-mobile"],
+  ["tour-credits", "tour-credits-mobile"],
+  ["tour-buy", "tour-buy-mobile"],
+  "tour-account",
+];
+const STEP_TARGETS_GUEST: readonly TourStepTarget[] = [
+  ["tour-models", "tour-models-mobile"],
+  "tour-guest-search",
+  ["tour-guest-filters", "tour-guest-search"],
+  "tour-guest-credits",
+  "tour-guest-auth",
+];
 
 export type ProductTourMode = "member" | "guest";
 
@@ -19,13 +33,98 @@ const CARD_W_MAX_PX = 352; /* 22rem */
 const CARD_EST_HEIGHT = 260;
 const CARD_GAP = 12;
 
-function measureTarget(id: string): Rect | null {
+function resolveStepIds(step: TourStepTarget): readonly string[] {
+  return typeof step === "string" ? [step] : [...step];
+}
+
+function measureTargets(ids: readonly string[]): Rect | null {
   if (typeof document === "undefined") return null;
-  const el = document.querySelector(`[data-tour="${id}"]`);
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if (r.width < 2 || r.height < 2) return null;
-  return { top: r.top, left: r.left, width: r.width, height: r.height };
+  for (const id of ids) {
+    const el = document.querySelector(`[data-tour="${id}"]`);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width >= 2 && r.height >= 2) {
+      return { top: r.top, left: r.left, width: r.width, height: r.height };
+    }
+  }
+  return null;
+}
+
+function firstVisibleTargetEl(ids: readonly string[]): Element | null {
+  if (typeof document === "undefined") return null;
+  for (const id of ids) {
+    const el = document.querySelector(`[data-tour="${id}"]`);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width >= 2 && r.height >= 2) return el;
+  }
+  return null;
+}
+
+function TourCardBody({
+  t,
+  step,
+  stepCount,
+  titleKey,
+  bodyKey,
+  isLast,
+  transition,
+  onSkip,
+  onNext,
+  onClose,
+}: {
+  t: ReturnType<typeof useTranslations<"onboarding">>;
+  step: number;
+  stepCount: number;
+  titleKey: string;
+  bodyKey: string;
+  isLast: boolean;
+  transition: Transition;
+  onSkip: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground tabular-nums">
+          {t("tourStepProgress", { current: step + 1, total: stepCount })}
+        </p>
+        <button
+          type="button"
+          onClick={onSkip}
+          className="shrink-0 rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"
+          aria-label={t("tourSkip")}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mb-3 h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
+        <motion.div
+          className="h-full rounded-full bg-primary/90 origin-left"
+          initial={false}
+          animate={{ width: `${((step + 1) / stepCount) * 100}%` }}
+          transition={transition}
+        />
+      </div>
+      <h3 className="font-semibold text-foreground pr-6 mb-2 text-base leading-snug">{t(titleKey)}</h3>
+      <p className="text-muted-foreground leading-relaxed mb-4">{t(bodyKey)}</p>
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
+          {t("tourSkip")}
+        </Button>
+        {isLast ? (
+          <Button type="button" size="sm" onClick={onClose}>
+            {t("tourDone")}
+          </Button>
+        ) : (
+          <Button type="button" size="sm" onClick={onNext}>
+            {t("tourNext")}
+          </Button>
+        )}
+      </div>
+    </>
+  );
 }
 
 /** Places the tooltip card below the target, or above if there is not enough room (short viewports). */
@@ -71,6 +170,7 @@ export function ProductTour({
   );
 
   const [rect, setRect] = useState<Rect | null>(null);
+  const [narrowSheet, setNarrowSheet] = useState(false);
 
   const targets = useMemo(
     () => (mode === "member" ? STEP_TARGETS_MEMBER : STEP_TARGETS_GUEST),
@@ -83,21 +183,60 @@ export function ProductTour({
       setRect(null);
       return;
     }
-    setRect(measureTarget(targets[step]));
+    const ids = resolveStepIds(targets[step]);
+    setRect(measureTargets(ids));
   }, [open, step, stepCount, targets]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 639px)");
+    const apply = () => setNarrowSheet(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  /** Scroll target into view, then measure (fixes off-screen highlights on mobile). */
   useLayoutEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!open || step < 0 || step >= stepCount) {
+      setRect(null);
+      return;
+    }
+    const ids = resolveStepIds(targets[step]);
+    const el = firstVisibleTargetEl(ids);
+    if (el) {
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+    }
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setRect(measureTargets(ids));
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [open, step, stepCount, targets]);
 
   useEffect(() => {
     if (!open) return;
     const onResize = () => refresh();
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onResize, true);
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", onResize);
+      vv.addEventListener("scroll", onResize);
+    }
     return () => {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);
+      if (vv) {
+        vv.removeEventListener("resize", onResize);
+        vv.removeEventListener("scroll", onResize);
+      }
     };
   }, [open, refresh]);
 
@@ -113,87 +252,144 @@ export function ProductTour({
       ? (`tourStep${step + 1}Body` as const)
       : (`guestTourStep${step + 1}Body` as const);
 
-  const cardPos = rect ? computeCardPosition(rect) : null;
+  const cardPos = rect && !narrowSheet ? computeCardPosition(rect) : null;
 
-  const cardAnimate =
+  const cardAnimateDesktop =
     cardPos != null
       ? { left: cardPos.left, top: cardPos.top, x: "-50%", y: 0, opacity: 1 }
       : { left: "50%", top: "50%", x: "-50%", y: "-50%", opacity: 1 };
 
+  /**
+   * Dimming without a full-screen backdrop-blur: that blur was stacking over the highlighted
+   * control (even through the “hole”), so labels looked smeared. Four strips leave a true gap
+   * so the target renders sharp; no frosted blur on the page.
+   */
+  const SPOTLIGHT_PAD = 4;
+  const dimStripClass = "fixed z-[199] bg-black/55 cursor-default";
+
   const overlay = (
     <>
-      <motion.div
-        className="fixed inset-0 z-[199] bg-black/55 backdrop-blur-[2px]"
-        aria-hidden
-        initial={false}
-        animate={{ opacity: 1 }}
-        transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
-        onClick={onSkip}
-      />
+      {rect ? (
+        (() => {
+          const top = rect.top - SPOTLIGHT_PAD;
+          const left = rect.left - SPOTLIGHT_PAD;
+          const w = rect.width + SPOTLIGHT_PAD * 2;
+          const h = rect.height + SPOTLIGHT_PAD * 2;
+          return (
+            <>
+              <motion.div
+                aria-hidden
+                className={cn(dimStripClass, "left-0 right-0 top-0")}
+                style={{ height: Math.max(0, top) }}
+                initial={false}
+                animate={{ opacity: 1 }}
+                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                onClick={onSkip}
+              />
+              <motion.div
+                aria-hidden
+                className={cn(dimStripClass, "left-0 right-0 bottom-0")}
+                style={{ top: top + h }}
+                initial={false}
+                animate={{ opacity: 1 }}
+                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                onClick={onSkip}
+              />
+              <motion.div
+                aria-hidden
+                className={cn(dimStripClass, "left-0")}
+                style={{ top, width: Math.max(0, left), height: h }}
+                initial={false}
+                animate={{ opacity: 1 }}
+                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                onClick={onSkip}
+              />
+              <motion.div
+                aria-hidden
+                className={cn(dimStripClass, "right-0")}
+                style={{ top, left: left + w, height: h }}
+                initial={false}
+                animate={{ opacity: 1 }}
+                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                onClick={onSkip}
+              />
+            </>
+          );
+        })()
+      ) : (
+        <motion.div
+          className="fixed inset-0 z-[199] cursor-default bg-black/55"
+          aria-hidden
+          initial={false}
+          animate={{ opacity: 1 }}
+          transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+          onClick={onSkip}
+        />
+      )}
       {rect && (
         <motion.div
           className={cn(
             "fixed z-[200] rounded-xl pointer-events-none border-2 border-primary/80 tour-spotlight-pulse",
-            "shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]",
           )}
           initial={false}
           animate={{
-            top: rect.top - 4,
-            left: rect.left - 4,
-            width: rect.width + 8,
-            height: rect.height + 8,
+            top: rect.top - SPOTLIGHT_PAD,
+            left: rect.left - SPOTLIGHT_PAD,
+            width: rect.width + SPOTLIGHT_PAD * 2,
+            height: rect.height + SPOTLIGHT_PAD * 2,
           }}
           transition={transition}
           style={{ willChange: reduceMotion ? undefined : "transform, width, height, top, left" }}
         />
       )}
-      <motion.div
-        className={cn(
-          "fixed z-[200] w-[min(92vw,22rem)] rounded-2xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl p-4 text-sm",
-        )}
-        initial={false}
-        animate={cardAnimate}
-        transition={transition}
-        style={{ willChange: reduceMotion ? undefined : "transform, top, left" }}
-      >
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground tabular-nums">
-            {t("tourStepProgress", { current: step + 1, total: stepCount })}
-          </p>
-          <button
-            type="button"
-            onClick={onSkip}
-            className="shrink-0 rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"
-            aria-label={t("tourSkip")}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="mb-3 h-1 w-full rounded-full bg-white/[0.06] overflow-hidden">
-          <motion.div
-            className="h-full rounded-full bg-primary/90 origin-left"
-            initial={false}
-            animate={{ width: `${((step + 1) / stepCount) * 100}%` }}
-            transition={transition}
-          />
-        </div>
-        <h3 className="font-semibold text-foreground pr-6 mb-2 text-base leading-snug">{t(titleKey)}</h3>
-        <p className="text-muted-foreground leading-relaxed mb-4">{t(bodyKey)}</p>
-        <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
-            {t("tourSkip")}
-          </Button>
-          {isLast ? (
-            <Button type="button" size="sm" onClick={onClose}>
-              {t("tourDone")}
-            </Button>
-          ) : (
-            <Button type="button" size="sm" onClick={onNext}>
-              {t("tourNext")}
-            </Button>
+      {narrowSheet ? (
+        <motion.div
+          className={cn(
+            "fixed z-[200] left-3 right-3 max-h-[min(42vh,300px)] overflow-y-auto rounded-2xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl p-4 text-sm",
+            "bottom-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
           )}
-        </div>
-      </motion.div>
+          initial={false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={transition}
+          style={{ willChange: reduceMotion ? undefined : "transform" }}
+        >
+          <TourCardBody
+            t={t}
+            step={step}
+            stepCount={stepCount}
+            titleKey={titleKey}
+            bodyKey={bodyKey}
+            isLast={isLast}
+            transition={transition}
+            onSkip={onSkip}
+            onNext={onNext}
+            onClose={onClose}
+          />
+        </motion.div>
+      ) : (
+        <motion.div
+          className={cn(
+            "fixed z-[200] w-[min(92vw,22rem)] rounded-2xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl p-4 text-sm",
+          )}
+          initial={false}
+          animate={cardAnimateDesktop}
+          transition={transition}
+          style={{ willChange: reduceMotion ? undefined : "transform, top, left" }}
+        >
+          <TourCardBody
+            t={t}
+            step={step}
+            stepCount={stepCount}
+            titleKey={titleKey}
+            bodyKey={bodyKey}
+            isLast={isLast}
+            transition={transition}
+            onSkip={onSkip}
+            onNext={onNext}
+            onClose={onClose}
+          />
+        </motion.div>
+      )}
     </>
   );
 
@@ -202,4 +398,4 @@ export function ProductTour({
 
 export const PRODUCT_TOUR_STORAGE_KEY = "dyskiof_product_tour_v1_done";
 /** One-time guest tour on home (not logged in). */
-export const GUEST_TOUR_STORAGE_KEY = "dyskiof_guest_tour_v1_done";
+export const GUEST_TOUR_STORAGE_KEY = "dyskiof_guest_tour_v2_done";

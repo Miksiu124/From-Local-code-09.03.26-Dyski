@@ -241,7 +241,12 @@
     "referralPromptTitle": "Invite friends, earn credits",
     "referralPromptDesc": "Share your referral link — when someone signs up and buys credits, you both get rewards.",
     "referralPromptCta": "Open referral program",
-    "referralPromptDismiss": "Not now"
+    "referralPromptDismiss": "Not now",
+    "publicTitle": "Credit pricing",
+    "publicSubtitle": "Current packages and prices are listed below. Sign in or create an account to buy credits and unlock content.",
+    "publicLoginCta": "Sign in",
+    "publicRegisterCta": "Register",
+    "publicNoPackages": "No packages available right now — please check back later."
   },
   "referral": {
     "title": "Referral Program",
@@ -267,7 +272,13 @@
     "nudgePeriodicTitle": "Earn credits with referrals",
     "nudgePeriodicDesc": "Share your link — you get rewards when friends register and make their first purchase.",
     "nudgeOpenProgram": "Referral program",
-    "nudgeDismiss": "Dismiss"
+    "nudgeDismiss": "Dismiss",
+    "modalTitle": "Invite friends — earn credits",
+    "modalBody": "You get {creditsReferrer} credits when they make their first purchase; they get a {bonusPercentReferee}% bonus on credits. Copy your link below.",
+    "modalCopyLink": "Copy link",
+    "modalCopied": "Copied",
+    "modalLater": "Later",
+    "modalReferralPage": "Referral page"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -374,6 +385,23 @@
     "growthEventUserId": "User ID",
     "growthEventProps": "Props (JSON)",
     "growthEventTime": "Time",
+    "growthFunnelGroupCore": "Core funnel",
+    "growthFunnelGroupEngagement": "Engagement",
+    "growthFunnelGroupRisk": "Drop-offs & errors",
+    "growthFunnelTotalEvents": "Total events in period",
+    "growthFunnelRateLabelSignupSession": "Signup / session",
+    "growthFunnelRateLabelCheckoutSession": "Checkout / session",
+    "growthFunnelRateLabelPurchaseSession": "Purchase / session",
+    "growthFunnelRateLabelCheckoutSignup": "Checkout / signup",
+    "growthFunnelRateLabelPurchaseCheckout": "Purchase / checkout",
+    "growthEventPropsShort": "Payload",
+    "growthEventExpand": "Expand",
+    "growthEventCollapse": "Collapse",
+    "growthEventCopyJson": "Copy",
+    "growthEventCopied": "Copied",
+    "growthEventsPrev": "Previous",
+    "growthEventsNext": "Next",
+    "growthFunnelDayNoActivity": "No events",
     "settings": "Settings",
     "syncR2": "Sync R2",
     "importR2": "Import from R2",
@@ -520,7 +548,9 @@
     "guestTourStep2Body": "Type a name to filter the grid and find a creator faster.",
     "guestTourStep3Title": "Country filters",
     "guestTourStep3Body": "Tap a country to narrow the list, or stay on “All” to see everyone.",
-    "guestTourStep4Title": "Sign in or register",
-    "guestTourStep4Body": "Create an account to buy credits, unlock content, and manage purchases from your dashboard."
+    "guestTourStep4Title": "Credit pricing",
+    "guestTourStep4Body": "“Buy credits” shows current packages and prices — see what access costs before you create an account.",
+    "guestTourStep5Title": "Sign in or register",
+    "guestTourStep5Body": "Create an account to purchase credits, unlock content, and manage purchases from your dashboard."
   }
 }

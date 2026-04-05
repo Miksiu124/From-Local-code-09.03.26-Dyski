@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { CreditPurchaseFlow } from "@/components/payments/credit-purchase-flow";
+import { CreditPricingPreview } from "@/components/payments/credit-pricing-preview";
 import { formatCredits } from "@/lib/utils";
 import { fetchApi } from "@/lib/api-client";
 import { Coins } from "lucide-react";
@@ -20,7 +20,6 @@ type CreditPackage = {
 
 export default async function PurchasePage() {
   const me = await fetchApi<MeResponse>("/auth/me").catch(() => null);
-  if (!me) redirect("/login");
 
   const t = await getTranslations("credits");
 
@@ -30,6 +29,22 @@ export default async function PurchasePage() {
   ]);
 
   const blikEnabled = publicSettings?.blik_enabled !== false && publicSettings?.blik_enabled !== "false";
+
+  if (!me) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <CreditPricingPreview
+          packages={packages.map((p) => ({
+            id: p.id,
+            name: p.name,
+            credits: p.credits,
+            price: Number(p.price),
+            tier: p.tier,
+          }))}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
