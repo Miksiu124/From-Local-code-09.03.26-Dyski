@@ -296,6 +296,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
       const res = await fetch(`/api/admin/credits/purchases/${id}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ reason: notes }),
       });
       if (res.ok) {

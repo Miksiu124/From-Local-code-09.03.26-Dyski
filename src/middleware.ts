@@ -18,24 +18,52 @@ function getClientIp(request: NextRequest): string {
   return request.headers.get("x-real-ip") || "unknown";
 }
 
+/** Same registrable host (ignores www. vs apex) and same scheme — for CSRF checks behind mixed hostnames. */
+function sameSiteOrigin(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    const ha = ua.hostname.replace(/^www\./i, "");
+    const hb = ub.hostname.replace(/^www\./i, "");
+    return ua.protocol === ub.protocol && ha === hb;
+  } catch {
+    return false;
+  }
+}
+
 function isSafeOrigin(request: NextRequest) {
+  const expectedOrigin = request.nextUrl.origin;
+
+  // Browsers set this on fetch/XHR from the same document; allows POST when Origin/Referer are omitted
+  // (e.g. strict Referrer-Policy) without weakening cross-site CSRF (evil sites send "cross-site").
+  const secFetchSite = request.headers.get("sec-fetch-site");
+  if (secFetchSite === "same-origin") {
+    return true;
+  }
+
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
-  const expectedOrigin = request.nextUrl.origin;
 
   if (origin) {
     // Allow localhost:3000 even if nextUrl.origin thinks it is 0.0.0.0:3000
     if (origin === "http://localhost:3000" && expectedOrigin.includes("0.0.0.0")) {
       return true;
     }
-    return origin === expectedOrigin;
+    return origin === expectedOrigin || sameSiteOrigin(origin, expectedOrigin);
   }
 
   if (referer) {
     if (referer.startsWith("http://localhost:3000") && expectedOrigin.includes("0.0.0.0")) {
       return true;
     }
-    return referer.startsWith(expectedOrigin);
+    if (referer.startsWith(expectedOrigin)) return true;
+    try {
+      const r = new URL(referer);
+      if (sameSiteOrigin(r.origin, expectedOrigin)) return true;
+    } catch {
+      /* ignore */
+    }
+    return false;
   }
 
   // No Origin or Referer — block state-changing requests (CSRF protection)

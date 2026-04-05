@@ -133,7 +133,7 @@ export function Header() {
 
   const navLinks = [
     { href: "/", label: t("nav.models"), show: true },
-    { href: "/purchase", label: t("nav.buyCredits"), show: !!user },
+    { href: "/purchase", label: t("nav.buyCredits"), show: true },
     { href: "/dashboard", label: t("nav.dashboard"), show: !!user },
     { href: "/admin", label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
@@ -159,7 +159,15 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
-              data-tour={link.href === "/" ? "tour-models" : link.href === "/purchase" ? "tour-buy" : undefined}
+              data-tour={
+                link.href === "/"
+                  ? "tour-models"
+                  : link.href === "/purchase"
+                    ? user
+                      ? "tour-buy"
+                      : "tour-guest-credits"
+                    : undefined
+              }
               className={cn(
                 "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                 pathname === link.href
@@ -197,13 +205,13 @@ export function Header() {
           {/* Notifications */}
           {user && <NotificationBell dropdownAnchorRef={rightSideRef} />}
 
-          {/* Guest: pricing / buy credits — always visible (incl. mobile) for tour spotlight */}
+          {/* Guest: compact "buy credits" on small screens (desktop nav is hidden < md). Same data-tour as nav link — tour picks first visible rect. */}
           {!loading && !user && (
             <Link
               href="/purchase"
               data-tour="tour-guest-credits"
               className={cn(
-                "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 shrink-0",
+                "md:hidden flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 shrink-0",
                 pathname === "/purchase"
                   ? "text-foreground bg-white/[0.06]"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
@@ -350,20 +358,6 @@ export function Header() {
                   {link.label}
                 </Link>
               ))}
-              {!user && (
-                <Link
-                  href="/purchase"
-                  className={cn(
-                    "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
-                    pathname === "/purchase"
-                      ? "bg-white/[0.06] text-foreground"
-                      : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-                  )}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {t("nav.buyCredits")}
-                </Link>
-              )}
               {user && (
                 <>
                   <Link
