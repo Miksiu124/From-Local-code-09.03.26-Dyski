@@ -13,7 +13,6 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/middleware"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 )
