@@ -16,7 +16,6 @@ import {
   ShoppingCart,
   UserPlus,
 } from "lucide-react";
-import { NotificationBell } from "@/components/layout/notification-bell";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
@@ -42,7 +41,6 @@ export function Header() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const rightSideRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -181,7 +179,7 @@ export function Header() {
         </nav>
 
         {/* Right side */}
-        <div ref={rightSideRef} className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-2 relative">
           {/* Credit Balance */}
           {user && (
             <>
@@ -201,9 +199,6 @@ export function Header() {
               </Link>
             </>
           )}
-
-          {/* Notifications */}
-          {user && <NotificationBell dropdownAnchorRef={rightSideRef} />}
 
           {/* Guest: compact "buy credits" on small screens (desktop nav is hidden < md). Same data-tour as nav link — tour picks first visible rect. */}
           {!loading && !user && (
