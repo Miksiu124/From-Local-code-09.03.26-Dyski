@@ -117,6 +117,20 @@ func TestPlaylistObjectCandidates_variantOnlyFolder(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+func TestHlsPathsUnset(t *testing.T) {
+	empty := ""
+	if !hlsPathsUnset(nil, nil) {
+		t.Fatal("expected unset when both nil")
+	}
+	if !hlsPathsUnset(&empty, &empty) {
+		t.Fatal("expected unset when both empty strings")
+	}
+	m := "models/x/a.m3u8"
+	if hlsPathsUnset(&m, nil) {
+		t.Fatal("expected set when master path present")
+	}
+}
+
 func TestSyntheticHLSFolder(t *testing.T) {
 	if got := syntheticHLSFolder("alinaxrose", "08gept328tlq3pcs27jp"); got != "alinaxrose/08gept328tlq3pcs27jp_source" {
 		t.Fatalf("syntheticHLSFolder = %q", got)

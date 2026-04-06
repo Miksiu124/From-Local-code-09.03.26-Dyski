@@ -187,6 +187,14 @@ func playlistObjectCandidates(filename, effectiveFolder string, hasEffectiveFold
 	return keys
 }
 
+// hlsPathsUnset is true when both DB columns are missing — streaming used to work only via synthetic
+// paths / repair; older imports may never have set these columns.
+func hlsPathsUnset(hlsMasterPath, hlsFolderPath *string) bool {
+	masterUnset := hlsMasterPath == nil || strings.TrimSpace(*hlsMasterPath) == ""
+	folderUnset := hlsFolderPath == nil || strings.TrimSpace(*hlsFolderPath) == ""
+	return masterUnset && folderUnset
+}
+
 // syntheticHLSFolder is the conventional R2 prefix for transcoded HLS: {modelFolder}/{videoUniqueId}_source
 // (matches WinSCP: bucket/…/alinaxrose/08gept…_source/master.m3u8). Used when DB hls_folder_path is stale.
 func syntheticHLSFolder(modelFolder, uniqueID string) string {
@@ -620,6 +628,19 @@ func (h *Handler) Playlist(c echo.Context) error {
 	`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID, &modelFolderName)
 	if err != nil {
 		return common.NotFound(c, "Content not found")
+	}
+
+	// Legacy rows: HLS files exist in R2 but hls_master_path / hls_folder_path were never filled.
+	// Discover paths from R2 (same as ImportModelContent) before resolving the playlist.
+	if hlsPathsUnset(hlsMasterPath, hlsFolderPath) {
+		if h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
+			_ = h.db.QueryRow(ctx, `
+				SELECT ci.hls_master_path, ci.hls_folder_path, ci.unique_id, m.folder_name
+				FROM content_items ci
+				JOIN models m ON m.id = ci.model_id
+				WHERE ci.id = $1
+			`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID, &modelFolderName)
+		}
 	}
 
 	// Resolve playlist bytes; on missing/stale DB paths or R2 miss, scan R2 once (same as content import).
