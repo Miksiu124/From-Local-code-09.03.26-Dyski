@@ -58,6 +58,9 @@ prisma/*.db
 # uploads (user-generated content)
 uploads/
 
+# local R2 sample downloads (cmd/r2-download-sample)
+backend/r2-samples-top-selling/
+
 # ad-hoc query files
 query.sql
 

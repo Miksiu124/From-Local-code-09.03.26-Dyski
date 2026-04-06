@@ -77,6 +77,8 @@ type growthEventRow struct {
 	ID        string          `json:"id"`
 	EventName string          `json:"eventName"`
 	UserID    *string         `json:"userId"`
+	UserEmail *string         `json:"userEmail,omitempty"`
+	UserName  *string         `json:"userName,omitempty"`
 	Props     json.RawMessage `json:"props"`
 	CreatedAt time.Time       `json:"createdAt"`
 }
@@ -132,7 +134,7 @@ func (h *Handler) ListGrowthEvents(c echo.Context) error {
 	offsetArg := len(args) + 2
 	selArgs := append(append([]interface{}{}, args...), limit, offset)
 	rows, err := h.db.Query(ctx, fmt.Sprintf(`
-		SELECT g.id, g.event_name, g.user_id, g.props, g.created_at
+		SELECT g.id, g.event_name, g.user_id, g.props, g.created_at, u.email, u.name
 		FROM growth_events g
 		LEFT JOIN users u ON u.id = g.user_id
 		WHERE %s
@@ -148,8 +150,15 @@ func (h *Handler) ListGrowthEvents(c echo.Context) error {
 	for rows.Next() {
 		var r growthEventRow
 		var props []byte
-		if err := rows.Scan(&r.ID, &r.EventName, &r.UserID, &props, &r.CreatedAt); err != nil {
+		var userEmail, userName *string
+		if err := rows.Scan(&r.ID, &r.EventName, &r.UserID, &props, &r.CreatedAt, &userEmail, &userName); err != nil {
 			return common.InternalError(c)
+		}
+		if userEmail != nil && *userEmail != "" {
+			r.UserEmail = userEmail
+		}
+		if userName != nil && *userName != "" {
+			r.UserName = userName
 		}
 		if len(props) == 0 {
 			r.Props = json.RawMessage("{}")

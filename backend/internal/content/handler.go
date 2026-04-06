@@ -132,8 +132,8 @@ func objectKeyRelativeToHLSFolder(objKey, folder string) string {
 	return parts[len(parts)-1]
 }
 
-// effectiveHLSFolder returns the R2 prefix for HLS files: DB column, or dirname(hls_master_path).
-func effectiveHLSFolder(hlsFolderPath, hlsMasterPath *string) string {
+// EffectiveHLSFolder returns the R2 prefix for HLS files: DB column, or dirname(hls_master_path).
+func EffectiveHLSFolder(hlsFolderPath, hlsMasterPath *string) string {
 	if hlsFolderPath != nil && strings.TrimSpace(*hlsFolderPath) != "" {
 		return strings.TrimSuffix(strings.TrimSpace(*hlsFolderPath), "/")
 	}
@@ -651,7 +651,7 @@ func (h *Handler) Playlist(c echo.Context) error {
 	repaired := false
 
 	for {
-		effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+		effectiveFolder = EffectiveHLSFolder(hlsFolderPath, hlsMasterPath)
 		hasEffectiveFolder = effectiveFolder != ""
 		playlistContent = ""
 		hlsFolderForRewrite = ""
@@ -820,6 +820,50 @@ func (h *Handler) Playlist(c echo.Context) error {
 	return c.String(http.StatusOK, rewritten)
 }
 
+// DownloadSource redirects to a presigned R2 URL for the original MP4 (source_video_path).
+// GET /api/content/:id/source — same access rules as playlist (logged-in, verified email, model/content access).
+func (h *Handler) DownloadSource(c echo.Context) error {
+	ctx := c.Request().Context()
+	contentItemID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+	if middleware.GetUserRole(c) != "ADMIN" {
+		hasAccess, err := models.CheckContentAccess(ctx, h.db, userID, contentItemID)
+		if err != nil || !hasAccess {
+			return common.Forbidden(c)
+		}
+	}
+
+	var sourcePath *string
+	err := h.db.QueryRow(ctx, `
+		SELECT ci.source_video_path
+		FROM content_items ci
+		WHERE ci.id = $1 AND ci.is_active = true AND ci.content_type = 'VIDEO'
+	`, contentItemID).Scan(&sourcePath)
+	if err != nil {
+		return common.NotFound(c, "Content not found")
+	}
+	if sourcePath == nil || strings.TrimSpace(*sourcePath) == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{
+			"error":   "no_source_file",
+			"message": "No MP4 source file for this item — streaming uses HLS only.",
+		})
+	}
+	key := strings.TrimSpace(*sourcePath)
+	fn := key
+	if i := strings.LastIndex(fn, "/"); i >= 0 && i < len(fn)-1 {
+		fn = fn[i+1:]
+	}
+	url, err := h.r2.PresignGetObjectDownload(ctx, key, fn, 1*time.Hour)
+	if err != nil {
+		log.Printf("[DownloadSource] presign %s: %v", key, err)
+		return common.InternalError(c)
+	}
+	return c.Redirect(http.StatusFound, url)
+}
+
 // Segment proxies .ts segments from R2, validated by signed token
 func (h *Handler) Segment(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -850,13 +894,13 @@ func (h *Handler) Segment(c echo.Context) error {
 	if err != nil {
 		return common.NotFound(c, "Content not found")
 	}
-	effectiveFolder := effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+	effectiveFolder := EffectiveHLSFolder(hlsFolderPath, hlsMasterPath)
 	if effectiveFolder == "" {
 		if h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 			_ = h.db.QueryRow(ctx, `
 				SELECT hls_folder_path, hls_master_path FROM content_items WHERE id = $1
 			`, contentItemID).Scan(&hlsFolderPath, &hlsMasterPath)
-			effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+			effectiveFolder = EffectiveHLSFolder(hlsFolderPath, hlsMasterPath)
 		}
 	}
 	if effectiveFolder == "" {
@@ -872,7 +916,7 @@ func (h *Handler) Segment(c echo.Context) error {
 			_ = h.db.QueryRow(ctx, `
 				SELECT hls_folder_path, hls_master_path FROM content_items WHERE id = $1
 			`, contentItemID).Scan(&hlsFolderPath, &hlsMasterPath)
-			effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+			effectiveFolder = EffectiveHLSFolder(hlsFolderPath, hlsMasterPath)
 			if effectiveFolder != "" {
 				r2Key = effectiveFolder + "/" + filename
 				body, contentType, err = h.r2.GetObject(ctx, r2Key)
@@ -917,13 +961,13 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 
 	// Find content item
 	var ciID, ciType, ciCreatedAt string
-	var ciThumbnail, ciHlsFolder, ciHlsMaster *string
+	var ciThumbnail, ciHlsFolder, ciHlsMaster, ciSourceVideo *string
 	var ciDuration *int
 	var ciModelID string
 	err = h.db.QueryRow(ctx, `
-		SELECT id, content_type, thumbnail_path, hls_folder_path, hls_master_path, duration, model_id, created_at::text
+		SELECT id, content_type, thumbnail_path, hls_folder_path, hls_master_path, source_video_path, duration, model_id, created_at::text
 		FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false
-	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsFolder, &ciHlsMaster, &ciDuration, &ciModelID, &ciCreatedAt)
+	`, contentItemID).Scan(&ciID, &ciType, &ciThumbnail, &ciHlsFolder, &ciHlsMaster, &ciSourceVideo, &ciDuration, &ciModelID, &ciCreatedAt)
 	if err != nil || ciModelID != modelID {
 		return common.NotFound(c, "Content item not found")
 	}
@@ -949,11 +993,13 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 	`, modelID, ciCreatedAt).Scan(&nextID)
 
 	thumbURL := h.cdnThumbnailURL(ciThumbnail, ciHlsFolder)
+	hasSourceMp4 := ciSourceVideo != nil && strings.TrimSpace(*ciSourceVideo) != ""
 	contentItem := map[string]interface{}{
 		"id":            ciID,
 		"contentType":   ciType,
 		"duration":      ciDuration,
 		"thumbnailUrl":  thumbURL,
+		"hasSourceMp4":  hasSourceMp4,
 	}
 
 	return common.Success(c, map[string]interface{}{

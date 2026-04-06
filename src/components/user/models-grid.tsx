@@ -15,7 +15,14 @@ import {
   trackCatalogHomeViewed,
   trackCatalogFilterUsed,
   trackSearchUsed,
+  trackCatalogModelImpression,
+  trackCatalogModelEngagedImpression,
+  trackCatalogModelClick,
+  type CatalogModelSurface,
 } from "@/lib/growth-analytics";
+import { getGrowthTabSessionId } from "@/lib/growth-events";
+import { tryConsumeCatalogImpressionSlot } from "@/lib/catalog-impression-dedupe";
+import { tryConsumeCatalogEngagedSlot } from "@/lib/catalog-engaged-dedupe";
 import { RetryImage } from "@/components/ui/retry-image";
 import { NextImageWithFallback } from "@/components/ui/next-image-with-fallback";
 
@@ -58,6 +65,100 @@ interface ModelsGridProps {
   creditBalance: number;
 }
 
+/** Visibility → catalog_model_impression (once per browser tab per model_id). */
+function CatalogModelSurfaceTracker({
+  modelId,
+  folderName,
+  surface,
+  gridIndex,
+  queryLen,
+  countryId,
+  purchasedOnly,
+  children,
+  className,
+}: {
+  modelId: string;
+  folderName: string;
+  surface: CatalogModelSurface;
+  gridIndex: number;
+  queryLen: number;
+  countryId: string | null;
+  purchasedOnly: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const base = {
+      surface,
+      grid_index: gridIndex,
+      query_len: queryLen,
+      purchased_only: purchasedOnly,
+      country_id: countryId ?? undefined,
+      tab_session: getGrowthTabSessionId(),
+    };
+    let impressionSent = false;
+    let engagedDone = false;
+    let visible = false;
+    let engagedTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearEngagedTimer = () => {
+      if (engagedTimer) {
+        clearTimeout(engagedTimer);
+        engagedTimer = null;
+      }
+    };
+
+    const scheduleEngaged = () => {
+      clearEngagedTimer();
+      engagedTimer = setTimeout(() => {
+        engagedTimer = null;
+        if (!visible || engagedDone) return;
+        if (!tryConsumeCatalogEngagedSlot(modelId)) {
+          engagedDone = true;
+          return;
+        }
+        engagedDone = true;
+        trackCatalogModelEngagedImpression(modelId, folderName, base);
+      }, 900);
+    };
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const ent = entries[0];
+        visible = !!ent?.isIntersecting;
+        if (!visible) {
+          clearEngagedTimer();
+          return;
+        }
+        if (!impressionSent) {
+          if (!tryConsumeCatalogImpressionSlot(modelId)) {
+            obs.disconnect();
+            return;
+          }
+          impressionSent = true;
+          trackCatalogModelImpression(modelId, folderName, base);
+        }
+        if (!engagedDone) scheduleEngaged();
+      },
+      { threshold: 0.38, rootMargin: "0px" },
+    );
+    obs.observe(el);
+    return () => {
+      clearEngagedTimer();
+      obs.disconnect();
+    };
+  }, [modelId, folderName, surface, gridIndex, queryLen, countryId, purchasedOnly]);
+
+  return (
+    <div ref={ref} className={className}>
+      {children}
+    </div>
+  );
+}
+
 /** Memoized card to avoid re-renders when parent state changes (e.g. search typing) */
 const ModelCard = memo(function ModelCard({
   model,
@@ -65,24 +166,21 @@ const ModelCard = memo(function ModelCard({
   cost7d,
   t,
   onModelClick,
-  staggerClass,
 }: {
   model: ModelItem;
   hasAccess: (id: string) => boolean;
   cost7d: number;
   t: ReturnType<typeof useTranslations>;
   onModelClick: (model: ModelItem, e: React.MouseEvent) => void;
-  staggerClass: string;
 }) {
   const thumbSrc = model.avatarUrl || `/api/models/${model.folderName}/thumbnail`;
   return (
-    <div className={cn("grid-item-contain", staggerClass)}>
-      <Link
-        href={`/models/${model.folderName}`}
-        onClick={(e) => onModelClick(model, e)}
-        prefetch={false}
-        className="group block"
-      >
+    <Link
+      href={`/models/${model.folderName}`}
+      onClick={(e) => onModelClick(model, e)}
+      prefetch={false}
+      className="group block h-full min-w-0"
+    >
         <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
           <NextImageWithFallback
             src={thumbSrc}
@@ -144,8 +242,7 @@ const ModelCard = memo(function ModelCard({
             </div>
           </div>
         </div>
-      </Link>
-    </div>
+    </Link>
   );
 });
 
@@ -456,19 +553,30 @@ export function ModelsGrid({
     return userAccessModelIds.includes(modelId);
   }, [userAccessModelIds]);
 
-  const handleModelClick = useCallback((model: ModelItem, e: React.MouseEvent) => {
-    if (!hasAccess(model.id)) {
-      e.preventDefault();
-      setPopupIsBundle(false);
-      setPopupModelId(model.id);
-      setPopupModelName(model.name);
-      setPopupModelSlug(model.folderName);
-      setPopupOpen(true);
-    } else {
-      // Save scroll position so we can restore it when user returns
-      sessionStorage.setItem("models_scroll_y", String(window.scrollY));
-    }
-  }, []);
+  const handleModelClick = useCallback(
+    (model: ModelItem, e: React.MouseEvent, surface: CatalogModelSurface, gridIndex: number) => {
+      trackCatalogModelClick(model.id, model.folderName, {
+        surface,
+        grid_index: gridIndex,
+        query_len: search.trim().length,
+        country_id: selectedCountry ?? undefined,
+        purchased_only: showPurchasedOnly,
+        outcome: hasAccess(model.id) ? "open" : "login_required",
+        tab_session: getGrowthTabSessionId(),
+      });
+      if (!hasAccess(model.id)) {
+        e.preventDefault();
+        setPopupIsBundle(false);
+        setPopupModelId(model.id);
+        setPopupModelName(model.name);
+        setPopupModelSlug(model.folderName);
+        setPopupOpen(true);
+      } else {
+        sessionStorage.setItem("models_scroll_y", String(window.scrollY));
+      }
+    },
+    [hasAccess, search, selectedCountry, showPurchasedOnly],
+  );
 
   const openBundlePopup = () => {
     setPopupIsBundle(true);
@@ -525,9 +633,24 @@ export function ModelsGrid({
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:h-[420px]">
             {/* Main Hero Card — aspect-video prevents empty stretched tile before image loads */}
-            <div className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card w-full aspect-video lg:aspect-auto lg:min-h-0 lg:h-full min-h-[200px]">
+            <CatalogModelSurfaceTracker
+              key={heroModel.id}
+              modelId={heroModel.id}
+              folderName={heroModel.folderName}
+              surface="featured_hero"
+              gridIndex={activeIndex}
+              queryLen={search.trim().length}
+              countryId={selectedCountry}
+              purchasedOnly={showPurchasedOnly}
+              className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card w-full aspect-video lg:aspect-auto lg:min-h-0 lg:h-full min-h-[200px]"
+            >
               <div className="absolute inset-0 bg-gradient-to-br from-muted/50 via-muted/30 to-card animate-pulse lg:animate-none" aria-hidden />
-              <Link href={`/models/${heroModel.folderName}`} onClick={(e) => handleModelClick(heroModel, e)} prefetch={false} className="absolute inset-0 z-[1]">
+              <Link
+                href={`/models/${heroModel.folderName}`}
+                onClick={(e) => handleModelClick(heroModel, e, "featured_hero", activeIndex)}
+                prefetch={false}
+                className="absolute inset-0 z-[1]"
+              >
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={heroModel.id}
@@ -593,17 +716,27 @@ export function ModelsGrid({
                   </div>
                 )}
               </Link>
-            </div>
+            </CatalogModelSurfaceTracker>
 
             {/* Side List */}
             <div className="flex flex-row lg:flex-col gap-3 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
-              {sideModels.map((model) => (
-                <Link
+              {sideModels.map((model, idx) => (
+                <CatalogModelSurfaceTracker
                   key={model.id}
-                  href={`/models/${model.folderName}`}
-                  onClick={(e) => handleModelClick(model, e)}
-                  prefetch={false}
+                  modelId={model.id}
+                  folderName={model.folderName}
+                  surface="featured_side"
+                  gridIndex={idx}
+                  queryLen={search.trim().length}
+                  countryId={selectedCountry}
+                  purchasedOnly={showPurchasedOnly}
                   className="flex-shrink-0 w-[260px] lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
+                >
+                <Link
+                  href={`/models/${model.folderName}`}
+                  onClick={(e) => handleModelClick(model, e, "featured_side", idx)}
+                  prefetch={false}
+                  className="group block h-full min-h-[100px]"
                 >
                   <div className="flex h-full min-h-[100px]">
                     <div className="w-24 lg:w-1/3 relative shrink-0 min-h-[100px]">
@@ -634,6 +767,7 @@ export function ModelsGrid({
                     </div>
                   </div>
                 </Link>
+                </CatalogModelSurfaceTracker>
               ))}
             </div>
           </div>
@@ -763,17 +897,31 @@ export function ModelsGrid({
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-            {displayModels.map((model, index) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                hasAccess={hasAccess}
-                cost7d={cost7d}
-                t={t}
-                onModelClick={handleModelClick}
-                staggerClass={index < 12 ? `animate-in fade-in stagger-${Math.min(index + 1, 10)}` : ""}
-              />
-            ))}
+            {displayModels.map((model, index) => {
+              const staggerClass =
+                index < 12 ? `animate-in fade-in stagger-${Math.min(index + 1, 10)}` : "";
+              return (
+                <CatalogModelSurfaceTracker
+                  key={model.id}
+                  modelId={model.id}
+                  folderName={model.folderName}
+                  surface="grid"
+                  gridIndex={index}
+                  queryLen={search.trim().length}
+                  countryId={selectedCountry}
+                  purchasedOnly={showPurchasedOnly}
+                  className={cn("grid-item-contain", staggerClass)}
+                >
+                  <ModelCard
+                    model={model}
+                    hasAccess={hasAccess}
+                    cost7d={cost7d}
+                    t={t}
+                    onModelClick={(m, e) => handleModelClick(m, e, "grid", index)}
+                  />
+                </CatalogModelSurfaceTracker>
+              );
+            })}
           </div>
 
           {/* Infinite scroll sentinel */}

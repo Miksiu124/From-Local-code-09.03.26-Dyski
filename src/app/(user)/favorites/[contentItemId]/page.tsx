@@ -17,6 +17,7 @@ interface ContentDetailsResponse {
     hlsMasterPath: string | null;
     duration: number | null;
     thumbnailUrl?: string;
+    hasSourceMp4?: boolean;
   };
   hasAccess: boolean;
   prevItemId: string | null;
@@ -54,6 +55,7 @@ export default async function FavoritesContentViewPage({ params, searchParams }:
         contentType={data.contentItem.contentType}
         modelName={data.model.name}
         modelSlug={data.model.folderName}
+        modelId={data.model.id}
         prevItemId={data.prevItemId}
         nextItemId={data.nextItemId}
         thumbnailUrl={data.contentItem.thumbnailUrl ?? null}
@@ -62,6 +64,7 @@ export default async function FavoritesContentViewPage({ params, searchParams }:
         navBasePath="/favorites"
         detailsApiPath="/api/favorites"
         searchParamsForNav={queryStr ? `?${queryStr}` : undefined}
+        hasSourceMp4={data.contentItem.hasSourceMp4 === true}
       />
     </div>
   );

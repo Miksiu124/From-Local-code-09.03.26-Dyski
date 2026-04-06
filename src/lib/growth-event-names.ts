@@ -9,6 +9,14 @@ export const GROWTH = {
   CATALOG_FILTER_USED: "catalog_filter_used",
   SEARCH_USED: "search_used",
   MODEL_PAGE_VIEWED: "model_page_viewed",
+  /** Karta modelki widoczna w katalogu (IntersectionObserver; props: model_id, folder_name, surface, …) */
+  CATALOG_MODEL_IMPRESSION: "catalog_model_impression",
+  /** Klik w kartę / hero / featured side (props: outcome open | login_required) */
+  CATALOG_MODEL_CLICK: "catalog_model_click",
+  /** Ta sama karta co impression, ale po ~0,9 s ciągłej widoczności w viewport (dedupe per tab) */
+  CATALOG_MODEL_ENGAGED_IMPRESSION: "catalog_model_engaged_impression",
+  /** Koniec wizyty na profilu modelki: czas, scroll, „głębokie” zaangażowanie, akcje wtórne (props: duration_sec, …) */
+  MODEL_PROFILE_ENGAGEMENT: "model_profile_engagement",
 
   // Rejestracja / logowanie
   SIGNUP_STARTED: "signup_started",
@@ -28,6 +36,14 @@ export const GROWTH = {
   PHOTO_VIEW_FIRST: "photo_view_first",
   VIDEO_PLAY_REPEAT: "video_play_repeat",
   CONTENT_UNLOCKED: "content_unlocked",
+  /** Klik w miniaturę na siatce folderu modelu (props: outcome, filter, sort, content_item_id) */
+  CONTENT_THUMB_CLICK: "content_thumb_click",
+  /** Przejście na inny materiał w fullscreen overlay (prev/next/swipe/kbd/load_more) */
+  CONTENT_OVERLAY_NAV: "content_overlay_nav",
+  /** Zakończenie sesji oglądania wideo: max. sekund obejrzanych (props: watched_seconds, duration_seconds) */
+  VIDEO_ENGAGEMENT: "video_engagement",
+  /** Pełny widok treści (overlay modelu / strona / ulubione) — props: surface, content_type */
+  CONTENT_DETAIL_VIEW: "content_detail_view",
 
   // Zakupy kredytów
   PRICING_VIEWED: "pricing_viewed",

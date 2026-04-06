@@ -14,12 +14,16 @@ import {
   Coins,
   Tag,
   Link as LinkIcon,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AdminSidebar() {
   const pathname = usePathname();
   const t = useTranslations("admin");
+
+  const contentInsightsHref = "/admin/content-insights/engagement";
+  const isContentInsightsActive = pathname.startsWith("/admin/content-insights");
 
   const links = [
     { href: "/admin/payments", label: t("creditPurchases"), icon: CreditCard },
@@ -34,10 +38,36 @@ export function AdminSidebar() {
     { href: "/admin/settings", label: t("settings"), icon: Settings },
   ];
 
+  const mobileLinks = [
+    { href: contentInsightsHref, label: t("contentInsightsNavSingle"), icon: Sparkles },
+    ...links,
+  ];
+
   return (
     <>
       {/* ── Desktop sidebar (lg+) ─────────────────────────────────── */}
       <aside className="w-60 border-r border-white/[0.06] bg-card/50 p-3 hidden lg:block shrink-0">
+        <div
+          className={cn(
+            "rounded-2xl border border-white/[0.08] p-2 mb-3",
+            "bg-gradient-to-b from-primary/[0.09] via-primary/[0.04] to-transparent",
+            "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+          )}
+        >
+          <Link
+            href={contentInsightsHref}
+            className={cn(
+              "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all",
+              isContentInsightsActive
+                ? "bg-primary/15 text-primary font-medium shadow-[0_0_20px_-10px_rgba(139,92,246,0.6)]"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/[0.06]",
+            )}
+          >
+            <Sparkles className="h-4 w-4 shrink-0" />
+            {t("contentInsightsNavSingle")}
+          </Link>
+        </div>
+
         <nav className="space-y-0.5">
           {links.map((link) => {
             const Icon = link.icon;
@@ -51,7 +81,7 @@ export function AdminSidebar() {
                   "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all",
                   isActive
                     ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -64,9 +94,12 @@ export function AdminSidebar() {
 
       {/* ── Mobile bottom nav bar (below lg) ─────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 z-[60] flex lg:hidden border-t border-white/[0.06] bg-card/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom,0px)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {links.map((link) => {
+        {mobileLinks.map((link) => {
           const Icon = link.icon;
-          const isActive = pathname === link.href;
+          const isActive =
+            link.href === contentInsightsHref
+              ? isContentInsightsActive
+              : pathname === link.href;
 
           return (
             <Link

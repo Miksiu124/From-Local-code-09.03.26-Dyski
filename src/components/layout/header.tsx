@@ -115,6 +115,9 @@ export function Header() {
 
   const isAdmin = user?.role === "ADMIN";
 
+  const adminHomeHref = "/admin/content-insights/engagement";
+  const isAdminNavActive = pathname?.startsWith("/admin") ?? false;
+
   const handleLogoClick = (e: React.MouseEvent) => {
     // Reset models search state so logo returns to clean main page
     if (typeof window !== "undefined") {
@@ -133,7 +136,7 @@ export function Header() {
     { href: "/", label: t("nav.models"), show: true },
     { href: "/purchase", label: t("nav.buyCredits"), show: true },
     { href: "/dashboard", label: t("nav.dashboard"), show: !!user },
-    { href: "/admin", label: t("nav.admin"), show: isAdmin },
+    { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
 
   return (
@@ -153,7 +156,10 @@ export function Header() {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-1 ml-8">
-          {navLinks.map((link) => (
+          {navLinks.map((link) => {
+            const navActive =
+              link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+            return (
             <Link
               key={link.href}
               href={link.href}
@@ -168,14 +174,15 @@ export function Header() {
               }
               className={cn(
                 "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                pathname === link.href
+                navActive
                   ? "text-foreground bg-white/[0.06]"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
               )}
             >
               {link.label}
             </Link>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Right side */}
@@ -274,7 +281,7 @@ export function Header() {
                         { href: "/my-purchases", icon: ShoppingCart, label: t("nav.myPurchases") },
                         { href: "/favorites", icon: Heart, label: t("nav.favorites") },
                         { href: "/referral", icon: UserPlus, label: t("nav.referral") },
-                        ...(isAdmin ? [{ href: "/admin", icon: ShieldCheck, label: t("nav.admin") }] : []),
+                        ...(isAdmin ? [{ href: adminHomeHref, icon: ShieldCheck, label: t("nav.admin") }] : []),
                       ].map((item) => (
                         <Link
                           key={item.href}
@@ -338,13 +345,16 @@ export function Header() {
             className="grid md:hidden border-t border-white/[0.06] bg-background/95 backdrop-blur-xl"
           >
             <nav className="flex flex-col p-3 gap-0.5 min-h-0 overflow-hidden">
-              {navLinks.map((link) => (
+              {navLinks.map((link) => {
+                const navActive =
+                  link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+                return (
                 <Link
                   key={link.href}
                   href={link.href}
                   className={cn(
                     "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
-                    pathname === link.href
+                    navActive
                       ? "bg-white/[0.06] text-foreground"
                       : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
                   )}
@@ -352,7 +362,8 @@ export function Header() {
                 >
                   {link.label}
                 </Link>
-              ))}
+                );
+              })}
               {user && (
                 <>
                   <Link

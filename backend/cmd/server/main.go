@@ -183,6 +183,7 @@ func main() {
 	contentGroup.GET("/:slug/:contentItemId/details", contentHandler.GetContentDetails, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail", contentHandler.Thumbnail, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail/:filename", contentHandler.Thumbnail, authMW.OptionalAuth)
+	contentGroup.GET("/:id/source", contentHandler.DownloadSource, authMW.Authenticate, authMW.RequireEmailVerified)
 	contentGroup.GET("/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate, authMW.RequireEmailVerified)
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
 
@@ -285,6 +286,10 @@ func main() {
 	adminGroup.POST("/r2/import", adminHandler.ImportR2)
 	adminGroup.POST("/r2/avatars", adminHandler.UploadAvatar, echomw.BodyLimit("6M"))
 	adminGroup.GET("/analytics", adminHandler.GetAnalytics)
+	adminGroup.GET("/content-performance", adminHandler.GetContentPerformance)
+	adminGroup.GET("/catalog-model-performance", adminHandler.GetCatalogModelPerformance)
+	adminGroup.POST("/content/bulk-zip", adminHandler.BulkDownloadContentZip, echomw.BodyLimit("512k"))
+	adminGroup.GET("/content/:id/source-download", adminHandler.DownloadContentSource)
 	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
 	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)

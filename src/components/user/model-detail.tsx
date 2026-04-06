@@ -21,7 +21,12 @@ import {
   trackFavoriteToggled,
   trackModelPageViewed,
   trackCatalogFilterUsed,
+  trackContentThumbClick,
+  trackContentDetailView,
+  trackContentOverlayNav,
+  type ContentOverlayNavKind,
 } from "@/lib/growth-analytics";
+import { useModelProfileEngagement } from "@/hooks/use-model-profile-engagement";
 
 interface ContentItem {
   id: string;
@@ -83,6 +88,9 @@ export function ModelDetail({
   useEffect(() => {
     trackModelPageViewed(model.id, { folder_name: model.folderName });
   }, [model.id, model.folderName]);
+
+  const { markFavorite: markProfileEngagementFavorite, markContentOpen: markProfileContentOpen } =
+    useModelProfileEngagement(model.id, model.folderName);
 
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -256,6 +264,16 @@ export function ModelDetail({
       ? displayItems[displaySelectedIndex + 1].id
       : null;
 
+  useEffect(() => {
+    if (!selectedItemId || !selectedItem) return;
+    trackContentDetailView(selectedItemId, {
+      surface: "model_overlay",
+      content_type: selectedItem.contentType,
+      model_id: model.id,
+      folder_name: model.folderName,
+    });
+  }, [selectedItemId, selectedItem, model.id, model.folderName]);
+
   const overlayRef = useRef<HTMLDivElement>(null);
   /** Gate portal until client — avoids SSR/hydration mismatch; useLayoutEffect runs before paint. */
   const [overlayPortalReady, setOverlayPortalReady] = useState(false);
@@ -305,11 +323,22 @@ export function ModelDetail({
     });
   }, [exitFullscreen, router, buildModelUrl]);
 
-  const navigateToOverlayItem = useCallback((id: string | null) => {
-    setSelectedItemId(id);
-    if (id) setViewItemFallback(null);
-    router.replace(buildModelUrl({ view: id }), { scroll: false });
-  }, [router, buildModelUrl]);
+  const navigateToOverlayItem = useCallback(
+    (id: string | null, nav?: ContentOverlayNavKind) => {
+      if (id && selectedItemId && id !== selectedItemId) {
+        trackContentOverlayNav(id, {
+          from_content_item_id: selectedItemId,
+          model_id: model.id,
+          folder_name: model.folderName,
+          nav,
+        });
+      }
+      setSelectedItemId(id);
+      if (id) setViewItemFallback(null);
+      router.replace(buildModelUrl({ view: id }), { scroll: false });
+    },
+    [router, buildModelUrl, selectedItemId, model.id, model.folderName],
+  );
 
   useEffect(() => {
     if (selectedItemId && overlayRef.current) {
@@ -330,6 +359,7 @@ export function ModelDetail({
       if (res.ok) {
         const data = await res.json();
         trackFavoriteToggled(selectedItemId, !!data.favorited, { model_id: model.id });
+        markProfileEngagementFavorite();
         setOverlayFavorited(data.favorited);
         setFavoritedIds((prev) => {
           const next = new Set(prev);
@@ -344,7 +374,7 @@ export function ModelDetail({
       }
     } catch { /* ignore */ }
     finally { setOverlayTogglingFav(false); }
-  }, [selectedItemId, overlayTogglingFav, activeFilter, model.id]);
+  }, [selectedItemId, overlayTogglingFav, activeFilter, model.id, markProfileEngagementFavorite]);
 
   const handleDeleteContent = useCallback(async () => {
     if (!selectedItemId || overlayDeleting) return;
@@ -514,11 +544,27 @@ export function ModelDetail({
   };
 
   const handleContentClick = (contentId: string) => {
+    const item = displayItems.find((i) => i.id === contentId);
+    const contentType = item?.contentType ?? "UNKNOWN";
+    const thumbExtra = {
+      content_type: contentType,
+      model_id: model.id,
+      folder_name: model.folderName,
+      filter: activeFilter,
+      sort: activeSort,
+    } as const;
+
     if (!isAuthenticated) {
+      trackContentThumbClick(contentId, { ...thumbExtra, outcome: "login_required" });
       router.push("/login");
       return;
     }
-    if (!hasAccess) return;
+    if (!hasAccess) {
+      trackContentThumbClick(contentId, { ...thumbExtra, outcome: "no_access" });
+      return;
+    }
+    trackContentThumbClick(contentId, { ...thumbExtra, outcome: "open" });
+    markProfileContentOpen();
     savedScrollY.current = window.scrollY;
     sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
     setSelectedItemId(contentId);
@@ -543,6 +589,11 @@ export function ModelDetail({
       });
       if (res.ok) {
         const data = await res.json();
+        trackFavoriteToggled(contentItemId, !!data.favorited, {
+          model_id: model.id,
+          folder_name: model.folderName,
+        });
+        markProfileEngagementFavorite();
         setFavoritedIds((prev) => {
           const next = new Set(prev);
           if (data.favorited) {
@@ -627,12 +678,12 @@ export function ModelDetail({
       if (isVideo ? (e.key === "ArrowLeft" && e.shiftKey) : e.key === "ArrowLeft") {
         e.preventDefault();
         e.stopPropagation();
-        if (overlayPrevId) navigateToOverlayItem(overlayPrevId);
+        if (overlayPrevId) navigateToOverlayItem(overlayPrevId, "keyboard");
       } else if (isVideo ? (e.key === "ArrowRight" && e.shiftKey) : e.key === "ArrowRight") {
         e.preventDefault();
         e.stopPropagation();
         if (overlayNextId) {
-          navigateToOverlayItem(overlayNextId);
+          navigateToOverlayItem(overlayNextId, "keyboard");
         } else if (cursor || favoritesCursor) {
           pendingNextAfterLoadRef.current = true;
           triggerLoadMoreForNav();
@@ -663,7 +714,7 @@ export function ModelDetail({
       pendingNextAfterLoadRef.current = false;
       const nextIndex = displaySelectedIndex + 1;
       if (nextIndex < displayItems.length) {
-        navigateToOverlayItem(displayItems[nextIndex].id);
+        navigateToOverlayItem(displayItems[nextIndex].id, "load_more");
       }
     }
     prevLoadingMoreRef.current = loadingMore;
@@ -1188,12 +1239,12 @@ export function ModelDetail({
             const dy = Math.abs(e.changedTouches[0].clientY - el.__touchStartY);
             if (Math.abs(dx) < 50 || dy > Math.abs(dx)) return;
             if (dx < 0) {
-              if (overlayNextId) navigateToOverlayItem(overlayNextId);
+              if (overlayNextId) navigateToOverlayItem(overlayNextId, "swipe");
               else if (cursor || favoritesCursor) {
                 pendingNextAfterLoadRef.current = true;
                 triggerLoadMoreForNav();
               }
-            } else if (dx > 0 && overlayPrevId) navigateToOverlayItem(overlayPrevId);
+            } else if (dx > 0 && overlayPrevId) navigateToOverlayItem(overlayPrevId, "swipe");
           }}
         >
           {/* Overlay top bar */}
@@ -1211,7 +1262,7 @@ export function ModelDetail({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => overlayPrevId && navigateToOverlayItem(overlayPrevId)}
+                onClick={() => overlayPrevId && navigateToOverlayItem(overlayPrevId, "prev")}
                 disabled={!overlayPrevId}
                 className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
@@ -1221,7 +1272,7 @@ export function ModelDetail({
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  if (overlayNextId) navigateToOverlayItem(overlayNextId);
+                  if (overlayNextId) navigateToOverlayItem(overlayNextId, "next");
                   else if (cursor || favoritesCursor) {
                     pendingNextAfterLoadRef.current = true;
                     triggerLoadMoreForNav();
@@ -1308,7 +1359,11 @@ export function ModelDetail({
                   {/* Fix #3 (real): No key prop — React keeps VideoPlayer mounted between video changes.
                     The HLS useEffect re-initializes on contentItemId change without unmounting the
                     container. This preserves the browser's native fullscreen state. */}
-                  <VideoPlayer contentItemId={selectedItemId} />
+                  <VideoPlayer
+                    contentItemId={selectedItemId}
+                    modelId={model.id}
+                    folderName={model.folderName}
+                  />
                 </div>
               ) : (
                 <RetryImage

@@ -110,6 +110,81 @@ export function trackModelPageViewed(modelId: string, extra: GrowthProps = {}): 
   emitGrowthEvent(GROWTH.MODEL_PAGE_VIEWED, { model_id: modelId, ...extra });
 }
 
+export type CatalogModelSurface = "grid" | "featured_hero" | "featured_side";
+
+export type CatalogModelTrackBase = {
+  surface: CatalogModelSurface;
+  grid_index: number;
+  query_len: number;
+  purchased_only: boolean;
+  country_id?: string;
+  tab_session?: string;
+};
+
+/** Widoczność karty modelki w katalogu (raz na sesję karty przeglądarki per model_id). */
+export function trackCatalogModelImpression(
+  modelId: string,
+  folderName: string,
+  base: CatalogModelTrackBase,
+): void {
+  emitGrowthEvent(GROWTH.CATALOG_MODEL_IMPRESSION, {
+    model_id: modelId,
+    folder_name: folderName,
+    ...base,
+  });
+}
+
+export type CatalogModelClickOutcome = "open" | "login_required";
+
+/** Klik w kartę modelki (hero / bok featured / siatka). */
+export function trackCatalogModelClick(
+  modelId: string,
+  folderName: string,
+  base: CatalogModelTrackBase & { outcome: CatalogModelClickOutcome },
+): void {
+  emitGrowthEvent(GROWTH.CATALOG_MODEL_CLICK, {
+    model_id: modelId,
+    folder_name: folderName,
+    ...base,
+  });
+}
+
+const CATALOG_ENGAGED_DWELL_MS = 900;
+
+/** Widoczność karty przez minimum ~0,9 s (dedupe osobno od surowego impression). */
+export function trackCatalogModelEngagedImpression(
+  modelId: string,
+  folderName: string,
+  base: CatalogModelTrackBase,
+): void {
+  emitGrowthEvent(GROWTH.CATALOG_MODEL_ENGAGED_IMPRESSION, {
+    model_id: modelId,
+    folder_name: folderName,
+    dwell_ms: CATALOG_ENGAGED_DWELL_MS,
+    ...base,
+  });
+}
+
+/** Jedno zdarzenie na wizytę na stronie profilu (flush przy wyjściu / ukryciu karty). */
+export function trackModelProfileEngagement(
+  modelId: string,
+  folderName: string,
+  extra: GrowthProps & {
+    duration_sec: number;
+    scroll_max_pct: number;
+    deep_engaged: boolean;
+    secondary_favorite: boolean;
+    secondary_content_open: boolean;
+    flush_kind: "final";
+  },
+): void {
+  emitGrowthEvent(GROWTH.MODEL_PROFILE_ENGAGEMENT, {
+    model_id: modelId,
+    folder_name: folderName,
+    ...extra,
+  });
+}
+
 export function trackFavoriteToggled(
   contentItemId: string,
   favorited: boolean,
@@ -124,6 +199,81 @@ export function trackFavoriteToggled(
 
 export function trackPhotoViewFirst(contentItemId: string, extra: GrowthProps = {}): void {
   emitGrowthEvent(GROWTH.PHOTO_VIEW_FIRST, {
+    content_item_id: contentItemId,
+    ...extra,
+  });
+}
+
+export type ContentThumbOutcome = "open" | "login_required" | "no_access";
+
+/** Klik w kafelek treści na stronie modelu (siatka). */
+export function trackContentThumbClick(
+  contentItemId: string,
+  extra: GrowthProps & {
+    content_type?: string;
+    model_id?: string;
+    folder_name?: string;
+    filter?: string;
+    sort?: string;
+    outcome?: ContentThumbOutcome;
+  } = {},
+): void {
+  emitGrowthEvent(GROWTH.CONTENT_THUMB_CLICK, {
+    content_item_id: contentItemId,
+    ...extra,
+  });
+}
+
+export type ContentOverlayNavKind = "prev" | "next" | "swipe" | "keyboard" | "load_more";
+
+/** Użytkownik przechodzi na inny content_item w overlay (nie pierwsze otwarcie z siatki). */
+export function trackContentOverlayNav(
+  toContentItemId: string,
+  extra: GrowthProps & {
+    from_content_item_id?: string;
+    model_id?: string;
+    folder_name?: string;
+    nav?: ContentOverlayNavKind;
+  } = {},
+): void {
+  emitGrowthEvent(GROWTH.CONTENT_OVERLAY_NAV, {
+    content_item_id: toContentItemId,
+    ...extra,
+  });
+}
+
+/**
+ * Czas oglądania: preferuj watch_delta_sec (suma delt = prawdziwy czas przy wielu flushach).
+ * flush_kind: progress = tylko czas; final = ostatni flush sesji (+1 engagement_sessions po stronie DB).
+ */
+export function trackVideoEngagement(
+  contentItemId: string,
+  extra: GrowthProps & {
+    watched_seconds: number;
+    watch_delta_sec?: number;
+    flush_kind?: "progress" | "final";
+    duration_seconds?: number;
+    model_id?: string;
+    folder_name?: string;
+  },
+): void {
+  emitGrowthEvent(GROWTH.VIDEO_ENGAGEMENT, {
+    content_item_id: contentItemId,
+    ...extra,
+  });
+}
+
+/** Pełny widok materiału (marketing: co faktycznie otwarto — nie tylko klik w siatkę). */
+export function trackContentDetailView(
+  contentItemId: string,
+  extra: GrowthProps & {
+    surface: "model_overlay" | "content_page" | "favorites_page";
+    content_type: string;
+    model_id?: string;
+    folder_name?: string;
+  },
+): void {
+  emitGrowthEvent(GROWTH.CONTENT_DETAIL_VIEW, {
     content_item_id: contentItemId,
     ...extra,
   });

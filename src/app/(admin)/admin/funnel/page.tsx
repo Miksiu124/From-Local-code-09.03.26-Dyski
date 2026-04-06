@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
@@ -12,7 +11,6 @@ import {
   Copy,
   Check,
   TrendingUp,
-  ExternalLink,
   X,
   Filter,
 } from "lucide-react";
@@ -20,11 +18,14 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { FunnelUserIdPreview } from "@/components/admin/funnel-user-id-preview";
 
 type GrowthEventRow = {
   id: string;
   eventName: string;
   userId: string | null;
+  userEmail?: string | null;
+  userName?: string | null;
   props: Record<string, unknown>;
   createdAt: string;
 };
@@ -58,6 +59,12 @@ const GROUP_ENGAGEMENT = [
   "catalog_filter_used",
   "search_used",
   "model_page_viewed",
+  "catalog_model_impression",
+  "catalog_model_click",
+  "content_thumb_click",
+  "content_detail_view",
+  "content_overlay_nav",
+  "video_engagement",
   "first_play",
   "photo_view_first",
   "payment_method_selected",
@@ -774,14 +781,14 @@ function FunnelPageContent() {
                           </td>
                           <td className="py-3 px-4 align-top max-w-[200px]">
                             {ev.userId ? (
-                              <Link
-                                href={`/admin/users?userId=${encodeURIComponent(ev.userId)}`}
-                                className="group inline-flex items-center gap-1.5 font-mono text-[11px] text-primary hover:text-primary/90 hover:underline underline-offset-2 max-w-full"
-                                title={ev.userId}
-                              >
-                                <span className="truncate">{ev.userId}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />
-                              </Link>
+                              <FunnelUserIdPreview
+                                anchorKey={ev.id}
+                                userId={ev.userId}
+                                userEmail={ev.userEmail}
+                                userName={ev.userName}
+                                heading={t("growthFunnelUserHoverTitle")}
+                                linkHint={t("growthFunnelUserHoverHint")}
+                              />
                             ) : (
                               <span className="font-mono text-[11px] text-muted-foreground">—</span>
                             )}

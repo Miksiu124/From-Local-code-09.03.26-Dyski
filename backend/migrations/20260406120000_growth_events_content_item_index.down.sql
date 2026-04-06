@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_growth_events_props_content_item_id;

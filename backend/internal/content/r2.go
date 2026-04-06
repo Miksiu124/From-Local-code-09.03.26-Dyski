@@ -117,6 +117,51 @@ func (r *R2Client) PresignGetObject(ctx context.Context, key string, expiresIn t
 	return presigned.URL, nil
 }
 
+// PresignGetObjectDownload returns a presigned URL that suggests downloading as an attachment (MP4).
+func (r *R2Client) PresignGetObjectDownload(ctx context.Context, key string, downloadFilename string, expiresIn time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(r.client)
+	fn := safeDownloadFilename(downloadFilename, key)
+	disp := `attachment; filename="` + fn + `"`
+	presigned, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket:                     aws.String(r.bucket),
+		Key:                        aws.String(key),
+		ResponseContentDisposition: aws.String(disp),
+		ResponseContentType:        aws.String("video/mp4"),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiresIn
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign download %s: %w", key, err)
+	}
+	return presigned.URL, nil
+}
+
+func safeDownloadFilename(suggested, objectKey string) string {
+	base := suggested
+	if base == "" {
+		if i := strings.LastIndex(objectKey, "/"); i >= 0 && i < len(objectKey)-1 {
+			base = objectKey[i+1:]
+		} else {
+			base = objectKey
+		}
+	}
+	var b strings.Builder
+	for _, r := range base {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	if out == "" || out == "." {
+		return "video.mp4"
+	}
+	lo := strings.ToLower(out)
+	if !strings.HasSuffix(lo, ".mp4") {
+		return out + ".mp4"
+	}
+	return out
+}
+
 // ListFolders lists all "folder" prefixes at a given prefix
 func (r *R2Client) ListFolders(ctx context.Context, prefix string) ([]string, error) {
 	var folders []string
