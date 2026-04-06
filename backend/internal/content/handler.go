@@ -187,6 +187,17 @@ func playlistObjectCandidates(filename, effectiveFolder string, hasEffectiveFold
 	return keys
 }
 
+// syntheticHLSFolder is the conventional R2 prefix for transcoded HLS: {modelFolder}/{videoUniqueId}_source
+// (matches WinSCP: bucket/…/alinaxrose/08gept…_source/master.m3u8). Used when DB hls_folder_path is stale.
+func syntheticHLSFolder(modelFolder, uniqueID string) string {
+	modelFolder = strings.TrimSuffix(strings.TrimSpace(modelFolder), "/")
+	uniqueID = strings.TrimSpace(uniqueID)
+	if modelFolder == "" || uniqueID == "" {
+		return ""
+	}
+	return modelFolder + "/" + uniqueID + "_source"
+}
+
 func appendUniqueR2Key(slice []string, key string) []string {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -600,10 +611,13 @@ func (h *Handler) Playlist(c echo.Context) error {
 	}
 
 	var hlsMasterPath, hlsFolderPath *string
-	var videoUniqueID string
+	var videoUniqueID, modelFolderName string
 	err = h.db.QueryRow(ctx, `
-		SELECT hls_master_path, hls_folder_path, unique_id FROM content_items WHERE id = $1
-	`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID)
+		SELECT ci.hls_master_path, ci.hls_folder_path, ci.unique_id, m.folder_name
+		FROM content_items ci
+		JOIN models m ON m.id = ci.model_id
+		WHERE ci.id = $1
+	`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID, &modelFolderName)
 	if err != nil {
 		return common.NotFound(c, "Content not found")
 	}
@@ -612,12 +626,17 @@ func (h *Handler) Playlist(c echo.Context) error {
 	var playlistContent string
 	var effectiveFolder string
 	var hasEffectiveFolder bool
+	var hlsFolderForRewrite string // segment base path — may be synthetic folder when DB paths are wrong
 	repaired := false
 
 	for {
 		effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
 		hasEffectiveFolder = effectiveFolder != ""
 		playlistContent = ""
+		hlsFolderForRewrite = ""
+
+		synthFolder := syntheticHLSFolder(modelFolderName, videoUniqueID)
+		norm := func(s string) string { return strings.TrimSuffix(strings.TrimSpace(s), "/") }
 
 		// For master.m3u8, generate a multi-variant playlist from all resolution
 		// playlists in the folder (master-480p.m3u8, master-720p.m3u8, …).
@@ -634,11 +653,38 @@ func (h *Handler) Playlist(c echo.Context) error {
 				generated, genErr := h.generateMasterPlaylist(ctx, effectiveFolder)
 				if genErr == nil && generated != "" {
 					playlistContent = generated
+					hlsFolderForRewrite = effectiveFolder
 					if h.redis != nil {
 						_ = h.redis.Set(ctx, cacheKey, generated, masterPlaylistCacheTTL).Err()
 					}
 				} else if genErr != nil {
 					log.Printf("[Playlist] Could not generate multi-variant master for %s: %v", contentItemID, genErr)
+				}
+			} else {
+				hlsFolderForRewrite = effectiveFolder
+			}
+		}
+
+		// DB folder may be wrong; R2 layout is always {model}/{unique_id}_source/…
+		if filename == "master.m3u8" && playlistContent == "" && synthFolder != "" && norm(synthFolder) != norm(effectiveFolder) {
+			cacheKey := masterPlaylistCachePrefix + synthFolder
+			if h.redis != nil {
+				cached, err := h.redis.Get(ctx, cacheKey).Result()
+				if err == nil && cached != "" {
+					playlistContent = cached
+					hlsFolderForRewrite = synthFolder
+				}
+			}
+			if playlistContent == "" {
+				generated, genErr := h.generateMasterPlaylist(ctx, synthFolder)
+				if genErr == nil && generated != "" {
+					playlistContent = generated
+					hlsFolderForRewrite = synthFolder
+					if h.redis != nil {
+						_ = h.redis.Set(ctx, cacheKey, generated, masterPlaylistCacheTTL).Err()
+					}
+				} else if genErr != nil {
+					log.Printf("[Playlist] Could not generate master from synthetic folder %s for %s: %v", synthFolder, contentItemID, genErr)
 				}
 			}
 		}
@@ -650,12 +696,24 @@ func (h *Handler) Playlist(c echo.Context) error {
 					candidates = appendUniqueR2Key(candidates, k)
 				}
 			}
+			if filename == "master.m3u8" && synthFolder != "" {
+				synthHas := true
+				for _, k := range playlistObjectCandidates(filename, synthFolder, synthHas, nil) {
+					candidates = appendUniqueR2Key(candidates, k)
+				}
+				for _, k := range h.m3u8KeysInFolderForUniqueID(ctx, synthFolder, videoUniqueID) {
+					candidates = appendUniqueR2Key(candidates, k)
+				}
+			}
 			if len(candidates) == 0 {
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `
-						SELECT hls_master_path, hls_folder_path, unique_id FROM content_items WHERE id = $1
-					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID)
+						SELECT ci.hls_master_path, ci.hls_folder_path, ci.unique_id, m.folder_name
+						FROM content_items ci
+						JOIN models m ON m.id = ci.model_id
+						WHERE ci.id = $1
+					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID, &modelFolderName)
 					continue
 				}
 				return common.NotFound(c, "Playlist not found")
@@ -675,6 +733,7 @@ func (h *Handler) Playlist(c echo.Context) error {
 					return common.InternalError(c)
 				}
 				playlistContent = string(playlistBytes)
+				hlsFolderForRewrite = r2ParentDir(r2Key)
 				fetchErr = nil
 				break
 			}
@@ -683,19 +742,24 @@ func (h *Handler) Playlist(c echo.Context) error {
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `
-						SELECT hls_master_path, hls_folder_path, unique_id FROM content_items WHERE id = $1
-					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID)
+						SELECT ci.hls_master_path, ci.hls_folder_path, ci.unique_id, m.folder_name
+						FROM content_items ci
+						JOIN models m ON m.id = ci.model_id
+						WHERE ci.id = $1
+					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID, &modelFolderName)
 					continue
 				}
 				return common.NotFound(c, "Playlist not found in storage")
 			}
+		} else if hlsFolderForRewrite == "" && playlistContent != "" {
+			hlsFolderForRewrite = effectiveFolder
 		}
 		break
 	}
 
 	baseURL := streamingBaseURL(c, h.cfg)
 	var rewritten string
-	if hasEffectiveFolder {
+	if strings.TrimSpace(hlsFolderForRewrite) != "" {
 		presigner := func(key string) (string, error) {
 			return h.r2.PresignGetObject(ctx, key, 1*time.Hour)
 		}
@@ -705,7 +769,7 @@ func (h *Handler) Playlist(c echo.Context) error {
 		signMedia := h.cfg.MediaCDNSignURLs && mediaSec != ""
 		rewritten = RewritePlaylistWithPresignedSegments(
 			playlistContent,
-			effectiveFolder,
+			hlsFolderForRewrite,
 			baseURL,
 			userID,
 			contentItemID,

@@ -116,3 +116,12 @@ func TestPlaylistObjectCandidates_variantOnlyFolder(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestSyntheticHLSFolder(t *testing.T) {
+	if got := syntheticHLSFolder("alinaxrose", "08gept328tlq3pcs27jp"); got != "alinaxrose/08gept328tlq3pcs27jp_source" {
+		t.Fatalf("syntheticHLSFolder = %q", got)
+	}
+	if syntheticHLSFolder("", "x") != "" || syntheticHLSFolder("m", "") != "" {
+		t.Fatal("expected empty for missing parts")
+	}
+}
