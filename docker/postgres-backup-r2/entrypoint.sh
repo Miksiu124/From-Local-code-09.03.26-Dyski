@@ -7,9 +7,12 @@ if [ "${R2_DB_BACKUP_SYNC_ENABLED:-0}" != "1" ]; then
 fi
 
 : "${R2_ENDPOINT:?R2_ENDPOINT is required when R2_DB_BACKUP_SYNC_ENABLED=1}"
-: "${R2_BUCKET_NAME:?R2_BUCKET_NAME is required when R2_DB_BACKUP_SYNC_ENABLED=1}"
 : "${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required when R2_DB_BACKUP_SYNC_ENABLED=1}"
 : "${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required when R2_DB_BACKUP_SYNC_ENABLED=1}"
+
+# Osobny bucket tylko pod backupy (jeśli pusty → ten sam co aplikacja: R2_BUCKET_NAME)
+BUCKET_NAME="${R2_DB_BACKUP_BUCKET_NAME:-${R2_BUCKET_NAME:-}}"
+: "${BUCKET_NAME:?Set R2_DB_BACKUP_BUCKET_NAME or R2_BUCKET_NAME when R2_DB_BACKUP_SYNC_ENABLED=1}"
 
 PREFIX="${R2_DB_BACKUP_PREFIX:-db-backups}"
 CRON_SCHEDULE="${R2_DB_BACKUP_SYNC_CRON:-45 3 * * *}"
@@ -22,7 +25,7 @@ aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
 aws configure set default.region "$AWS_REGION"
 
 printf '%s' "$R2_ENDPOINT" > /etc/r2-endpoint-url
-printf '%s' "$R2_BUCKET_NAME" > /etc/r2-backup-bucket
+printf '%s' "$BUCKET_NAME" > /etc/r2-backup-bucket
 printf '%s' "$PREFIX" > /etc/r2-backup-prefix
 printf '%s' "$DELETE_FLAG" > /etc/r2-backup-delete-flag
 
@@ -50,5 +53,5 @@ if [ "${R2_SYNC_ON_START:-0}" = "1" ]; then
   /usr/local/bin/r2-db-backup-sync.sh || echo "[postgres-backup-r2] initial sync failed (empty volume is OK)"
 fi
 
-echo "[postgres-backup-r2] cron: ${CRON_SCHEDULE} (${TZ:-UTC}) → s3://${R2_BUCKET_NAME}/${PREFIX}/"
+echo "[postgres-backup-r2] cron: ${CRON_SCHEDULE} (${TZ:-UTC}) → s3://${BUCKET_NAME}/${PREFIX}/"
 exec crond -f -l 8
