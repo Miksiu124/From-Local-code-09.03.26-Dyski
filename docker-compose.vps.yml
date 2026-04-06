@@ -6,10 +6,89 @@
 #
 # Z BillionMail:
 #   docker compose -f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml up -d
+#
+# Kopie PostgreSQL: kontener content-postgres-backup (harmonogram @daily domyślnie).
+#   docker exec content-postgres-backup /backup.sh
+#   docker exec content-postgres-backup ls -la /backups/daily
+#
+# R2: content-postgres-backup-r2 — mirror wolumenu do s3://$R2_BUCKET/$R2_DB_BACKUP_PREFIX/
+#   Wymaga R2_DB_BACKUP_SYNC_ENABLED=1 oraz tych samych zmiennych R2 co aplikacja.
+#   Token R2: Object Read & Write na bucket.
+#
+# API: montaż postgres_backups → /backups (read-only). W .env ustaw POSTGRES_BACKUP_DIR=/backups.
 
 services:
+  api:
+    volumes:
+      - postgres_backups:/backups:ro
+
   nginx:
     volumes:
       - ./nginx/nginx.conf.production:/etc/nginx/nginx.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./nginx/certs/security:/etc/nginx/certs/security:ro
+
+  # ── PostgreSQL — codzienne kopie (pg_dump, rotacja daily/weekly/monthly) ──
+  postgres-backup:
+    image: prodrigestivill/postgres-backup-local:18
+    container_name: content-postgres-backup
+    restart: unless-stopped
+    user: postgres:postgres
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: content_platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      SCHEDULE: ${POSTGRES_BACKUP_SCHEDULE:-@daily}
+      TZ: ${TZ:-UTC}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_KEEP_WEEKS: ${BACKUP_KEEP_WEEKS:-4}
+      BACKUP_KEEP_MONTHS: ${BACKUP_KEEP_MONTHS:-6}
+      HEALTHCHECK_PORT: "8080"
+    volumes:
+      - postgres_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  # ── Mirror kopii PostgreSQL → Cloudflare R2 (S3 API, aws s3 sync) ──
+  postgres-backup-r2:
+    build:
+      context: ./docker/postgres-backup-r2
+    container_name: content-postgres-backup-r2
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ:-UTC}
+      R2_DB_BACKUP_SYNC_ENABLED: ${R2_DB_BACKUP_SYNC_ENABLED:-0}
+      R2_DB_BACKUP_PREFIX: ${R2_DB_BACKUP_PREFIX:-db-backups}
+      R2_DB_BACKUP_SYNC_CRON: ${R2_DB_BACKUP_SYNC_CRON:-45 3 * * *}
+      R2_BACKUP_SYNC_DELETE: ${R2_BACKUP_SYNC_DELETE:-1}
+      R2_SYNC_ON_START: ${R2_SYNC_ON_START:-0}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-auto}
+    volumes:
+      - postgres_backups:/backups:ro
+    depends_on:
+      - postgres-backup
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+
+volumes:
+  postgres_backups:

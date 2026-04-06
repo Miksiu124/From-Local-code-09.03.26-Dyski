@@ -18,6 +18,9 @@ services:
       - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
       - PORT=8080
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
+      # Observability: last DB backup file — mount postgres_backups (docker-compose.vps.yml) i ustaw w .env: POSTGRES_BACKUP_DIR=/backups
+      - POSTGRES_BACKUP_DIR=${POSTGRES_BACKUP_DIR:-}
+      - POSTGRES_BACKUP_DB_NAME=${POSTGRES_BACKUP_DB_NAME:-content_platform}
     expose:
       - "8080"
     ports:

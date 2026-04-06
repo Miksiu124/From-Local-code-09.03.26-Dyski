@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -16,12 +18,17 @@ import (
 )
 
 type Handler struct {
-	db *pgxpool.Pool
-	rl *middleware.RateLimiter
+	db           *pgxpool.Pool
+	rl           *middleware.RateLimiter
+	backupDir    string
+	backupDBName string
 }
 
-func NewHandler(db *pgxpool.Pool, rl *middleware.RateLimiter) *Handler {
-	return &Handler{db: db, rl: rl}
+func NewHandler(db *pgxpool.Pool, rl *middleware.RateLimiter, backupDir, backupDBName string) *Handler {
+	if backupDBName == "" {
+		backupDBName = "content_platform"
+	}
+	return &Handler{db: db, rl: rl, backupDir: backupDir, backupDBName: backupDBName}
 }
 
 func truncate(s string, n int) string {
@@ -250,5 +257,54 @@ func (h *Handler) GetRuntimeStats(c echo.Context) error {
 		"goroutines":     runtime.NumGoroutine(),
 		"goVersion":      runtime.Version(),
 		"collectedAtRFC": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// GetDBBackupStatus reports mtime/size of the latest daily dump (postgres-backup-local symlink daily/<db>-latest.sql.gz).
+func (h *Handler) GetDBBackupStatus(c echo.Context) error {
+	if h.backupDir == "" {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"configured": false,
+		})
+	}
+	rel := filepath.Join("daily", h.backupDBName+"-latest.sql.gz")
+	latestPath := filepath.Join(h.backupDir, rel)
+	_, err := os.Lstat(latestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"configured": true,
+				"available":  false,
+				"path":       rel,
+			})
+		}
+		log.Printf("[observability] db backup stat %s: %v", latestPath, err)
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"configured": true,
+			"available":  false,
+			"path":       rel,
+			"error":      "stat_failed",
+		})
+	}
+	resolved, err := filepath.EvalSymlinks(latestPath)
+	if err != nil {
+		resolved = latestPath
+	}
+	st, err := os.Stat(resolved)
+	if err != nil {
+		log.Printf("[observability] db backup stat resolved %s: %v", resolved, err)
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"configured": true,
+			"available":  false,
+			"path":       rel,
+			"error":      "stat_resolved_failed",
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"configured":      true,
+		"available":       true,
+		"path":            rel,
+		"lastModifiedRFC": st.ModTime().UTC().Format(time.RFC3339),
+		"sizeBytes":       st.Size(),
 	})
 }

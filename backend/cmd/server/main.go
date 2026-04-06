@@ -240,7 +240,7 @@ func main() {
 	// Public referral link tracking (no auth) - /r/[code] redirects here
 	api.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
 
-	obsHandler := observability.NewHandler(pgPool, rateLimiter)
+	obsHandler := observability.NewHandler(pgPool, rateLimiter, cfg.PostgresBackupDir, cfg.PostgresBackupDBName)
 	api.POST("/public/client-errors", obsHandler.PostClientError)
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
@@ -290,6 +290,7 @@ func main() {
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)
 	adminGroup.DELETE("/observability/client-errors", obsHandler.ClearClientErrors)
 	adminGroup.GET("/observability/runtime", obsHandler.GetRuntimeStats)
+	adminGroup.GET("/observability/db-backup", obsHandler.GetDBBackupStatus)
 
 	// ── Health check ─────────────────────────────────────────────────────
 	e.GET("/health", func(c echo.Context) error {

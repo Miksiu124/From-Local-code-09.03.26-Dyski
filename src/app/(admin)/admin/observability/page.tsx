@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Activity, Cpu, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Cpu, Database, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type ClientErrorGroup = {
@@ -42,6 +42,15 @@ type RuntimePayload = {
   collectedAtRFC: string;
 };
 
+type DbBackupPayload = {
+  configured: boolean;
+  available?: boolean;
+  path?: string;
+  lastModifiedRFC?: string;
+  sizeBytes?: number;
+  error?: string;
+};
+
 function primaryStackFrame(stack: string): string {
   const lines = stack
     .split("\n")
@@ -69,6 +78,8 @@ export default function AdminObservabilityPage() {
   const [errors, setErrors] = useState<ClientErrorRow[]>([]);
   const [groups, setGroups] = useState<ClientErrorGroup[]>([]);
   const [runtime, setRuntime] = useState<RuntimePayload | null>(null);
+  const [dbBackup, setDbBackup] = useState<DbBackupPayload | null>(null);
+  const [dbBackupFetchFailed, setDbBackupFetchFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -93,13 +104,21 @@ export default function AdminObservabilityPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [eRes, rRes] = await Promise.all([
+      const [eRes, rRes, bRes] = await Promise.all([
         fetch("/api/admin/observability/client-errors"),
         fetch("/api/admin/observability/runtime"),
+        fetch("/api/admin/observability/db-backup"),
       ]);
       if (!eRes.ok || !rRes.ok) {
         setErr(t("observabilityLoadFailed"));
         return;
+      }
+      if (bRes.ok) {
+        setDbBackup((await bRes.json()) as DbBackupPayload);
+        setDbBackupFetchFailed(false);
+      } else {
+        setDbBackup(null);
+        setDbBackupFetchFailed(true);
       }
       const eData = await eRes.json();
       const rData = await rRes.json();
@@ -144,6 +163,12 @@ export default function AdminObservabilityPage() {
   };
 
   const mb = (n: number) => (n / (1024 * 1024)).toFixed(2);
+
+  const formatBytes = (n: number) => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  };
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8">
@@ -212,6 +237,44 @@ export default function AdminObservabilityPage() {
             </div>
           </dl>
         ) : null}
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card/50 p-5">
+        <h2 className="text-sm font-semibold flex items-center gap-2 mb-2">
+          <Database className="h-4 w-4 text-primary" />
+          {t("observabilityDbBackup")}
+        </h2>
+        <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{t("observabilityDbBackupHint")}</p>
+        {loading && !dbBackup && !dbBackupFetchFailed ? (
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        ) : dbBackupFetchFailed ? (
+          <p className="text-sm text-destructive/90">{t("observabilityDbBackupLoadFailed")}</p>
+        ) : dbBackup && !dbBackup.configured ? (
+          <p className="text-sm text-muted-foreground">{t("observabilityDbBackupNotConfigured")}</p>
+        ) : dbBackup && dbBackup.configured && !dbBackup.available ? (
+          <p className="text-sm text-muted-foreground">{t("observabilityDbBackupNone")}</p>
+        ) : dbBackup && dbBackup.configured && dbBackup.available && dbBackup.lastModifiedRFC ? (
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">{t("observabilityDbBackupLast")}</dt>
+              <dd className="font-mono">{new Date(dbBackup.lastModifiedRFC).toLocaleString()}</dd>
+            </div>
+            {typeof dbBackup.sizeBytes === "number" ? (
+              <div>
+                <dt className="text-muted-foreground">{t("observabilityDbBackupSize")}</dt>
+                <dd className="font-mono">{formatBytes(dbBackup.sizeBytes)}</dd>
+              </div>
+            ) : null}
+            {dbBackup.path ? (
+              <div className="sm:col-span-2">
+                <dt className="text-muted-foreground">{t("observabilityPath")}</dt>
+                <dd className="font-mono text-xs break-all">{dbBackup.path}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">—</p>
+        )}
       </section>
 
       {groups.length > 0 && (

@@ -19,6 +19,10 @@ type Config struct {
 	// Database
 	DatabaseURL string
 
+	// Observability: local pg_dump volume (Docker) — optional
+	PostgresBackupDir   string // POSTGRES_BACKUP_DIR e.g. /backups; empty = admin UI hides backup status
+	PostgresBackupDBName string // POSTGRES_BACKUP_DB_NAME — must match postgres-backup-local POSTGRES_DB (symlink name)
+
 	// Redis
 	RedisURL string
 
@@ -91,8 +95,10 @@ func Load() (*Config, error) {
 		Port:                  getEnvOrDefault("PORT", "8080"),
 		Environment:           getEnvOrDefault("ENVIRONMENT", "development"),
 		FrontendURL:           getEnvOrDefault("FRONTEND_URL", "http://localhost:3000"),
-		DatabaseURL:           requireEnv("DATABASE_URL"),
-		RedisURL:              getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
+		DatabaseURL:            requireEnv("DATABASE_URL"),
+		PostgresBackupDir:      strings.TrimSpace(getEnvOrDefault("POSTGRES_BACKUP_DIR", "")),
+		PostgresBackupDBName:   getEnvOrDefault("POSTGRES_BACKUP_DB_NAME", "content_platform"),
+		RedisURL:               getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:                requireEnv("JWT_SECRET"),
 		JWTExpirySecs:            resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
 		SessionTokenTTL:          resolveSessionTTL(),
