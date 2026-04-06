@@ -143,6 +143,50 @@ func effectiveHLSFolder(hlsFolderPath, hlsMasterPath *string) string {
 	return ""
 }
 
+// playlistObjectCandidates returns R2 object keys to try for a playlist request.
+// For master.m3u8 we no longer trust only hls_master_path — it is often stale while files still exist
+// under hls_folder_path (e.g. index.m3u8, or master.m3u8 after re-upload).
+func playlistObjectCandidates(filename, effectiveFolder string, hasEffectiveFolder bool, hlsMasterPath *string) []string {
+	seen := make(map[string]struct{})
+	var keys []string
+	add := func(k string) {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+
+	if filename == "master.m3u8" {
+		if hasEffectiveFolder {
+			add(effectiveFolder + "/master.m3u8")
+			for _, alt := range []string{
+				"index.m3u8", "playlist.m3u8", "stream.m3u8", "main.m3u8",
+				"output.m3u8", "hls.m3u8", "video.m3u8",
+			} {
+				add(effectiveFolder + "/" + alt)
+			}
+		}
+		if hlsMasterPath != nil {
+			add(strings.TrimSpace(*hlsMasterPath))
+		}
+		return keys
+	}
+
+	if hasEffectiveFolder {
+		add(effectiveFolder + "/" + filename)
+		return keys
+	}
+	if hlsMasterPath != nil && strings.TrimSpace(*hlsMasterPath) != "" {
+		add(strings.TrimSpace(*hlsMasterPath))
+	}
+	return keys
+}
+
 type Handler struct {
 	db    *pgxpool.Pool
 	r2    *R2Client
@@ -555,14 +599,8 @@ func (h *Handler) Playlist(c echo.Context) error {
 		}
 
 		if playlistContent == "" {
-			var r2Key string
-			if filename == "master.m3u8" && hlsMasterPath != nil && strings.TrimSpace(*hlsMasterPath) != "" {
-				r2Key = strings.TrimSpace(*hlsMasterPath)
-			} else if hasEffectiveFolder {
-				r2Key = effectiveFolder + "/" + filename
-			} else if hlsMasterPath != nil && strings.TrimSpace(*hlsMasterPath) != "" {
-				r2Key = strings.TrimSpace(*hlsMasterPath)
-			} else {
+			candidates := playlistObjectCandidates(filename, effectiveFolder, hasEffectiveFolder, hlsMasterPath)
+			if len(candidates) == 0 {
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `
@@ -573,8 +611,25 @@ func (h *Handler) Playlist(c echo.Context) error {
 				return common.NotFound(c, "Playlist not found")
 			}
 
-			body, _, fetchErr := h.r2.GetObject(ctx, r2Key)
-			if fetchErr != nil {
+			var fetchErr error
+			for _, r2Key := range candidates {
+				var body io.ReadCloser
+				body, _, fetchErr = h.r2.GetObject(ctx, r2Key)
+				if fetchErr != nil {
+					continue
+				}
+				const maxPlaylistSize = 10 * 1024 * 1024 // 10 MB
+				playlistBytes, readErr := io.ReadAll(io.LimitReader(body, maxPlaylistSize))
+				_ = body.Close()
+				if readErr != nil {
+					return common.InternalError(c)
+				}
+				playlistContent = string(playlistBytes)
+				fetchErr = nil
+				break
+			}
+			if playlistContent == "" {
+				log.Printf("[Playlist] No R2 object for %s (tried %d keys, last err: %v)", contentItemID, len(candidates), fetchErr)
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `
@@ -584,14 +639,6 @@ func (h *Handler) Playlist(c echo.Context) error {
 				}
 				return common.NotFound(c, "Playlist not found in storage")
 			}
-
-			const maxPlaylistSize = 10 * 1024 * 1024 // 10 MB
-			playlistBytes, readErr := io.ReadAll(io.LimitReader(body, maxPlaylistSize))
-			_ = body.Close()
-			if readErr != nil {
-				return common.InternalError(c)
-			}
-			playlistContent = string(playlistBytes)
 		}
 		break
 	}
