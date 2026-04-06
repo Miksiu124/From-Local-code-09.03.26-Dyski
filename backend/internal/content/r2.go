@@ -2,8 +2,10 @@ package content
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"content-platform-backend/internal/config"
@@ -12,6 +14,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 )
 
 type R2Client struct {
@@ -136,6 +139,18 @@ func (r *R2Client) ListFolders(ctx context.Context, prefix string) ([]string, er
 		}
 	}
 	return folders, nil
+}
+
+// IsR2AccessDenied reports S3/R2 AccessDenied (e.g. API token can GetObject but lacks s3:ListBucket).
+func IsR2AccessDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) && apiErr.ErrorCode() == "AccessDenied" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "accessdenied")
 }
 
 // ListObjects lists all objects under a prefix

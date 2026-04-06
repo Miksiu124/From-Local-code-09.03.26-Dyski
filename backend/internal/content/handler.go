@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -97,7 +98,8 @@ func sanitizeSlug(slug string) (string, error) {
 }
 
 const masterPlaylistCacheTTL = 2 * time.Hour // VPS 8GB — more aggressive cache
-const masterPlaylistCachePrefix = "master_playlist:"
+// v2: relative paths inside HLS folder (subfolders), dirname fallback from hls_master_path
+const masterPlaylistCachePrefix = "master_playlist:v2:"
 
 const thumbnailCacheTTL = 24 * time.Hour
 const thumbnailCachePrefix = "thumb:"
@@ -105,6 +107,41 @@ const thumbnailCacheMaxBytes = 1024 * 1024 // 1MB — VPS 8GB, Redis 1GB
 
 // Long browser/CDN TTL for bytes proxied from R2; no immutable (same API URL can get new file at same key).
 const cacheControlProxiedR2Image = "public, max-age=2592000, stale-while-revalidate=86400"
+
+// r2ParentDir returns the directory portion of an R2 object key (forward slashes).
+func r2ParentDir(key string) string {
+	key = strings.TrimSuffix(strings.TrimSpace(key), "/")
+	if i := strings.LastIndex(key, "/"); i >= 0 {
+		return key[:i]
+	}
+	return ""
+}
+
+// objectKeyRelativeToHLSFolder returns objKey relative to folder (e.g. "out/720p.m3u8").
+func objectKeyRelativeToHLSFolder(objKey, folder string) string {
+	folder = strings.TrimSuffix(strings.TrimSpace(folder), "/")
+	if folder == "" {
+		parts := strings.Split(objKey, "/")
+		return parts[len(parts)-1]
+	}
+	prefix := folder + "/"
+	if strings.HasPrefix(objKey, prefix) {
+		return strings.TrimPrefix(objKey, prefix)
+	}
+	parts := strings.Split(objKey, "/")
+	return parts[len(parts)-1]
+}
+
+// effectiveHLSFolder returns the R2 prefix for HLS files: DB column, or dirname(hls_master_path).
+func effectiveHLSFolder(hlsFolderPath, hlsMasterPath *string) string {
+	if hlsFolderPath != nil && strings.TrimSpace(*hlsFolderPath) != "" {
+		return strings.TrimSuffix(strings.TrimSpace(*hlsFolderPath), "/")
+	}
+	if hlsMasterPath != nil && strings.TrimSpace(*hlsMasterPath) != "" {
+		return r2ParentDir(*hlsMasterPath)
+	}
+	return ""
+}
 
 type Handler struct {
 	db    *pgxpool.Pool
@@ -253,9 +290,17 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 // generateMasterPlaylist scans the HLS folder in R2 for resolution-specific
 // playlists (master-480p.m3u8, master-720p.m3u8, …) and builds a proper
 // multi-variant HLS master playlist so clients can switch quality.
+//
+// Also picks up common ffmpeg layouts: 720p.m3u8 / 1080p.m3u8 (no master- prefix),
+// single-stream index/playlist/stream/… .m3u8, and any isAcceptableHLSEntryPlaylist
+// under the folder (including subfolders) as a last resort.
 func (h *Handler) generateMasterPlaylist(ctx context.Context, hlsFolderPath string) (string, error) {
 	objects, err := h.r2.ListObjects(ctx, hlsFolderPath+"/")
 	if err != nil {
+		if IsR2AccessDenied(err) {
+			log.Printf("[Playlist] ListObjects AccessDenied for %q — skipping multi-variant build; add s3:ListBucket to R2 token or use direct manifest path", hlsFolderPath)
+			return "", nil
+		}
 		return "", err
 	}
 
@@ -265,17 +310,78 @@ func (h *Handler) generateMasterPlaylist(ctx context.Context, hlsFolderPath stri
 	}
 	var variants []variant
 
-	for _, obj := range objects {
-		parts := strings.Split(obj.Key, "/")
-		fname := parts[len(parts)-1]
-		if !strings.HasPrefix(fname, "master-") || !strings.HasSuffix(fname, ".m3u8") {
-			continue
-		}
-		if m := resolutionFromFilename.FindStringSubmatch(fname); len(m) > 1 {
-			height, _ := strconv.Atoi(m[1])
-			if height > 0 {
-				variants = append(variants, variant{filename: fname, height: height})
+	collectMasterPrefixed := func() {
+		for _, obj := range objects {
+			rel := objectKeyRelativeToHLSFolder(obj.Key, hlsFolderPath)
+			base := path.Base(rel)
+			if !strings.HasPrefix(base, "master-") || !strings.HasSuffix(base, ".m3u8") {
+				continue
 			}
+			if m := resolutionFromFilename.FindStringSubmatch(base); len(m) > 1 {
+				height, _ := strconv.Atoi(m[1])
+				if height > 0 {
+					variants = append(variants, variant{filename: rel, height: height})
+				}
+			}
+		}
+	}
+
+	collectMasterPrefixed()
+
+	if len(variants) == 0 {
+		for _, obj := range objects {
+			rel := objectKeyRelativeToHLSFolder(obj.Key, hlsFolderPath)
+			base := path.Base(rel)
+			if h, ok := resolutionPPlaylistBase(base); ok {
+				variants = append(variants, variant{filename: rel, height: h})
+			}
+		}
+	}
+
+	if len(variants) == 0 {
+		for _, alt := range []string{
+			"index.m3u8", "playlist.m3u8", "stream.m3u8", "main.m3u8",
+			"output.m3u8", "hls.m3u8", "video.m3u8",
+		} {
+			for _, obj := range objects {
+				rel := objectKeyRelativeToHLSFolder(obj.Key, hlsFolderPath)
+				if path.Base(rel) == alt {
+					variants = append(variants, variant{filename: rel, height: 720})
+					break
+				}
+			}
+			if len(variants) > 0 {
+				break
+			}
+		}
+	}
+
+	if len(variants) == 0 {
+		seen := make(map[string]struct{})
+		for _, obj := range objects {
+			rel := objectKeyRelativeToHLSFolder(obj.Key, hlsFolderPath)
+			if rel == "" || !strings.HasSuffix(rel, ".m3u8") {
+				continue
+			}
+			base := path.Base(rel)
+			if base == "master.m3u8" || !isAcceptableHLSEntryPlaylist(base) {
+				continue
+			}
+			if _, dup := seen[rel]; dup {
+				continue
+			}
+			seen[rel] = struct{}{}
+			h := 720
+			if hp, ok := resolutionPPlaylistBase(base); ok {
+				h = hp
+			} else if strings.HasPrefix(base, "master-") {
+				if m := resolutionFromFilename.FindStringSubmatch(base); len(m) > 1 {
+					if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
+						h = n
+					}
+				}
+			}
+			variants = append(variants, variant{filename: rel, height: h})
 		}
 	}
 
@@ -284,7 +390,10 @@ func (h *Handler) generateMasterPlaylist(ctx context.Context, hlsFolderPath stri
 	}
 
 	sort.Slice(variants, func(i, j int) bool {
-		return variants[i].height < variants[j].height
+		if variants[i].height != variants[j].height {
+			return variants[i].height < variants[j].height
+		}
+		return variants[i].filename < variants[j].filename
 	})
 
 	bandwidthMap := map[int]int{
@@ -311,6 +420,71 @@ func (h *Handler) generateMasterPlaylist(ctx context.Context, hlsFolderPath stri
 		fmt.Fprintf(&buf, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s\n%s\n", bw, res, v.filename)
 	}
 	return buf.String(), nil
+}
+
+// discoverVideoHLSFromR2 finds the best .m3u8 key and HLS folder for a VIDEO row by scanning R2
+// under the model folder (same logic as ImportModelContent). Use when DB paths are missing/stale.
+func (h *Handler) discoverVideoHLSFromR2(ctx context.Context, contentItemID string) (master *string, folder *string, found bool) {
+	var uniqueID, ctype string
+	err := h.db.QueryRow(ctx, `
+		SELECT ci.unique_id, ci.content_type FROM content_items ci WHERE ci.id = $1
+	`, contentItemID).Scan(&uniqueID, &ctype)
+	if err != nil || ctype != "VIDEO" || strings.TrimSpace(uniqueID) == "" {
+		return nil, nil, false
+	}
+	var folderName string
+	err = h.db.QueryRow(ctx, `
+		SELECT m.folder_name FROM content_items ci
+		JOIN models m ON m.id = ci.model_id WHERE ci.id = $1
+	`, contentItemID).Scan(&folderName)
+	if err != nil || strings.TrimSpace(folderName) == "" {
+		return nil, nil, false
+	}
+	objects, err := h.r2.ListObjects(ctx, strings.TrimSuffix(folderName, "/")+"/")
+	if err != nil {
+		if IsR2AccessDenied(err) {
+			log.Printf("[Playlist] R2 discover skipped (ListObjects AccessDenied for %s); token needs s3:ListBucket for auto-discovery", contentItemID)
+		} else {
+			log.Printf("[Playlist] R2 list for discover %s: %v", contentItemID, err)
+		}
+		return nil, nil, false
+	}
+	var bestKey, bestFolder string
+	bestPri := -1
+	for _, obj := range objects {
+		uid, hlsF, ok := parseVideoM3U8Key(obj.Key)
+		if !ok || uid != uniqueID {
+			continue
+		}
+		base := obj.Key[strings.LastIndex(obj.Key, "/")+1:]
+		pri := playlistImportPriority(base)
+		if bestPri == -1 || pri > bestPri {
+			bestPri = pri
+			bestKey, bestFolder = obj.Key, hlsF
+		}
+	}
+	if bestKey == "" {
+		return nil, nil, false
+	}
+	return &bestKey, &bestFolder, true
+}
+
+// tryRepairHLSPathsFromR2 updates hls_master_path and hls_folder_path when R2 still has playlists.
+func (h *Handler) tryRepairHLSPathsFromR2(ctx context.Context, contentItemID string) bool {
+	master, folder, ok := h.discoverVideoHLSFromR2(ctx, contentItemID)
+	if !ok {
+		return false
+	}
+	_, err := h.db.Exec(ctx, `
+		UPDATE content_items SET hls_master_path = $1, hls_folder_path = $2
+		WHERE id = $3 AND content_type = 'VIDEO'
+	`, master, folder, contentItemID)
+	if err != nil {
+		log.Printf("[Playlist] repair UPDATE failed %s: %v", contentItemID, err)
+		return false
+	}
+	log.Printf("[Playlist] Repaired HLS paths from R2 for content item %s", contentItemID)
+	return true
 }
 
 // Playlist proxies and rewrites HLS .m3u8 playlists from R2
@@ -345,59 +519,86 @@ func (h *Handler) Playlist(c echo.Context) error {
 		return common.NotFound(c, "Content not found")
 	}
 
-	// For master.m3u8, generate a multi-variant playlist from all resolution
-	// playlists in the folder (master-480p.m3u8, master-720p.m3u8, …).
-	// Cache in Redis to avoid ListObjects (Class A) on every request.
+	// Resolve playlist bytes; on missing/stale DB paths or R2 miss, scan R2 once (same as content import).
 	var playlistContent string
+	var effectiveFolder string
+	var hasEffectiveFolder bool
+	repaired := false
 
-	if filename == "master.m3u8" && hlsFolderPath != nil {
-		cacheKey := masterPlaylistCachePrefix + *hlsFolderPath
-		if h.redis != nil {
-			cached, err := h.redis.Get(ctx, cacheKey).Result()
-			if err == nil {
-				playlistContent = cached
-			}
-		}
-		if playlistContent == "" {
-			generated, genErr := h.generateMasterPlaylist(ctx, *hlsFolderPath)
-			if genErr == nil {
-				playlistContent = generated
-				if h.redis != nil {
-					_ = h.redis.Set(ctx, cacheKey, generated, masterPlaylistCacheTTL).Err()
+	for {
+		effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+		hasEffectiveFolder = effectiveFolder != ""
+		playlistContent = ""
+
+		// For master.m3u8, generate a multi-variant playlist from all resolution
+		// playlists in the folder (master-480p.m3u8, master-720p.m3u8, …).
+		// Cache in Redis to avoid ListObjects (Class A) on every request.
+		if filename == "master.m3u8" && hasEffectiveFolder {
+			cacheKey := masterPlaylistCachePrefix + effectiveFolder
+			if h.redis != nil {
+				cached, err := h.redis.Get(ctx, cacheKey).Result()
+				if err == nil {
+					playlistContent = cached
 				}
-			} else {
-				log.Printf("[Playlist] Could not generate multi-variant master for %s: %v", contentItemID, genErr)
+			}
+			if playlistContent == "" {
+				generated, genErr := h.generateMasterPlaylist(ctx, effectiveFolder)
+				if genErr == nil && generated != "" {
+					playlistContent = generated
+					if h.redis != nil {
+						_ = h.redis.Set(ctx, cacheKey, generated, masterPlaylistCacheTTL).Err()
+					}
+				} else if genErr != nil {
+					log.Printf("[Playlist] Could not generate multi-variant master for %s: %v", contentItemID, genErr)
+				}
 			}
 		}
-	}
 
-	if playlistContent == "" {
-		var r2Key string
-		if filename == "master.m3u8" && hlsMasterPath != nil {
-			r2Key = *hlsMasterPath
-		} else if hlsFolderPath != nil {
-			r2Key = *hlsFolderPath + "/" + filename
-		} else {
-			return common.NotFound(c, "Playlist not found")
-		}
+		if playlistContent == "" {
+			var r2Key string
+			if filename == "master.m3u8" && hlsMasterPath != nil && strings.TrimSpace(*hlsMasterPath) != "" {
+				r2Key = strings.TrimSpace(*hlsMasterPath)
+			} else if hasEffectiveFolder {
+				r2Key = effectiveFolder + "/" + filename
+			} else if hlsMasterPath != nil && strings.TrimSpace(*hlsMasterPath) != "" {
+				r2Key = strings.TrimSpace(*hlsMasterPath)
+			} else {
+				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
+					repaired = true
+					_ = h.db.QueryRow(ctx, `
+						SELECT hls_master_path, hls_folder_path FROM content_items WHERE id = $1
+					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath)
+					continue
+				}
+				return common.NotFound(c, "Playlist not found")
+			}
 
-		body, _, fetchErr := h.r2.GetObject(ctx, r2Key)
-		if fetchErr != nil {
-			return common.NotFound(c, "Playlist not found in storage")
-		}
-		defer body.Close()
+			body, _, fetchErr := h.r2.GetObject(ctx, r2Key)
+			if fetchErr != nil {
+				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
+					repaired = true
+					_ = h.db.QueryRow(ctx, `
+						SELECT hls_master_path, hls_folder_path FROM content_items WHERE id = $1
+					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath)
+					continue
+				}
+				return common.NotFound(c, "Playlist not found in storage")
+			}
 
-		const maxPlaylistSize = 10 * 1024 * 1024 // 10 MB
-		playlistBytes, readErr := io.ReadAll(io.LimitReader(body, maxPlaylistSize))
-		if readErr != nil {
-			return common.InternalError(c)
+			const maxPlaylistSize = 10 * 1024 * 1024 // 10 MB
+			playlistBytes, readErr := io.ReadAll(io.LimitReader(body, maxPlaylistSize))
+			_ = body.Close()
+			if readErr != nil {
+				return common.InternalError(c)
+			}
+			playlistContent = string(playlistBytes)
 		}
-		playlistContent = string(playlistBytes)
+		break
 	}
 
 	baseURL := streamingBaseURL(c, h.cfg)
 	var rewritten string
-	if hlsFolderPath != nil && *hlsFolderPath != "" {
+	if hasEffectiveFolder {
 		presigner := func(key string) (string, error) {
 			return h.r2.PresignGetObject(ctx, key, 1*time.Hour)
 		}
@@ -407,7 +608,7 @@ func (h *Handler) Playlist(c echo.Context) error {
 		signMedia := h.cfg.MediaCDNSignURLs && mediaSec != ""
 		rewritten = RewritePlaylistWithPresignedSegments(
 			playlistContent,
-			*hlsFolderPath,
+			effectiveFolder,
 			baseURL,
 			userID,
 			contentItemID,
@@ -460,18 +661,42 @@ func (h *Handler) Segment(c echo.Context) error {
 			"This playback link expired or is invalid. Reload the page and try again.")
 	}
 
-	var hlsFolderPath *string
+	var hlsFolderPath, hlsMasterPath *string
 	err = h.db.QueryRow(ctx, `
-		SELECT hls_folder_path FROM content_items WHERE id = $1
-	`, contentItemID).Scan(&hlsFolderPath)
-	if err != nil || hlsFolderPath == nil {
+		SELECT hls_folder_path, hls_master_path FROM content_items WHERE id = $1
+	`, contentItemID).Scan(&hlsFolderPath, &hlsMasterPath)
+	if err != nil {
+		return common.NotFound(c, "Content not found")
+	}
+	effectiveFolder := effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+	if effectiveFolder == "" {
+		if h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
+			_ = h.db.QueryRow(ctx, `
+				SELECT hls_folder_path, hls_master_path FROM content_items WHERE id = $1
+			`, contentItemID).Scan(&hlsFolderPath, &hlsMasterPath)
+			effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+		}
+	}
+	if effectiveFolder == "" {
 		return common.NotFound(c, "Content not found")
 	}
 
-	r2Key := *hlsFolderPath + "/" + filename
+	r2Key := effectiveFolder + "/" + filename
 
 	// Fetch from R2
 	body, contentType, err := h.r2.GetObject(ctx, r2Key)
+	if err != nil {
+		if h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
+			_ = h.db.QueryRow(ctx, `
+				SELECT hls_folder_path, hls_master_path FROM content_items WHERE id = $1
+			`, contentItemID).Scan(&hlsFolderPath, &hlsMasterPath)
+			effectiveFolder = effectiveHLSFolder(hlsFolderPath, hlsMasterPath)
+			if effectiveFolder != "" {
+				r2Key = effectiveFolder + "/" + filename
+				body, contentType, err = h.r2.GetObject(ctx, r2Key)
+			}
+		}
+	}
 	if err != nil {
 		return common.NotFound(c, "Segment not found")
 	}

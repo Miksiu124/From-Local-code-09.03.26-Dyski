@@ -15,12 +15,14 @@
 #   Wymaga R2_DB_BACKUP_SYNC_ENABLED=1 oraz tych samych zmiennych R2 co aplikacja.
 #   Token R2: Object Read & Write na bucket.
 #
-# API: montaż postgres_backups → /backups (read-only). W .env ustaw POSTGRES_BACKUP_DIR=/backups.
+# API: montaż postgres_backups → /backups (read-only); POSTGRES_BACKUP_DIR ustawione poniżej (panel admina / observability).
 
 services:
   api:
     volumes:
       - postgres_backups:/backups:ro
+    environment:
+      POSTGRES_BACKUP_DIR: /backups
 
   nginx:
     volumes:

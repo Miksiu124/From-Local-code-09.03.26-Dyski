@@ -9,6 +9,7 @@ import (
 
 func CORSMiddleware(cfg *config.Config) echo.MiddlewareFunc {
 	allowOrigins := []string{cfg.FrontendURL}
+	allowOrigins = append(allowOrigins, cfg.CORSExtraOrigins...)
 	if !cfg.IsProduction() {
 		allowOrigins = append(allowOrigins, "http://localhost:3000", "http://localhost:3001")
 	}

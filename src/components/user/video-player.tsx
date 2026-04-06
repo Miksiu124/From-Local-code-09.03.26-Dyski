@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { logger } from "@/lib/logger";
 import { trackFirstPlay, trackVideoPlayRepeat } from "@/lib/growth-analytics";
+import { getNextPublicAppOrigin, resolveApiPathForBrowser } from "@/lib/public-app-origin";
 
 interface QualityLevel {
   index: number;
@@ -152,21 +153,26 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         if (destroyed) return;
 
         if (Hls.isSupported() && videoRef.current) {
-          // Credentials only for same-origin (playlist API). Presigned R2 URLs must NOT
-          // use credentials — R2 CORS doesn't support Access-Control-Allow-Credentials,
-          // which causes "blocked by CORS policy" when withCredentials=true.
+          // Credentials for same-origin API and for NEXT_PUBLIC_APP_URL when the page is on another host
+          // (e.g. cdn.example.com): relative /api would hit the CDN and 404 — resolveApiPathForBrowser fixes that.
+          // Presigned R2 segment URLs must NOT use credentials.
           const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const appOrigin = getNextPublicAppOrigin();
+          const playlistUrl = resolveApiPathForBrowser(
+            `/api/content/${contentItemId}/playlist/master.m3u8`,
+          );
           const hls = new Hls({
             xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-              const isSameOrigin = !url || url.startsWith("/") || url.startsWith(origin);
-              // Only same-origin (playlist via /api/...) may use credentials. CDN segment URLs carry
-              // ?token=&expires= on every request — withCredentials would require a strict ACAO + credentials
-              // handshake and breaks when the edge returns * or CORS is slightly off (red 200 in DevTools).
-              xhr.withCredentials = isSameOrigin;
+              const isAppApi =
+                !url ||
+                url.startsWith("/") ||
+                url.startsWith(origin) ||
+                (!!appOrigin && url.startsWith(appOrigin));
+              xhr.withCredentials = isAppApi;
             },
           });
 
-          hls.loadSource(`/api/content/${contentItemId}/playlist/master.m3u8`);
+          hls.loadSource(playlistUrl);
           hls.attachMedia(videoRef.current);
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -251,7 +257,9 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
               setLoading(false);
             }
           }, LOADING_TIMEOUT_MS);
-          video.src = `/api/content/${contentItemId}/playlist/master.m3u8`;
+          video.src = resolveApiPathForBrowser(
+            `/api/content/${contentItemId}/playlist/master.m3u8`,
+          );
 
           nativeErrorHandler = () => {
             if (!destroyed) {

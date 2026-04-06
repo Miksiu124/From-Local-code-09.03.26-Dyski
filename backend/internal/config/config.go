@@ -15,6 +15,8 @@ type Config struct {
 	Port        string
 	Environment string // "development" or "production"
 	FrontendURL string
+	// CORSExtraOrigins: comma-separated in CORS_EXTRA_ORIGINS (e.g. CDN hostname when API is on main domain)
+	CORSExtraOrigins []string
 
 	// Database
 	DatabaseURL string
@@ -137,6 +139,15 @@ func Load() (*Config, error) {
 	cfg.FrontendURL = strings.TrimRight(cfg.FrontendURL, "/")
 	cfg.DiscordRedirectURI = strings.TrimRight(cfg.DiscordRedirectURI, "/")
 	cfg.R2PublicURL = strings.TrimRight(cfg.R2PublicURL, "/")
+
+	if extra := strings.TrimSpace(getEnvOrDefault("CORS_EXTRA_ORIGINS", "")); extra != "" {
+		for _, p := range strings.Split(extra, ",") {
+			p = strings.TrimSpace(strings.TrimRight(p, "/"))
+			if p != "" {
+				cfg.CORSExtraOrigins = append(cfg.CORSExtraOrigins, p)
+			}
+		}
+	}
 
 	// HLS segments: point at R2_PUBLIC_URL (Worker) when set; presign if public URL empty.
 	// HLS_USE_PUBLIC_CDN_SEGMENTS=0 keeps presigned URLs even when R2_PUBLIC_URL is set.

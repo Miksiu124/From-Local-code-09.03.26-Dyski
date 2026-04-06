@@ -54,4 +54,4 @@ if [ "${R2_SYNC_ON_START:-0}" = "1" ]; then
 fi
 
 echo "[postgres-backup-r2] cron: ${CRON_SCHEDULE} (${TZ:-UTC}) → s3://${BUCKET_NAME}/${PREFIX}/"
-exec crond -f -l 8
+exec /usr/local/bin/supercronic /etc/crontabs/root
