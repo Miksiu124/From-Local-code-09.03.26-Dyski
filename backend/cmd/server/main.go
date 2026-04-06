@@ -13,6 +13,7 @@ import (
 
 	"content-platform-backend/internal/admin"
 	"content-platform-backend/internal/auth"
+	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/credits"
@@ -106,12 +107,9 @@ func main() {
 		}
 		if code == http.StatusInternalServerError {
 			log.Printf("[HTTP] Internal error: %v", err)
-			msg = "Internal server error"
+			msg = http.StatusText(code)
 		}
-		_ = c.JSON(code, map[string]interface{}{
-			"error":   http.StatusText(code),
-			"message": msg,
-		})
+		_ = c.JSON(code, common.HTTPRecoverError(code, msg))
 	}
 
 	// ── Services ─────────────────────────────────────────────────────────
@@ -295,7 +293,10 @@ func main() {
 
 	// ── Health check ─────────────────────────────────────────────────────
 	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"status":  "ok",
+			"message": "Service is running.",
+		})
 	})
 
 	// ── Graceful shutdown ────────────────────────────────────────────────

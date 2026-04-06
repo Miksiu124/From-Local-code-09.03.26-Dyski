@@ -61,10 +61,10 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return common.Unauthorized(c)
 	}
 	if !uuidOK {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid purchase ID format"})
+		return common.JSONError(c, http.StatusBadRequest, "INVALID_PURCHASE_ID", "Purchase ID is not valid.")
 	}
 
 	// Verify purchase belongs to user and is PENDING BLIK
@@ -74,13 +74,13 @@ func (h *Handler) BlikWebSocket(c echo.Context) error {
 		WHERE id = $1 AND user_id = $2
 	`, purchaseID, userID).Scan(&status, &paymentMethod)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Purchase not found"})
+		return common.JSONError(c, http.StatusNotFound, "PURCHASE_NOT_FOUND", "No purchase matches this link.")
 	}
 	if paymentMethod != "BLIK" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Not a BLIK purchase"})
+		return common.JSONError(c, http.StatusBadRequest, "NOT_BLIK_PURCHASE", "This purchase is not using BLIK.")
 	}
 	if status != "PENDING" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Purchase is not pending"})
+		return common.JSONError(c, http.StatusBadRequest, "PURCHASE_NOT_PENDING", "This purchase is no longer pending.")
 	}
 
 	upgrader := h.newUpgrader()

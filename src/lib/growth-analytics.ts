@@ -138,15 +138,37 @@ export function trackSignupClientFailed(field: string, extra: GrowthProps = {}):
   });
 }
 
-export function trackSignupFailed(httpStatus: number, message: string, extra: GrowthProps = {}): void {
+/**
+ * Klasyfikuje błąd rejestracji po HTTP i treści (auth/handler Turnstile + walidacja).
+ * Nie używa ogólnego słowa "verification" — unikamy mylenia Turnstile z weryfikacją e-mail.
+ */
+export function classifySignupFailureReason(httpStatus: number, message: string): string {
   const m = (message || "").toLowerCase();
-  let reason = "unknown";
-  if (httpStatus === 0) reason = "network";
-  else if (httpStatus === 429) reason = "rate_limited";
-  else if (m.includes("already") || m.includes("exists") || m.includes("registered")) reason = "email_taken";
-  else if (m.includes("captcha") || m.includes("turnstile") || m.includes("verification")) reason = "captcha";
-  else if (httpStatus === 400) reason = "validation";
-  else if (httpStatus === 401 || httpStatus === 403) reason = "auth_error";
+  if (httpStatus === 0) return "network";
+  if (httpStatus === 429) return "rate_limited";
+  if (
+    m.includes("try a different email") ||
+    m.includes("different email or log") ||
+    m.includes("email already") ||
+    m.includes("already exists") ||
+    m.includes("already registered") ||
+    m.includes("email is taken")
+  ) {
+    return "email_taken";
+  }
+  if (m.includes("contact support")) return "turnstile_misconfigured";
+  if (m.includes("verification expired")) return "turnstile_expired";
+  if (m.includes("verification failed") && m.includes("complete the challenge")) return "turnstile_verify_failed";
+  if (m.includes("complete the challenge again")) return "turnstile_expired";
+  if (m.includes("turnstile")) return "turnstile_other";
+  if (m.includes("captcha")) return "captcha";
+  if (httpStatus === 400) return "validation";
+  if (httpStatus === 401 || httpStatus === 403) return "auth_error";
+  return "unknown";
+}
+
+export function trackSignupFailed(httpStatus: number, message: string, extra: GrowthProps = {}): void {
+  const reason = classifySignupFailureReason(httpStatus, message);
   emitGrowthEvent(GROWTH.SIGNUP_FAILED, {
     surface: "register",
     http_status: httpStatus,

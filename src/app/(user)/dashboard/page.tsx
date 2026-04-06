@@ -171,7 +171,7 @@ export default function DashboardPage() {
         setNameStatus({ type: "success", message: "Nickname updated" });
         window.dispatchEvent(new CustomEvent("auth-change"));
       } else {
-        setNameStatus({ type: "error", message: data.error || "Failed to update" });
+        setNameStatus({ type: "error", message: data.message || data.error || "Failed to update" });
       }
     } catch {
       setNameStatus({ type: "error", message: "Network error" });
@@ -197,7 +197,7 @@ export default function DashboardPage() {
         setEmailPassword("");
         window.dispatchEvent(new CustomEvent("auth-change"));
       } else {
-        setEmailStatus({ type: "error", message: data.error || "Failed to update" });
+        setEmailStatus({ type: "error", message: data.message || data.error || "Failed to update" });
       }
     } catch {
       setEmailStatus({ type: "error", message: "Network error" });
@@ -229,7 +229,7 @@ export default function DashboardPage() {
         setNewPassword("");
         setConfirmPassword("");
       } else {
-        setPasswordStatus({ type: "error", message: data.error || "Failed to update" });
+        setPasswordStatus({ type: "error", message: data.message || data.error || "Failed to update" });
       }
     } catch {
       setPasswordStatus({ type: "error", message: "Network error" });

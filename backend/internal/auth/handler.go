@@ -313,7 +313,7 @@ func (h *Handler) Login(c echo.Context) error {
 			return common.JSONError(c, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Please verify your email before signing in.")
 		}
 		security.Emit("auth.login.failed", ip, "/api/auth/login", map[string]interface{}{"email_hash": security.HashEmail(req.Email)})
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		return common.InvalidCredentials(c)
 	}
 	h.service.StoreSessionIP(c.Request().Context(), user.ID, ip, sessionTTLSecs)
 

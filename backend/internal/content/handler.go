@@ -456,7 +456,8 @@ func (h *Handler) Segment(c echo.Context) error {
 	}
 
 	if !ValidateStreamingToken(h.cfg.StreamingTokenSecret, token, userID, contentItemID, filename) {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Invalid or expired token"})
+		return common.JSONError(c, http.StatusForbidden, "STREAMING_TOKEN_INVALID",
+			"This playback link expired or is invalid. Reload the page and try again.")
 	}
 
 	var hlsFolderPath *string

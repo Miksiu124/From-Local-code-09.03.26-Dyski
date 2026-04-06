@@ -403,6 +403,7 @@
     "growthEventsPrev": "Previous",
     "growthEventsNext": "Next",
     "growthFunnelDayNoActivity": "No events",
+    "growthFunnelReasonColumn": "Reason (auth)",
     "growthFunnelDrillHint": "Click a metric tile or event label to narrow the list below. Click a user ID to open their profile in Users.",
     "growthEventsFilterUserId": "User UUID (optional)",
     "growthFunnelActiveFilters": "Filters:",

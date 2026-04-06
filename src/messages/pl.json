@@ -403,6 +403,7 @@
     "growthEventsPrev": "Wstecz",
     "growthEventsNext": "Dalej",
     "growthFunnelDayNoActivity": "Brak zdarzeń",
+    "growthFunnelReasonColumn": "Powód (auth)",
     "growthFunnelDrillHint": "Kliknij kafelek lub etykietę zdarzenia, aby zawęzić listę poniżej. Klik ID użytkownika otwiera profil w Użytkownicy.",
     "growthEventsFilterUserId": "UUID użytkownika (opcjonalnie)",
     "growthFunnelActiveFilters": "Filtry:",

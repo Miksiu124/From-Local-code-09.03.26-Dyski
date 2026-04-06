@@ -224,6 +224,30 @@ function DayCountsCell({
   );
 }
 
+/** Skrót props.reason dla auth — czytelne porównanie proporcji w tabeli. */
+function funnelFailureReason(ev: GrowthEventRow): string | null {
+  const p = ev.props;
+  if (ev.eventName === "login_failed") {
+    if (typeof p.reason === "string") {
+      const http = typeof p.http_status === "number" ? ` ·${p.http_status}` : "";
+      return `${p.reason}${http}`;
+    }
+    return null;
+  }
+  if (ev.eventName === "signup_failed") {
+    const parts: string[] = [];
+    if (typeof p.reason === "string") parts.push(p.reason);
+    if (p.reason === "client_validation" && typeof p.field === "string") {
+      parts.push(`field:${p.field}`);
+    }
+    if (typeof p.http_status === "number" && p.http_status > 0) {
+      parts.push(`http:${p.http_status}`);
+    }
+    return parts.length ? parts.join(" ") : null;
+  }
+  return null;
+}
+
 function PropsCell({
   props,
   t,
@@ -707,6 +731,7 @@ function FunnelPageContent() {
                     <tr className="border-b border-border bg-muted/40">
                       <th className="text-left py-3 px-4 font-medium whitespace-nowrap">{t("growthEventTime")}</th>
                       <th className="text-left py-3 px-4 font-medium">{t("growthEventName")}</th>
+                      <th className="text-left py-3 px-4 font-medium min-w-[9rem] max-w-[14rem]">{t("growthFunnelReasonColumn")}</th>
                       <th className="text-left py-3 px-4 font-medium min-w-[120px]">{t("growthEventUserId")}</th>
                       <th className="text-left py-3 px-4 font-medium min-w-[220px]">{t("growthEventPropsShort")}</th>
                     </tr>
@@ -714,6 +739,7 @@ function FunnelPageContent() {
                   <tbody>
                     {events.map((ev) => {
                       const tone = eventTone(ev.eventName);
+                      const reasonLine = funnelFailureReason(ev);
                       return (
                         <tr key={ev.id} className="border-b border-border/50 hover:bg-muted/25 transition-colors align-top">
                           <td className="py-3 px-4 text-muted-foreground whitespace-nowrap text-xs align-top">
@@ -732,6 +758,18 @@ function FunnelPageContent() {
                             >
                               {ev.eventName}
                             </button>
+                          </td>
+                          <td className="py-3 px-4 align-top max-w-[14rem]">
+                            {reasonLine ? (
+                              <span
+                                className="inline-block rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-2 py-1 font-mono text-[10px] leading-snug text-amber-100/95 break-all"
+                                title={reasonLine}
+                              >
+                                {reasonLine}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground/70">—</span>
+                            )}
                           </td>
                           <td className="py-3 px-4 align-top max-w-[200px]">
                             {ev.userId ? (
