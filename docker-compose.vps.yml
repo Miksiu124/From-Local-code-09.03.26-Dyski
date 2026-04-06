@@ -29,14 +29,14 @@ services:
       - ./nginx/certs/security:/etc/nginx/certs/security:ro
 
   # ── PostgreSQL — codzienne kopie (pg_dump, rotacja daily/weekly/monthly) ──
-  # Pierwszy start: jeśli logi mówią o „insufficient permissions” na BACKUP_DIR, na hoście:
-  #   docker run --rm -v <projekt>_postgres_backups:/backups alpine chown -R 70:70 /backups
-  # (UID 70 = postgres w obrazie Alpine — sprawdź: docker run --rm prodrigestivill/postgres-backup-local:18 id -u postgres)
+  # Domyślnie obraz chce user postgres — na named volume często brak zapisu (UID ≠ właściciel wolumenu).
+  # Root w kontenerze = zapis do /backups; sieć nadal wewnętrzna. Alternatywa: chown wolumenu do UID z:
+  #   docker run --rm --entrypoint "" prodrigestivill/postgres-backup-local:18 id postgres
   postgres-backup:
     image: prodrigestivill/postgres-backup-local:18
     container_name: content-postgres-backup
     restart: unless-stopped
-    user: postgres:postgres
+    user: "0:0"
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
