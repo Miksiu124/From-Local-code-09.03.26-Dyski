@@ -733,8 +733,16 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 		customLinkID = strings.TrimSpace(cookie.Value)
 	}
 
-	// Find or create user
-	token, user, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID)
+	refCode := ""
+	if cookie, err := c.Cookie("ref_code"); err == nil && cookie.Value != "" {
+		refCode = strings.TrimSpace(cookie.Value)
+	}
+	if refCode == "" {
+		refCode = strings.TrimSpace(c.QueryParam("ref"))
+	}
+
+	// Find or create user (referral row only when account is newly created — same as email/password register)
+	token, user, _, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID, refCode, c.RealIP())
 	if err != nil {
 		log.Printf("[Discord] FindOrCreate failed: %v", err)
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")

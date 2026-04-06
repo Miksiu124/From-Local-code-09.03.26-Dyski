@@ -64,6 +64,7 @@ const GROUP_ENGAGEMENT = [
   "referral_prompt_shown",
   "referral_prompt_dismissed",
   "referral_prompt_cta",
+  "referral_panel_viewed",
 ] as const;
 
 const GROUP_RISK = [

@@ -263,6 +263,11 @@ export function trackReferralPromptCta(
   emitGrowthEvent(GROWTH.REFERRAL_PROMPT_CTA, { surface, ...extra });
 }
 
+/** Wejście na /referral po pomyślnym wczytaniu danych (raz na mount). */
+export function trackReferralPanelViewed(extra: GrowthProps = {}): void {
+  emitGrowthEvent(GROWTH.REFERRAL_PANEL_VIEWED, { surface: "referral_page", ...extra });
+}
+
 /** @deprecated użyj trackReferralPromptShown / Dismissed / Cta */
 export function trackReferralProgramNudge(
   surface: "first_purchase_success" | "periodic_banner" | "promo_modal",

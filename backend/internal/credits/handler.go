@@ -263,6 +263,33 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	var fromCustomLink bool
+	var customLinkSlug *string
+	var fromUserReferral bool
+	var effectiveLinkID *string
+	_ = h.db.QueryRow(ctx, `
+		SELECT COALESCE(cp.custom_link_id, u.custom_link_id)
+		FROM credit_purchases cp JOIN users u ON u.id = cp.user_id WHERE cp.id = $1
+	`, purchaseID).Scan(&effectiveLinkID)
+	if effectiveLinkID != nil && *effectiveLinkID != "" {
+		fromCustomLink = true
+		_ = h.db.QueryRow(ctx, `SELECT slug FROM custom_links WHERE id = $1`, *effectiveLinkID).Scan(&customLinkSlug)
+	}
+	_ = h.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM referrals WHERE referee_id = $1)`, userID).Scan(&fromUserReferral)
+
+	var referralReferrer interface{}
+	if fromUserReferral {
+		var rid, remail string
+		var rname *string
+		if err := h.db.QueryRow(ctx, `
+			SELECT u.id, u.email, u.name
+			FROM referrals r JOIN users u ON u.id = r.referrer_id
+			WHERE r.referee_id = $1
+		`, userID).Scan(&rid, &remail, &rname); err == nil && rid != "" {
+			referralReferrer = map[string]interface{}{"id": rid, "email": remail, "name": rname}
+		}
+	}
+
 	// Get crypto wallet if needed
 	var walletAddress *string
 	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
@@ -344,7 +371,11 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"status":          "PENDING",
 		"expirationTime":  expirationTime,
 		"createdAt":       time.Now().UTC().Format(time.RFC3339),
-		"user":            map[string]interface{}{"email": discordInfo.UserEmail, "name": discordInfo.UserName},
+		"fromCustomLink":   fromCustomLink,
+		"customLinkSlug":   customLinkSlug,
+		"fromUserReferral": fromUserReferral,
+		"referralReferrer": referralReferrer,
+		"user":             map[string]interface{}{"email": discordInfo.UserEmail, "name": discordInfo.UserName},
 		"creditPackage":   map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
 	})
 	_ = h.redis.Publish(ctx, "admin:purchases", string(adminPayload))

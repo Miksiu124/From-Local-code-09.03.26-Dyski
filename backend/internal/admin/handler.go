@@ -107,10 +107,17 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			   cp.payment_proof_url, cp.admin_notes, cp.retry_count,
 			   cp.expiration_time::text, cp.created_at::text, cp.updated_at::text,
 			   u.id AS user_id, u.email, u.name,
-			   pkg.name AS pkg_name, pkg.credits AS pkg_credits, pkg.price AS pkg_price
+			   pkg.name AS pkg_name, pkg.credits AS pkg_credits, pkg.price AS pkg_price,
+			   COALESCE(cp.custom_link_id, u.custom_link_id)::text AS effective_custom_link_id,
+			   cl_eff.slug,
+			   (r.id IS NOT NULL) AS from_user_referral,
+			   referrer.id::text AS ref_referrer_id, referrer.email AS ref_referrer_email, referrer.name AS ref_referrer_name
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
 		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
+		LEFT JOIN custom_links cl_eff ON cl_eff.id = COALESCE(cp.custom_link_id, u.custom_link_id)
+		LEFT JOIN referrals r ON r.referee_id = u.id
+		LEFT JOIN users referrer ON referrer.id = r.referrer_id
 	`
 	args := []interface{}{}
 	argIdx := 1
@@ -146,6 +153,10 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			pkgName                  string
 			pkgCredits               int
 			pkgPrice                 float64
+			effectiveCustomLinkID, customSlug *string
+			fromUserReferral         bool
+			refReferrerID, refReferrerEmail *string
+			refReferrerName          *string
 		)
 
 		if err := rows.Scan(&id, &credits, &amount, &paymentMethod, &txCode,
@@ -153,11 +164,25 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			&proofUrl, &adminNotes, &retryCount,
 			&expiration, &created, &upd,
 			&uid, &email, &uname,
-			&pkgName, &pkgCredits, &pkgPrice); err != nil {
+			&pkgName, &pkgCredits, &pkgPrice,
+			&effectiveCustomLinkID, &customSlug, &fromUserReferral,
+			&refReferrerID, &refReferrerEmail, &refReferrerName); err != nil {
 			continue
 		}
 
 		creditsInt, _ := strconv.Atoi(credits)
+		fromCustomLink := effectiveCustomLinkID != nil && *effectiveCustomLinkID != ""
+		var referralReferrer interface{}
+		if fromUserReferral && refReferrerID != nil && *refReferrerID != "" {
+			rr := map[string]interface{}{"id": *refReferrerID}
+			if refReferrerEmail != nil {
+				rr["email"] = *refReferrerEmail
+			} else {
+				rr["email"] = ""
+			}
+			rr["name"] = refReferrerName
+			referralReferrer = rr
+		}
 		purchases = append(purchases, map[string]interface{}{
 			"id": id, "credits": creditsInt, "amount": amount,
 			"paymentMethod": paymentMethod, "transactionCode": txCode,
@@ -165,8 +190,12 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			"status": status, "paymentProofUrl": proofUrl, "adminNotes": adminNotes,
 			"retryCount": retryCount, "expirationTime": expiration,
 			"createdAt": created, "updatedAt": upd,
-			"user":          map[string]interface{}{"id": uid, "email": email, "name": uname},
-			"creditPackage": map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
+			"fromCustomLink":   fromCustomLink,
+			"customLinkSlug":   customSlug,
+			"fromUserReferral": fromUserReferral,
+			"referralReferrer": referralReferrer,
+			"user":             map[string]interface{}{"id": uid, "email": email, "name": uname},
+			"creditPackage":    map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
 		})
 	}
 	if purchases == nil {

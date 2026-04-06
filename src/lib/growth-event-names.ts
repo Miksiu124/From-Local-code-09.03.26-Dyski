@@ -49,6 +49,7 @@ export const GROWTH = {
   REFERRAL_PROMPT_SHOWN: "referral_prompt_shown",
   REFERRAL_PROMPT_DISMISSED: "referral_prompt_dismissed",
   REFERRAL_PROMPT_CTA: "referral_prompt_cta",
+  REFERRAL_PANEL_VIEWED: "referral_panel_viewed",
 
   // Inne
   FAVORITE_TOGGLED: "favorite_toggled",

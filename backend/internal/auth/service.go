@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -92,23 +93,34 @@ func (s *Service) Register(ctx context.Context, name, email, password, refCode, 
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if refCode != "" {
-		// Anti-gaming: reject if referrer and referee have same IP (same person)
-		if s.redis != nil && refereeIP != "" {
-			var referrerID string
-			if err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE referral_code = $1 AND id != $2`, strings.TrimSpace(strings.ToUpper(refCode)), userID).Scan(&referrerID); err == nil {
-				referrerIP, _ := s.redis.Get(ctx, fmt.Sprintf("session:ip:%s", referrerID)).Result()
-				if referrerIP != "" && referrerIP == refereeIP {
-					// Same IP = likely same person; skip referral
-					refCode = ""
-				}
+	if err := referral.EnsureReferralCodeForUser(ctx, s.db, userID); err != nil {
+		log.Printf("[Referral] EnsureReferralCodeForUser failed user=%s: %v", userID, err)
+	}
+	s.applyReferralAfterUserCreate(ctx, userID, refCode, refereeIP)
+	return nil
+}
+
+// applyReferralAfterUserCreate links a new account to a referrer when refCode is valid and anti-gaming passes.
+func (s *Service) applyReferralAfterUserCreate(ctx context.Context, newUserID, refCode, refereeIP string) {
+	refCode = strings.TrimSpace(refCode)
+	if refCode == "" {
+		return
+	}
+	rc := strings.TrimSpace(strings.ToUpper(refCode))
+	// Anti-gaming: reject if referrer and referee have same IP (same person)
+	if s.redis != nil && refereeIP != "" {
+		var referrerID string
+		if err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE referral_code = $1 AND id != $2`, rc, newUserID).Scan(&referrerID); err == nil {
+			referrerIP, _ := s.redis.Get(ctx, fmt.Sprintf("session:ip:%s", referrerID)).Result()
+			if referrerIP != "" && referrerIP == refereeIP {
+				log.Printf("[Referral] Skipped attribution (referrer and referee same IP): referee=%s referrer=%s", newUserID, referrerID)
+				return
 			}
 		}
-		if refCode != "" {
-			_ = referral.SaveReferralFromCode(ctx, s.db, userID, refCode)
-		}
 	}
-	return nil
+	if err := referral.SaveReferralFromCode(ctx, s.db, newUserID, refCode); err != nil {
+		log.Printf("[Referral] SaveReferralFromCode failed referee=%s ref=%s: %v", newUserID, rc, err)
+	}
 }
 
 // Login validates credentials and returns a JWT + Redis session TTL in seconds (for cookie MaxAge).
@@ -277,9 +289,11 @@ func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) (s
 	return token, nil
 }
 
-// FindOrCreateDiscordUser links a Discord account to an existing user or creates a new one
-func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar, customLinkID string) (string, *UserRow, error) {
+// FindOrCreateDiscordUser links a Discord account to an existing user or creates a new one.
+// createdNew is true only when a new row was inserted (not when linking Discord to an existing account).
+func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar, customLinkID, refCode, refereeIP string) (string, *UserRow, bool, error) {
 	var user UserRow
+	createdNew := false
 
 	// Try to find existing user by discord_id
 	err := s.db.QueryRow(ctx, `
@@ -329,8 +343,9 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 				&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified,
 			)
 			if err != nil {
-				return "", nil, fmt.Errorf("failed to create discord user: %w", err)
+				return "", nil, false, fmt.Errorf("failed to create discord user: %w", err)
 			}
+			createdNew = true
 		} else {
 			// Link discord_id to existing user; Discord verifies email
 			_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1, email_verified = true WHERE id = $2`, discordID, user.ID)
@@ -338,8 +353,15 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 		}
 	}
 
+	if createdNew {
+		if err := referral.EnsureReferralCodeForUser(ctx, s.db, user.ID); err != nil {
+			log.Printf("[Referral] EnsureReferralCodeForUser failed user=%s: %v", user.ID, err)
+		}
+		s.applyReferralAfterUserCreate(ctx, user.ID, refCode, refereeIP)
+	}
+
 	if user.IsBanned {
-		return "", nil, fmt.Errorf("account suspended")
+		return "", nil, false, fmt.Errorf("account suspended")
 	}
 
 	// Update last login
@@ -353,13 +375,13 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 	sessionID := generateSessionID()
 	token, err := s.generateJWT(user.ID, user.Email, role, sessionID, s.cfg.JWTExpirySecs)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate token: %w", err)
+		return "", nil, false, fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	sessionKey := fmt.Sprintf("session:%s", user.ID)
 	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
 
-	return token, &user, nil
+	return token, &user, createdNew, nil
 }
 
 // CreateEmailVerificationToken creates a token for email verification (Redis TTL from config).

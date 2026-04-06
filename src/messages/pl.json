@@ -279,7 +279,12 @@
     "modalCopyLink": "Kopiuj link",
     "modalCopied": "Skopiowano",
     "modalLater": "Później",
-    "modalReferralPage": "Strona poleceń"
+    "modalReferralPage": "Strona poleceń",
+    "loadError": "Nie udało się wczytać danych poleceń. Sprawdź połączenie i spróbuj ponownie.",
+    "retry": "Spróbuj ponownie",
+    "legacyLinkTitle": "Link alternatywny (?ref=)",
+    "legacyLinkDesc": "Dla maili lub reklam, które lepiej obsługują ten format. Kliknięcia mogą być liczone inaczej niż przy głównym linku.",
+    "copyLegacy": "Kopiuj alternatywny"
   },
   "dashboard": {
     "title": "Panel",
@@ -430,6 +435,13 @@
     "proofAttached": "Dowód załączony",
     "noProof": "Brak dowodu",
     "paymentProof": "Dowód płatności",
+    "purchaseSource": "Źródło",
+    "purchaseRefLink": "Link ref",
+    "purchaseFromRefLink": "Własny link /l/… (kampania)",
+    "purchaseFromUserReferral": "Polecenie znajomego (/r/… lub ?ref=)",
+    "referralReferrerHeading": "Polecający",
+    "referralOpenInAdmin": "Profil w panelu użytkowników",
+    "purchaseNotFromRefLink": "Bez /l/ i bez polecenia użytkownika",
     "export": "Eksportuj",
     "pending": "Oczekujące",
     "approved": "Zatwierdzone",

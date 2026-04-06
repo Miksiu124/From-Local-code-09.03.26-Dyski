@@ -213,6 +213,18 @@ func (c *Config) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}
+
+	// Cloudflare R2 S3 API: Access Key ID is always 32 chars; Secret is 64 hex. Swapping them yields:
+	// InvalidArgument: Credential access key has length 64, should be 32
+	ak := strings.TrimSpace(c.R2AccessKeyID)
+	sk := strings.TrimSpace(c.R2SecretAccessKey)
+	if len(ak) != 32 {
+		return fmt.Errorf("R2_ACCESS_KEY_ID must be exactly 32 characters (Cloudflare R2); got length %d — if your value is 64 characters, that is the Secret key: put it in R2_SECRET_ACCESS_KEY and paste the 32-char Access Key ID from R2 → Manage API tokens → Create API token", len(ak))
+	}
+	if len(sk) != 64 {
+		return fmt.Errorf("R2_SECRET_ACCESS_KEY must be exactly 64 hex characters (Cloudflare R2); got length %d — if your value is 32 characters, you may have swapped it with R2_ACCESS_KEY_ID", len(sk))
+	}
+
 	if len(c.JWTSecret) < 32 {
 		return errors.New("JWT_SECRET must be at least 32 characters")
 	}

@@ -279,7 +279,12 @@
     "modalCopyLink": "Copy link",
     "modalCopied": "Copied",
     "modalLater": "Later",
-    "modalReferralPage": "Referral page"
+    "modalReferralPage": "Referral page",
+    "loadError": "Could not load referral data. Check your connection and try again.",
+    "retry": "Retry",
+    "legacyLinkTitle": "Alternative link (?ref=)",
+    "legacyLinkDesc": "Some email clients or ad platforms work better with this format. Clicks may not be tracked the same way as the main link.",
+    "copyLegacy": "Copy alternative"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -430,6 +435,13 @@
     "proofAttached": "Proof attached",
     "noProof": "No proof",
     "paymentProof": "Payment Proof",
+    "purchaseSource": "Source",
+    "purchaseRefLink": "Ref link",
+    "purchaseFromRefLink": "Custom /l/… link (campaign)",
+    "purchaseFromUserReferral": "User referral (/r/… or ?ref=)",
+    "referralReferrerHeading": "Referrer",
+    "referralOpenInAdmin": "Open in Users admin",
+    "purchaseNotFromRefLink": "No /l/ link or user referral",
     "export": "Export",
     "pending": "Pending",
     "approved": "Approved",
