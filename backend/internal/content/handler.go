@@ -187,6 +187,50 @@ func playlistObjectCandidates(filename, effectiveFolder string, hasEffectiveFold
 	return keys
 }
 
+func appendUniqueR2Key(slice []string, key string) []string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return slice
+	}
+	for _, x := range slice {
+		if x == key {
+			return slice
+		}
+	}
+	return append(slice, key)
+}
+
+// m3u8KeysInFolderForUniqueID lists R2 under folder and returns every .m3u8 path that
+// parseVideoM3U8Key associates with uniqueID (e.g. nested master-720p.m3u8 not covered by static names).
+func (h *Handler) m3u8KeysInFolderForUniqueID(ctx context.Context, folder, uniqueID string) []string {
+	folder = strings.TrimSuffix(strings.TrimSpace(folder), "/")
+	uniqueID = strings.TrimSpace(uniqueID)
+	if folder == "" || uniqueID == "" {
+		return nil
+	}
+	objects, err := h.r2.ListObjects(ctx, folder+"/")
+	if err != nil {
+		if IsR2AccessDenied(err) {
+			log.Printf("[Playlist] ListObjects AccessDenied for folder %q (video %s)", folder, uniqueID)
+		} else {
+			log.Printf("[Playlist] ListObjects %q: %v", folder, err)
+		}
+		return nil
+	}
+	var keys []string
+	for _, obj := range objects {
+		uid, _, ok := parseVideoM3U8Key(obj.Key)
+		if !ok || uid != uniqueID {
+			continue
+		}
+		keys = append(keys, obj.Key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return playlistImportPriority(path.Base(keys[i])) > playlistImportPriority(path.Base(keys[j]))
+	})
+	return keys
+}
+
 type Handler struct {
 	db    *pgxpool.Pool
 	r2    *R2Client
@@ -556,9 +600,10 @@ func (h *Handler) Playlist(c echo.Context) error {
 	}
 
 	var hlsMasterPath, hlsFolderPath *string
+	var videoUniqueID string
 	err = h.db.QueryRow(ctx, `
-		SELECT hls_master_path, hls_folder_path FROM content_items WHERE id = $1
-	`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath)
+		SELECT hls_master_path, hls_folder_path, unique_id FROM content_items WHERE id = $1
+	`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID)
 	if err != nil {
 		return common.NotFound(c, "Content not found")
 	}
@@ -600,12 +645,17 @@ func (h *Handler) Playlist(c echo.Context) error {
 
 		if playlistContent == "" {
 			candidates := playlistObjectCandidates(filename, effectiveFolder, hasEffectiveFolder, hlsMasterPath)
+			if filename == "master.m3u8" && hasEffectiveFolder && strings.TrimSpace(videoUniqueID) != "" {
+				for _, k := range h.m3u8KeysInFolderForUniqueID(ctx, effectiveFolder, videoUniqueID) {
+					candidates = appendUniqueR2Key(candidates, k)
+				}
+			}
 			if len(candidates) == 0 {
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `
-						SELECT hls_master_path, hls_folder_path FROM content_items WHERE id = $1
-					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath)
+						SELECT hls_master_path, hls_folder_path, unique_id FROM content_items WHERE id = $1
+					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID)
 					continue
 				}
 				return common.NotFound(c, "Playlist not found")
@@ -633,8 +683,8 @@ func (h *Handler) Playlist(c echo.Context) error {
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `
-						SELECT hls_master_path, hls_folder_path FROM content_items WHERE id = $1
-					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath)
+						SELECT hls_master_path, hls_folder_path, unique_id FROM content_items WHERE id = $1
+					`, contentItemID).Scan(&hlsMasterPath, &hlsFolderPath, &videoUniqueID)
 					continue
 				}
 				return common.NotFound(c, "Playlist not found in storage")

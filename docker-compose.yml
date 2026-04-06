@@ -53,6 +53,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        # Baked at build time; use https://yourdomain.com in production .env before `docker compose build`
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
         - NEXT_PUBLIC_MEDIA_HOST=${NEXT_PUBLIC_MEDIA_HOST}
     container_name: content-frontend

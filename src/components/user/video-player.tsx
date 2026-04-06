@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { logger } from "@/lib/logger";
 import { trackFirstPlay, trackVideoPlayRepeat } from "@/lib/growth-analytics";
-import { getNextPublicAppOrigin, resolveApiPathForBrowser } from "@/lib/public-app-origin";
+import { getEffectiveAppOrigin, resolveApiPathForBrowser } from "@/lib/public-app-origin";
 
 interface QualityLevel {
   index: number;
@@ -157,7 +157,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
           // (e.g. cdn.example.com): relative /api would hit the CDN and 404 — resolveApiPathForBrowser fixes that.
           // Presigned R2 segment URLs must NOT use credentials.
           const origin = typeof window !== "undefined" ? window.location.origin : "";
-          const appOrigin = getNextPublicAppOrigin();
+          const appOrigin = getEffectiveAppOrigin();
           const playlistUrl = resolveApiPathForBrowser(
             `/api/content/${contentItemId}/playlist/master.m3u8`,
           );
