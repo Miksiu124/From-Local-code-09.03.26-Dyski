@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"net/http"
-
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 
