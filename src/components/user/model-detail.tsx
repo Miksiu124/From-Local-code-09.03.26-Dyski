@@ -7,10 +7,11 @@ import { useTranslations } from "next-intl";
 import {
   Lock, Play, Image, Coins, ArrowLeft, Loader2,
   Heart, Film, Camera, ArrowUpDown, Clock, ShoppingCart, X,
-  ChevronLeft, ChevronRight, Trash2,
+  ChevronLeft, ChevronRight, Trash2, Download,
 } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { resolveApiPathForBrowser } from "@/lib/public-app-origin";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/user/video-player";
@@ -139,6 +140,8 @@ export function ModelDetail({
   const [overlayDeleting, setOverlayDeleting] = useState(false);
   const savedScrollY = useRef(0);
   const f5RedirectCheckedRef = useRef(false);
+  /** Sync mutex for pagination append — IntersectionObserver + scroll can both fire before `loadingMore` state updates; duplicate rows / duplicate React keys corrupt grid layout (giant tile). */
+  const appendLoadLockedRef = useRef(false);
 
   // F5 fallback: when user refreshes while in video overlay, redirect to model folder.
   // Run ONLY on initial mount — if user clicked thumbnail after refresh, nav.type stays "reload"
@@ -447,6 +450,8 @@ export function ModelDetail({
     append = false,
   ) => {
     if (append) {
+      if (appendLoadLockedRef.current) return;
+      appendLoadLockedRef.current = true;
       setLoadingMore(true);
     } else {
       setIsFiltering(true);
@@ -475,7 +480,11 @@ export function ModelDetail({
           thumbnailUrl: i.thumbnailUrl ?? null,
         }));
         if (append) {
-          setFavoritesItems((prev) => [...prev, ...mapped]);
+          setFavoritesItems((prev) => {
+            const seen = new Set(prev.map((i) => i.id));
+            const additions = mapped.filter((i) => !seen.has(i.id));
+            return additions.length ? [...prev, ...additions] : prev;
+          });
         } else {
           setFavoritesItems(mapped);
         }
@@ -488,6 +497,7 @@ export function ModelDetail({
         });
       }
     } finally {
+      if (append) appendLoadLockedRef.current = false;
       setLoadingMore(false);
       setIsFiltering(false);
       setFavoritesLoading(false);
@@ -630,6 +640,8 @@ export function ModelDetail({
     }
 
     if (append) {
+      if (appendLoadLockedRef.current) return;
+      appendLoadLockedRef.current = true;
       setLoadingMore(true);
     } else {
       setIsFiltering(true);
@@ -642,17 +654,23 @@ export function ModelDetail({
       const res = await fetch(`/api/models/${model.folderName}/content?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
+        const rawItems: ContentItem[] = data.items ?? [];
         if (append) {
-          setContentItems((prev) => [...prev, ...data.items]);
-          checkFavorites(data.items.map((i: ContentItem) => i.id));
+          setContentItems((prev) => {
+            const seen = new Set(prev.map((i) => i.id));
+            const additions = rawItems.filter((i) => !seen.has(i.id));
+            return additions.length ? [...prev, ...additions] : prev;
+          });
+          checkFavorites(rawItems.map((i: ContentItem) => i.id));
         } else {
-          setContentItems(data.items);
-          checkFavorites(data.items.map((i: ContentItem) => i.id));
+          setContentItems(rawItems);
+          checkFavorites(rawItems.map((i: ContentItem) => i.id));
         }
         setCursor(data.nextCursor);
         setFilteredTotal(data.totalCount);
       }
     } finally {
+      if (append) appendLoadLockedRef.current = false;
       setLoadingMore(false);
       setIsFiltering(false);
     }
@@ -1103,12 +1121,15 @@ export function ModelDetail({
               <button
                 key={item.id}
                 type="button"
-                className={cn("cursor-pointer group text-left w-full self-start rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : "")}
+                className={cn(
+                  "cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0",
+                  index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : ""
+                )}
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
-                {/* h-0 + % padding: height tied only to column width — avoids aspect-ratio + absolute img blow-ups after resize */}
-                <div className="relative isolate w-full h-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] pb-[133.333333%] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300 [contain:layout_paint]">
+                {/* aspect-ratio keeps tile height stable; h-0+padding+% could mis-measure under fast scroll + grid reflow */}
+                <div className="relative isolate w-full aspect-[3/4] min-h-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300">
                   {hasAccess ? (
                     <>
                       <LazyRetryImage
@@ -1311,6 +1332,20 @@ export function ModelDetail({
               {isAdmin && (
                 <>
                   <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
+                  <a
+                    href={resolveApiPathForBrowser(
+                      `/api/admin/content/${selectedItemId}/source-download`
+                    )}
+                    className={cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "gap-1.5 text-white/70 hover:text-white hover:bg-white/10 no-underline"
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Download className="h-4 w-4 shrink-0" />
+                    <span className="hidden sm:inline">{t("downloadContent")}</span>
+                  </a>
                   <Button
                     variant="ghost"
                     size="sm"

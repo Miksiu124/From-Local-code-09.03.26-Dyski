@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 type R2Client struct {
@@ -101,6 +104,27 @@ func (r *R2Client) GetObject(ctx context.Context, key string) (io.ReadCloser, st
 	return output.Body, contentType, nil
 }
 
+// HeadObject checks whether an object exists at key (nil error = exists).
+func (r *R2Client) HeadObject(ctx context.Context, key string) error {
+	_, err := r.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
+// IsS3NotFound reports a missing object (HTTP 404) from S3/R2.
+func IsS3NotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var re *smithyhttp.ResponseError
+	if errors.As(err, &re) {
+		return re.HTTPStatusCode() == http.StatusNotFound
+	}
+	return false
+}
+
 // PresignGetObject returns a presigned URL for direct R2 access. Client fetches segment
 // from R2, bypassing API — reduces CPU/bandwidth load significantly.
 func (r *R2Client) PresignGetObject(ctx context.Context, key string, expiresIn time.Duration) (string, error) {
@@ -132,6 +156,62 @@ func (r *R2Client) PresignGetObjectDownload(ctx context.Context, key string, dow
 	})
 	if err != nil {
 		return "", fmt.Errorf("presign download %s: %w", key, err)
+	}
+	return presigned.URL, nil
+}
+
+// attachmentFilenameAndMIME derives a safe filename and Content-Type from an R2 object key.
+func attachmentFilenameAndMIME(objectKey string) (filename string, contentType string) {
+	base := path.Base(strings.TrimSpace(objectKey))
+	if base == "" || base == "." {
+		return "download.bin", "application/octet-stream"
+	}
+	var b strings.Builder
+	for _, r := range base {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	fn := b.String()
+	if fn == "" || fn == "." {
+		return "download.bin", "application/octet-stream"
+	}
+	ext := strings.ToLower(path.Ext(fn))
+	ct := "application/octet-stream"
+	switch ext {
+	case ".jpg", ".jpeg":
+		ct = "image/jpeg"
+	case ".png":
+		ct = "image/png"
+	case ".webp":
+		ct = "image/webp"
+	case ".gif":
+		ct = "image/gif"
+	case ".mp4":
+		ct = "video/mp4"
+	case ".mov":
+		ct = "video/quicktime"
+	case ".webm":
+		ct = "video/webm"
+	}
+	return fn, ct
+}
+
+// PresignGetObjectAttachment returns a presigned URL with Content-Disposition: attachment (photos, videos, etc.).
+func (r *R2Client) PresignGetObjectAttachment(ctx context.Context, objectKey string, expiresIn time.Duration) (string, error) {
+	fn, ct := attachmentFilenameAndMIME(objectKey)
+	presignClient := s3.NewPresignClient(r.client)
+	disp := `attachment; filename="` + strings.ReplaceAll(fn, `"`, `'`) + `"`
+	presigned, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket:                     aws.String(r.bucket),
+		Key:                        aws.String(objectKey),
+		ResponseContentDisposition: aws.String(disp),
+		ResponseContentType:        aws.String(ct),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expiresIn
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign attachment %s: %w", objectKey, err)
 	}
 	return presigned.URL, nil
 }

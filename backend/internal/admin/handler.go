@@ -2430,7 +2430,8 @@ LIMIT `
 	return c.JSON(http.StatusOK, resp)
 }
 
-// DownloadContentSource redirects to a presigned R2 URL for source_video_path (admin marketing export).
+// DownloadContentSource redirects to a presigned R2 URL for the best exportable file (admin).
+// Tries the same key order as bulk-zip: VIDEO prefers source MP4, then thumbnail/HLS fallbacks; PHOTO uses thumbnail.
 // GET /api/admin/content/:id/source-download
 func (h *Handler) DownloadContentSource(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -2439,32 +2440,46 @@ func (h *Handler) DownloadContentSource(c echo.Context) error {
 		return common.BadRequest(c, "Invalid content id")
 	}
 
-	var sourcePath *string
+	var ctype string
+	var sourcePath, thumbPath, hlsFolder, hlsMaster *string
 	err := h.db.QueryRow(ctx, `
-		SELECT source_video_path FROM content_items WHERE id = $1 AND is_active = true
-	`, id).Scan(&sourcePath)
+		SELECT ci.content_type::text, ci.source_video_path, ci.thumbnail_path, ci.hls_folder_path, ci.hls_master_path
+		FROM content_items ci WHERE ci.id = $1 AND ci.is_active = true
+	`, id).Scan(&ctype, &sourcePath, &thumbPath, &hlsFolder, &hlsMaster)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return common.NotFound(c, "Content not found")
 		}
 		return common.InternalError(c)
 	}
-	if sourcePath == nil || strings.TrimSpace(*sourcePath) == "" {
+
+	keys := exportKeysForItem(ctype, sourcePath, thumbPath, hlsFolder, hlsMaster)
+	var chosen string
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		herr := h.r2.HeadObject(ctx, k)
+		if herr == nil {
+			chosen = k
+			break
+		}
+		if !content.IsS3NotFound(herr) {
+			log.Printf("[DownloadContentSource] HeadObject %s: %v", k, herr)
+			return common.InternalError(c)
+		}
+	}
+	if chosen == "" {
 		return c.JSON(http.StatusNotFound, map[string]string{
 			"error":   "no_source_file",
-			"message": "No source file (e.g. MP4) is stored for this item — only HLS may be available.",
+			"message": "No downloadable file found for this item in storage.",
 		})
 	}
 
-	key := strings.TrimSpace(*sourcePath)
-	fn := key
-	if i := strings.LastIndex(fn, "/"); i >= 0 && i < len(fn)-1 {
-		fn = fn[i+1:]
-	}
-	// PresignGetObjectDownload sets Content-Disposition: attachment so the browser downloads instead of playing inline.
-	url, err := h.r2.PresignGetObjectDownload(ctx, key, fn, 1*time.Hour)
+	url, err := h.r2.PresignGetObjectAttachment(ctx, chosen, 1*time.Hour)
 	if err != nil {
-		log.Printf("[DownloadContentSource] presign %s: %v", key, err)
+		log.Printf("[DownloadContentSource] presign %s: %v", chosen, err)
 		return common.InternalError(c)
 	}
 	return c.Redirect(http.StatusFound, url)

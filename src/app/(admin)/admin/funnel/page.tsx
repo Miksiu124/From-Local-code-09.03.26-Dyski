@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { FunnelUserIdPreview } from "@/components/admin/funnel-user-id-preview";
+import { FunnelUserJourney, type StepTransitionRow } from "@/components/admin/funnel-user-journey";
 
 type GrowthEventRow = {
   id: string;
@@ -37,7 +38,47 @@ type FunnelSummary = {
   totals: Record<string, number>;
   rates: Record<string, number>;
   byDay: { date: string; counts: Record<string, number> }[];
+  stepTransitions?: unknown;
 };
+
+function parseStepTransitions(raw: unknown): StepTransitionRow[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StepTransitionRow[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const from = typeof o.from === "string" ? o.from : "";
+    const to = typeof o.to === "string" ? o.to : "";
+    if (!from || !to) continue;
+    const usersWithFrom = typeof o.usersWithFrom === "number" ? o.usersWithFrom : 0;
+    const usersWithBoth = typeof o.usersWithBoth === "number" ? o.usersWithBoth : 0;
+    let conversionRate: number | undefined;
+    if (typeof o.conversionRate === "number" && Number.isFinite(o.conversionRate)) {
+      conversionRate = o.conversionRate;
+    }
+    let elapsedSeconds: StepTransitionRow["elapsedSeconds"];
+    const es = o.elapsedSeconds;
+    if (es && typeof es === "object") {
+      const e = es as Record<string, unknown>;
+      const sampleSize = typeof e.sampleSize === "number" ? e.sampleSize : 0;
+      const p25 = typeof e.p25 === "number" ? e.p25 : undefined;
+      const p50 = typeof e.p50 === "number" ? e.p50 : undefined;
+      const p75 = typeof e.p75 === "number" ? e.p75 : undefined;
+      const p90 = typeof e.p90 === "number" ? e.p90 : undefined;
+      if (
+        sampleSize > 0 &&
+        p25 != null &&
+        p50 != null &&
+        p75 != null &&
+        p90 != null
+      ) {
+        elapsedSeconds = { sampleSize, p25, p50, p75, p90 };
+      }
+    }
+    out.push({ from, to, usersWithFrom, usersWithBoth, conversionRate, elapsedSeconds });
+  }
+  return out;
+}
 
 /** Keys shown in aggregate cards (aligned with backend funnel summary). */
 const GROUP_CORE = [
@@ -440,6 +481,8 @@ function FunnelPageContent() {
     return Object.values(summary.totals).reduce((a, b) => a + (typeof b === "number" ? b : 0), 0);
   }, [summary]);
 
+  const stepTransitions = useMemo(() => parseStepTransitions(summary?.stepTransitions), [summary]);
+
   return (
     <div className="space-y-8 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1 pb-8">
       {/* Summary */}
@@ -568,6 +611,10 @@ function FunnelPageContent() {
                   />
                 </div>
               </div>
+
+              {stepTransitions.length > 0 && (
+                <FunnelUserJourney transitions={stepTransitions} onDrillToEvent={drillDownToEvent} t={t} />
+              )}
 
               {summary.byDay && summary.byDay.length > 0 && (
                 <div>

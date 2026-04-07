@@ -49,7 +49,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  output: "standalone",
+  experimental: {
+    // Smaller client bundles: lucide barrel imports → per-icon modules (tree-shaking).
+    optimizePackageImports: ["lucide-react"],
+  },
   images: {
     remotePatterns: [
       {
