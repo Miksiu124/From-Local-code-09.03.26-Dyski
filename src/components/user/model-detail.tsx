@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -146,6 +154,8 @@ export function ModelDetail({
   const f5RedirectCheckedRef = useRef(false);
   /** Sync mutex for pagination append — IntersectionObserver + scroll can both fire before `loadingMore` state updates; duplicate rows / duplicate React keys corrupt grid layout (giant tile). */
   const appendLoadLockedRef = useRef(false);
+  const contentGridRef = useRef<HTMLDivElement>(null);
+  const [folderHeroScrolled, setFolderHeroScrolled] = useState(false);
 
   // F5 fallback: when user refreshes while in video overlay, redirect to model folder.
   // Run ONLY on initial mount — if user clicked thumbnail after refresh, nav.type stays "reload"
@@ -1194,12 +1204,89 @@ export function ModelDetail({
     };
   }, [attachSentinelObserver, checkAtBottomAndLoad]);
 
+  // Subtle header response to scroll (Overdrive dir. 2) — global reduced-motion zeros transitions.
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const next = window.scrollY > 56;
+        setFolderHeroScrolled((p) => (p === next ? p : next));
+      });
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Grid tiles: reveal when entering viewport; cap stagger via --reveal-stagger.
+  useEffect(() => {
+    if (showEmptyState) return;
+    let cancelled = false;
+    let disconnectIo: (() => void) | undefined;
+
+    const setup = () => {
+      if (cancelled) return;
+      const root = contentGridRef.current;
+      if (!root) return;
+      const nodes = root.querySelectorAll<HTMLElement>("[data-model-folder-reveal]");
+      if (nodes.length === 0) return;
+
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        nodes.forEach((el) => el.classList.add("model-folder-reveal-visible"));
+        return;
+      }
+
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const el = entry.target as HTMLElement;
+            el.classList.add("model-folder-reveal-visible");
+            io.unobserve(el);
+          }
+        },
+        { root: null, rootMargin: "12% 0px 8% 0px", threshold: [0, 0.04, 0.12] },
+      );
+
+      const vh = window.innerHeight;
+      nodes.forEach((el) => {
+        if (el.classList.contains("model-folder-reveal-visible")) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.top < vh * 1.08 && rect.bottom > -vh * 0.08) {
+          el.classList.add("model-folder-reveal-visible");
+        } else {
+          io.observe(el);
+        }
+      });
+
+      disconnectIo = () => io.disconnect();
+    };
+
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(setup);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+      disconnectIo?.();
+    };
+  }, [showEmptyState, displayItems, activeFilter, activeSort]);
+
   // displayItems and displayTotal are hoisted above (near overlay nav computation)
 
   return (
     <>
       {/* Header */}
-      <div className="mb-6 slide-up">
+      <div
+        className={cn(
+          "mb-6 slide-up transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          folderHeroScrolled && "opacity-[0.9] -translate-y-1",
+        )}
+      >
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
@@ -1299,7 +1386,13 @@ export function ModelDetail({
       )}
 
       {/* Filters + Sort row */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap slide-up relative z-10" style={{ animationDelay: "0.15s" }}>
+      <div
+        className={cn(
+          "flex items-center gap-2 mb-6 flex-wrap slide-up relative z-10 pb-2 -mb-2 transition-[border-color,box-shadow] duration-300",
+          folderHeroScrolled && "border-b border-white/[0.07] shadow-[0_12px_24px_-20px_rgba(0,0,0,0.85)]",
+        )}
+        style={{ animationDelay: "0.15s" }}
+      >
         <Button
           variant={activeFilter === "ALL" ? "default" : "outline"}
           size="sm"
@@ -1411,15 +1504,17 @@ export function ModelDetail({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5 items-start [grid-auto-rows:minmax(0,auto)]">
+          <div
+            ref={contentGridRef}
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5 items-start [grid-auto-rows:minmax(0,auto)]"
+          >
             {displayItems.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                className={cn(
-                  "grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0",
-                  index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : ""
-                )}
+                data-model-folder-reveal
+                style={{ "--reveal-stagger": index % 12 } as CSSProperties}
+                className="model-folder-reveal grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0"
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
