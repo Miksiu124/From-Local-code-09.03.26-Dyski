@@ -354,8 +354,17 @@ export function ModelDetail({
     setSelectedItemId(null);
     setViewItemFallback(null);
     router.replace(buildModelUrl({ view: null }), { scroll: false });
+    const y = savedScrollY.current;
+    const snapScroll = () => {
+      window.scrollTo({ top: y, behavior: "instant" });
+    };
+    // Overlay unmount + scrollbar gutter / DevTools resize can leave the grid mis-measured after one frame.
     requestAnimationFrame(() => {
-      window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
+      snapScroll();
+      requestAnimationFrame(() => {
+        snapScroll();
+        queueMicrotask(snapScroll);
+      });
     });
   }, [exitFullscreen, router, buildModelUrl]);
 
@@ -516,7 +525,16 @@ export function ModelDetail({
           setFavoritesItems((prev) => {
             const seen = new Set(prev.map((i) => i.id));
             const additions = mapped.filter((i) => !seen.has(i.id));
-            return additions.length ? [...prev, ...additions] : prev;
+            if (!additions.length) return prev;
+            const merged = [...prev, ...additions];
+            const deduped: ContentItem[] = [];
+            const ids = new Set<string>();
+            for (const it of merged) {
+              if (ids.has(it.id)) continue;
+              ids.add(it.id);
+              deduped.push(it);
+            }
+            return deduped;
           });
         } else {
           setFavoritesItems(mapped);
@@ -745,7 +763,16 @@ export function ModelDetail({
             setContentItems((prev) => {
               const seen = new Set(prev.map((i) => i.id));
               const additions = page.items.filter((i) => !seen.has(i.id));
-              return additions.length ? [...prev, ...additions] : prev;
+              if (!additions.length) return prev;
+              const merged = [...prev, ...additions];
+              const deduped: ContentItem[] = [];
+              const ids = new Set<string>();
+              for (const it of merged) {
+                if (ids.has(it.id)) continue;
+                ids.add(it.id);
+                deduped.push(it);
+              }
+              return deduped;
             });
             checkFavorites(page.items.map((i: ContentItem) => i.id));
           } else {
@@ -1038,7 +1065,7 @@ export function ModelDetail({
 
   const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
-    if (loadingMore) return;
+    if (loadingMore || appendLoadLockedRef.current) return;
     if (activeFilter === "FAVORITES") {
       if (!favoritesCursor) return;
       loadFavorites(favoritesCursor, true);
@@ -1148,14 +1175,23 @@ export function ModelDetail({
     };
   }, [checkAtBottomAndLoad]);
 
-  // Resize (DevTools dock, window drag): IO can miss intersections; re-attach + bottom check.
+  // Resize (DevTools dock, window drag): IO can miss intersections; re-attach + debounced bottom check
+  // so we don't fire loadMore many times while layout thrashes (giant grid tile / duplicate append).
+  const resizeBottomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const onResize = () => {
       attachSentinelObserver();
-      requestAnimationFrame(() => checkAtBottomAndLoad());
+      if (resizeBottomDebounceRef.current) clearTimeout(resizeBottomDebounceRef.current);
+      resizeBottomDebounceRef.current = setTimeout(() => {
+        resizeBottomDebounceRef.current = null;
+        requestAnimationFrame(() => checkAtBottomAndLoad());
+      }, 120);
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (resizeBottomDebounceRef.current) clearTimeout(resizeBottomDebounceRef.current);
+    };
   }, [attachSentinelObserver, checkAtBottomAndLoad]);
 
   // displayItems and displayTotal are hoisted above (near overlay nav computation)
@@ -1381,14 +1417,14 @@ export function ModelDetail({
                 key={item.id}
                 type="button"
                 className={cn(
-                  "cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0",
+                  "grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0",
                   index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : ""
                 )}
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
-                {/* aspect-ratio keeps tile height stable; h-0+padding+% could mis-measure under fast scroll + grid reflow */}
-                <div className="relative isolate w-full aspect-[3/4] min-h-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300">
+                {/* aspect-ratio + contain: layout isolate each cell from grid reflow glitches (DevTools / overlay close). */}
+                <div className="relative isolate w-full aspect-[3/4] min-h-0 min-w-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300 contain-layout">
                   {hasAccess ? (
                     <>
                       <LazyRetryImage
