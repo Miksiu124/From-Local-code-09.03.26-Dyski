@@ -130,6 +130,8 @@
     "shiftArrowsToNavigate": "Shift + Arrow keys to navigate",
     "arrowsToNavigate": "Arrow keys to navigate",
     "swipeToNavigate": "Swipe left or right to navigate through the gallery",
+    "overlayFolderView": "Folder view",
+    "overlayGalleryStrip": "Thumbnails in this folder",
     "getAccess": "Get Access",
     "deleteContent": "Delete",
     "downloadContent": "Download",

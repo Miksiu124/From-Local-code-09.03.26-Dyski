@@ -130,6 +130,8 @@
     "shiftArrowsToNavigate": "Shift + strzałki do nawigacji",
     "arrowsToNavigate": "Strzałki do nawigacji",
     "swipeToNavigate": "Przesuń w lewo lub prawo, aby poruszać się po galerii",
+    "overlayFolderView": "Widok folderu",
+    "overlayGalleryStrip": "Miniatury w tym folderze",
     "getAccess": "Uzyskaj dostęp",
     "deleteContent": "Usuń",
     "downloadContent": "Pobierz",

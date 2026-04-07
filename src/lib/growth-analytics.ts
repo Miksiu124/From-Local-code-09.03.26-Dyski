@@ -224,7 +224,7 @@ export function trackContentThumbClick(
   });
 }
 
-export type ContentOverlayNavKind = "prev" | "next" | "swipe" | "keyboard" | "load_more";
+export type ContentOverlayNavKind = "prev" | "next" | "swipe" | "keyboard" | "load_more" | "strip";
 
 /** Użytkownik przechodzi na inny content_item w overlay (nie pierwsze otwarcie z siatki). */
 export function trackContentOverlayNav(
