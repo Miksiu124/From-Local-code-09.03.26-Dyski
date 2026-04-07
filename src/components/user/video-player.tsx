@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Download,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { trackFirstPlay, trackVideoPlayRepeat, trackVideoEngagement } from "@/lib/growth-analytics";
 import { getEffectiveAppOrigin, resolveApiPathForBrowser } from "@/lib/public-app-origin";
@@ -34,9 +35,17 @@ interface VideoPlayerProps {
   folderName?: string;
   /** Plik źródłowy MP4 w R2 — pokaż przycisk pobrania (HLS to tylko .m3u8 w przeglądarce) */
   hasSourceMp4?: boolean;
+  /** Pełnoekranowa galeria modelu: większy obszar na desktop, lepsze skalowanie pionowych klipów */
+  galleryOverlay?: boolean;
 }
 
-export function VideoPlayer({ contentItemId, modelId, folderName, hasSourceMp4 }: VideoPlayerProps) {
+export function VideoPlayer({
+  contentItemId,
+  modelId,
+  folderName,
+  hasSourceMp4,
+  galleryOverlay = false,
+}: VideoPlayerProps) {
   const t = useTranslations("videoPlayer");
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -896,7 +905,12 @@ export function VideoPlayer({ contentItemId, modelId, folderName, hasSourceMp4 }
     <div
       ref={containerRef}
       data-video-player
-      className="relative bg-black rounded-xl sm:rounded-2xl overflow-hidden aspect-video group select-none min-w-0 w-full"
+      className={cn(
+        "relative bg-black rounded-xl sm:rounded-2xl overflow-hidden group select-none min-w-0 w-full",
+        galleryOverlay
+          ? "aspect-video max-h-[min(70vh,560px)] lg:aspect-auto lg:max-h-none lg:h-[min(88dvh,980px)] lg:flex lg:items-center lg:justify-center"
+          : "aspect-video",
+      )}
       style={{ touchAction: "manipulation" } as React.CSSProperties}
       onMouseMove={resetHideTimer}
       onMouseLeave={() => { if (playing) setShowControls(false); }}
@@ -907,7 +921,12 @@ export function VideoPlayer({ contentItemId, modelId, folderName, hasSourceMp4 }
     >
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className={cn(
+          "object-contain",
+          galleryOverlay
+            ? "h-full w-full max-lg:max-h-full lg:h-auto lg:w-auto lg:max-h-full lg:max-w-full"
+            : "h-full w-full",
+        )}
         playsInline
         controls={isIOS}
         controlsList="nodownload"

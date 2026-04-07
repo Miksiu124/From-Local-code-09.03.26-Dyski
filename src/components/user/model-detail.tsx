@@ -1528,7 +1528,7 @@ export function ModelDetail({
           }}
         >
           {/* Overlay top bar */}
-          <div className="flex items-center justify-between px-4 py-3 shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 lg:px-6 shrink-0">
             <button
               onClick={closeOverlay}
               className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
@@ -1538,15 +1538,15 @@ export function ModelDetail({
               <span className="sm:hidden">Back</span>
             </button>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 lg:gap-2">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => overlayPrevId && navigateToOverlayItem(overlayPrevId, "prev")}
                 disabled={!overlayPrevId}
-                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
               </Button>
               <Button
                 variant="ghost"
@@ -1559,12 +1559,12 @@ export function ModelDetail({
                   }
                 }}
                 disabled={!overlayNextId && !(cursor || favoritesCursor)}
-                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
                 {!overlayNextId && (cursor || favoritesCursor) && loadingMore ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
                 ) : (
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
                 )}
               </Button>
 
@@ -1577,12 +1577,12 @@ export function ModelDetail({
                   aria-expanded={overlayFolderMenuOpen}
                   aria-haspopup="dialog"
                   aria-label={t("overlayFolderView")}
-                  className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10 shrink-0"
+                  className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10 shrink-0"
                 >
                   {overlayContextLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
                   ) : (
-                    <LayoutGrid className="h-4 w-4" />
+                    <LayoutGrid className="h-4 w-4 lg:h-5 lg:w-5" />
                   )}
                 </Button>
                 {overlayFolderMenuOpen && (
@@ -1697,11 +1697,11 @@ export function ModelDetail({
                 size="sm"
                 onClick={overlayToggleFavorite}
                 disabled={overlayTogglingFav}
-                className="gap-1.5 text-white/70 hover:text-white hover:bg-white/10"
+                className="gap-1.5 text-white/70 hover:text-white hover:bg-white/10 lg:h-10 lg:px-3"
               >
                 <Heart
                   className={cn(
-                    "h-4 w-4 transition-all",
+                    "h-4 w-4 lg:h-5 lg:w-5 transition-all",
                     overlayFavorited ? "fill-red-500 text-red-500 scale-110" : ""
                   )}
                 />
@@ -1719,12 +1719,12 @@ export function ModelDetail({
                     )}
                     className={cn(
                       buttonVariants({ variant: "ghost", size: "sm" }),
-                      "gap-1.5 text-white/70 hover:text-white hover:bg-white/10 no-underline"
+                      "gap-1.5 text-white/70 hover:text-white hover:bg-white/10 no-underline lg:h-10 lg:px-3"
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <Download className="h-4 w-4 shrink-0" />
+                    <Download className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
                     <span className="hidden sm:inline">{t("downloadContent")}</span>
                   </a>
                   <Button
@@ -1732,12 +1732,12 @@ export function ModelDetail({
                     size="sm"
                     onClick={handleDeleteContent}
                     disabled={overlayDeleting}
-                    className="gap-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10"
+                    className="gap-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10 lg:h-10 lg:px-3"
                   >
                     {overlayDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
                     )}
                     <span className="hidden sm:inline">{t("deleteContent")}</span>
                   </Button>
@@ -1750,16 +1750,16 @@ export function ModelDetail({
                 variant="ghost"
                 size="icon"
                 onClick={closeOverlay}
-                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 lg:h-5 lg:w-5" />
               </Button>
             </div>
           </div>
 
           {/* Content area — click on backdrop (outside media) closes overlay */}
           <div
-            className="flex-1 flex items-center justify-center overflow-y-auto overflow-x-hidden px-4 pb-4 cursor-pointer min-w-0 scrollbar-hide"
+            className="flex-1 flex items-center justify-center overflow-y-auto overflow-x-hidden px-3 pb-3 sm:px-4 sm:pb-4 lg:px-6 lg:pb-5 cursor-pointer min-w-0 scrollbar-hide"
             onClick={(e) => {
               const target = e.target as HTMLElement;
               if (target.closest("[data-video-player], img, button")) return;
@@ -1767,7 +1767,7 @@ export function ModelDetail({
             }}
           >
             <div
-              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl cursor-default min-w-0 shrink"
+              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl lg:max-w-7xl xl:max-w-[min(1680px,94vw)] cursor-default min-w-0 shrink"
               onClick={(e) => e.stopPropagation()}
             >
               {selectedItem.contentType === "VIDEO" ? (
@@ -1779,6 +1779,7 @@ export function ModelDetail({
                     contentItemId={selectedItemId}
                     modelId={model.id}
                     folderName={model.folderName}
+                    galleryOverlay
                   />
                 </div>
               ) : (
@@ -1786,7 +1787,7 @@ export function ModelDetail({
                   src={contentThumbnailSrc(selectedItemId, selectedItem.thumbnailUrl)}
                   fallbackSrc={contentThumbnailProxySrc(selectedItemId)}
                   alt=""
-                  className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
+                  className="max-h-[85vh] max-w-full w-auto mx-auto object-contain lg:max-h-[min(90dvh,1020px)]"
                   onContextMenu={(e) => e.preventDefault()}
                   draggable={false}
                   fallback={
@@ -1802,13 +1803,13 @@ export function ModelDetail({
 
           {filmstripSlice.items.length > 0 && (
             <div
-              className="shrink-0 px-2 sm:px-4 pb-2 border-t border-white/[0.06] pt-2"
+              className="shrink-0 px-2 sm:px-4 lg:px-6 pb-2 lg:pb-3 border-t border-white/[0.06] pt-2 lg:pt-3"
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
               role="navigation"
               aria-label={t("overlayGalleryStrip")}
             >
-              <div className="flex gap-1.5 sm:gap-2 overflow-x-auto py-1 scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] snap-x snap-mandatory max-w-full">
+              <div className="flex gap-2 sm:gap-2.5 lg:gap-3 justify-start lg:justify-center overflow-x-auto py-1 lg:py-1.5 scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] snap-x snap-mandatory max-w-full mx-auto">
                 {filmstripSlice.items.map((item, i) => {
                   const active = i === filmstripSlice.activeOffset;
                   return (
@@ -1822,7 +1823,7 @@ export function ModelDetail({
                         }
                       }}
                       className={cn(
-                        "relative shrink-0 snap-center rounded-md overflow-hidden transition-[opacity,box-shadow] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                        "relative shrink-0 snap-center rounded-md lg:rounded-lg overflow-hidden transition-[opacity,box-shadow] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-white/35",
                         active
                           ? "ring-2 ring-primary ring-offset-0 opacity-100"
                           : "opacity-55 hover:opacity-90",
@@ -1832,7 +1833,7 @@ export function ModelDetail({
                         item.contentType === "VIDEO" ? t("video") : t("photo")
                       }
                     >
-                      <div className="h-12 w-[2.6rem] sm:h-14 sm:w-11 bg-black/60">
+                      <div className="h-12 w-[2.6rem] sm:h-16 sm:w-12 lg:h-[5.25rem] lg:w-[4.15rem] xl:h-[5.75rem] xl:w-[4.5rem] bg-black/60">
                         <LazyRetryImage
                           src={contentThumbnailSrc(item.id, item.thumbnailUrl)}
                           fallbackSrc={contentThumbnailProxySrc(item.id)}
@@ -1845,9 +1846,9 @@ export function ModelDetail({
                           fallback={
                             <div className="h-full w-full flex items-center justify-center bg-white/[0.06]">
                               {item.contentType === "VIDEO" ? (
-                                <Play className="h-4 w-4 text-white/25" />
+                                <Play className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
                               ) : (
-                                <Image className="h-4 w-4 text-white/25" />
+                                <Image className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
                               )}
                             </div>
                           }
