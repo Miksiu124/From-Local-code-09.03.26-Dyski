@@ -72,6 +72,9 @@ http {
         http2 on;
         server_name dyskiof.net www.dyskiof.net;
 
+        # Docker DNS — ponowne rozwiązywanie po każdym recreate kontenera (bez tego nginx trzyma stare IP → 502)
+        resolver 127.0.0.11 valid=10s ipv6=off;
+
         # Certyfikaty SSL (Let's Encrypt)
         ssl_certificate     /etc/nginx/certs/fullchain.pem;
         ssl_certificate_key /etc/nginx/certs/privkey.pem;
@@ -104,7 +107,8 @@ http {
         # Bez limit_req/limit_conn: unika 429 przy dużej siatce. Ryzyko: scraping / koszt R2+CPU — łagodź Cloudflare
         # Rate Limiting, WAF, ewentualnie cache na CDN; pozostałe /api/ nadal objęte limitami.
         location ~* ^/api/content/[^/]+/thumbnail(/.*)?$ {
-            proxy_pass http://api:8080;
+            set $upstream_api "api";
+            proxy_pass http://$upstream_api:8080;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -126,7 +130,8 @@ http {
             limit_req zone=req_limit burst=100 nodelay;
             limit_conn conn_limit 20;
 
-            proxy_pass http://api:8080;
+            set $upstream_api "api";
+            proxy_pass http://$upstream_api:8080;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -152,7 +157,8 @@ http {
             limit_req zone=req_limit burst=100 nodelay;
             limit_conn conn_limit 20;
 
-            proxy_pass http://frontend:3000;
+            set $upstream_frontend "frontend";
+            proxy_pass http://$upstream_frontend:3000;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

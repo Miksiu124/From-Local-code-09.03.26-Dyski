@@ -1,23 +1,41 @@
 "use client";
 
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   Lock, Play, Image, Coins, ArrowLeft, Loader2,
   Heart, Film, Camera, ArrowUpDown, Clock, ShoppingCart, X,
-  ChevronLeft, ChevronRight, Trash2,
+  ChevronLeft, ChevronRight, Trash2, Download, LayoutGrid,
 } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { resolveApiPathForBrowser } from "@/lib/public-app-origin";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/user/video-player";
 import { RetryImage } from "@/components/ui/retry-image";
 import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
-import { trackFavoriteToggled, trackModelPageViewed } from "@/lib/growth-analytics";
+import {
+  trackFavoriteToggled,
+  trackModelPageViewed,
+  trackCatalogFilterUsed,
+  trackContentThumbClick,
+  trackContentDetailView,
+  trackContentOverlayNav,
+  type ContentOverlayNavKind,
+} from "@/lib/growth-analytics";
+import { useModelProfileEngagement } from "@/hooks/use-model-profile-engagement";
 
 interface ContentItem {
   id: string;
@@ -29,6 +47,8 @@ interface ContentItem {
 
 type ContentFilter = "ALL" | "VIDEO" | "PHOTO" | "FAVORITES";
 type SortOrder = "newest" | "oldest" | "longest" | "shortest";
+
+const FILMSTRIP_RADIUS = 10;
 
 function formatDuration(seconds: number): string {
   const hrs = Math.floor(seconds / 3600);
@@ -80,6 +100,9 @@ export function ModelDetail({
     trackModelPageViewed(model.id, { folder_name: model.folderName });
   }, [model.id, model.folderName]);
 
+  const { markFavorite: markProfileEngagementFavorite, markContentOpen: markProfileContentOpen } =
+    useModelProfileEngagement(model.id, model.folderName);
+
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [showInsufficientCredits, setShowInsufficientCredits] = useState(false);
@@ -103,6 +126,8 @@ export function ModelDetail({
     ["newest", "oldest", "longest", "shortest"].includes(initialSort) ? initialSort : "newest"
   );
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [overlayFolderMenuOpen, setOverlayFolderMenuOpen] = useState(false);
+  const [overlayContextLoading, setOverlayContextLoading] = useState(false);
   const [filteredTotal, setFilteredTotal] = useState(
     initialFilter === "FAVORITES" ? 0 : totalContentCount
   );
@@ -127,6 +152,10 @@ export function ModelDetail({
   const [overlayDeleting, setOverlayDeleting] = useState(false);
   const savedScrollY = useRef(0);
   const f5RedirectCheckedRef = useRef(false);
+  /** Sync mutex for pagination append — IntersectionObserver + scroll can both fire before `loadingMore` state updates; duplicate rows / duplicate React keys corrupt grid layout (giant tile). */
+  const appendLoadLockedRef = useRef(false);
+  const contentGridRef = useRef<HTMLDivElement>(null);
+  const [folderHeroScrolled, setFolderHeroScrolled] = useState(false);
 
   // F5 fallback: when user refreshes while in video overlay, redirect to model folder.
   // Run ONLY on initial mount — if user clicked thumbnail after refresh, nav.type stays "reload"
@@ -252,6 +281,45 @@ export function ModelDetail({
       ? displayItems[displaySelectedIndex + 1].id
       : null;
 
+  const filmstripSlice = useMemo(() => {
+    if (!selectedItemId) return { items: [] as ContentItem[], activeOffset: 0 };
+    const idx = displayItems.findIndex((i) => i.id === selectedItemId);
+    if (idx < 0) {
+      if (selectedItem) return { items: [selectedItem], activeOffset: 0 };
+      return { items: [] as ContentItem[], activeOffset: 0 };
+    }
+    const start = Math.max(0, idx - FILMSTRIP_RADIUS);
+    const end = Math.min(displayItems.length, idx + FILMSTRIP_RADIUS + 1);
+    return {
+      items: displayItems.slice(start, end),
+      activeOffset: idx - start,
+    };
+  }, [displayItems, selectedItemId, selectedItem]);
+
+  const filmstripActiveRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedItemId || filmstripSlice.items.length === 0) return;
+    const el = filmstripActiveRef.current;
+    if (!el) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ inline: "center", block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  }, [selectedItemId, filmstripSlice.items, filmstripSlice.activeOffset]);
+
+  useEffect(() => {
+    if (!selectedItemId) setOverlayFolderMenuOpen(false);
+  }, [selectedItemId]);
+
+  useEffect(() => {
+    if (!selectedItemId || !selectedItem) return;
+    trackContentDetailView(selectedItemId, {
+      surface: "model_overlay",
+      content_type: selectedItem.contentType,
+      model_id: model.id,
+      folder_name: model.folderName,
+    });
+  }, [selectedItemId, selectedItem, model.id, model.folderName]);
+
   const overlayRef = useRef<HTMLDivElement>(null);
   /** Gate portal until client — avoids SSR/hydration mismatch; useLayoutEffect runs before paint. */
   const [overlayPortalReady, setOverlayPortalReady] = useState(false);
@@ -296,16 +364,36 @@ export function ModelDetail({
     setSelectedItemId(null);
     setViewItemFallback(null);
     router.replace(buildModelUrl({ view: null }), { scroll: false });
+    const y = savedScrollY.current;
+    const snapScroll = () => {
+      window.scrollTo({ top: y, behavior: "instant" });
+    };
+    // Overlay unmount + scrollbar gutter / DevTools resize can leave the grid mis-measured after one frame.
     requestAnimationFrame(() => {
-      window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
+      snapScroll();
+      requestAnimationFrame(() => {
+        snapScroll();
+        queueMicrotask(snapScroll);
+      });
     });
   }, [exitFullscreen, router, buildModelUrl]);
 
-  const navigateToOverlayItem = useCallback((id: string | null) => {
-    setSelectedItemId(id);
-    if (id) setViewItemFallback(null);
-    router.replace(buildModelUrl({ view: id }), { scroll: false });
-  }, [router, buildModelUrl]);
+  const navigateToOverlayItem = useCallback(
+    (id: string | null, nav?: ContentOverlayNavKind) => {
+      if (id && selectedItemId && id !== selectedItemId) {
+        trackContentOverlayNav(id, {
+          from_content_item_id: selectedItemId,
+          model_id: model.id,
+          folder_name: model.folderName,
+          nav,
+        });
+      }
+      setSelectedItemId(id);
+      if (id) setViewItemFallback(null);
+      router.replace(buildModelUrl({ view: id }), { scroll: false });
+    },
+    [router, buildModelUrl, selectedItemId, model.id, model.folderName],
+  );
 
   useEffect(() => {
     if (selectedItemId && overlayRef.current) {
@@ -326,6 +414,7 @@ export function ModelDetail({
       if (res.ok) {
         const data = await res.json();
         trackFavoriteToggled(selectedItemId, !!data.favorited, { model_id: model.id });
+        markProfileEngagementFavorite();
         setOverlayFavorited(data.favorited);
         setFavoritedIds((prev) => {
           const next = new Set(prev);
@@ -340,7 +429,7 @@ export function ModelDetail({
       }
     } catch { /* ignore */ }
     finally { setOverlayTogglingFav(false); }
-  }, [selectedItemId, overlayTogglingFav, activeFilter, model.id]);
+  }, [selectedItemId, overlayTogglingFav, activeFilter, model.id, markProfileEngagementFavorite]);
 
   const handleDeleteContent = useCallback(async () => {
     if (!selectedItemId || overlayDeleting) return;
@@ -413,6 +502,8 @@ export function ModelDetail({
     append = false,
   ) => {
     if (append) {
+      if (appendLoadLockedRef.current) return;
+      appendLoadLockedRef.current = true;
       setLoadingMore(true);
     } else {
       setIsFiltering(true);
@@ -441,7 +532,20 @@ export function ModelDetail({
           thumbnailUrl: i.thumbnailUrl ?? null,
         }));
         if (append) {
-          setFavoritesItems((prev) => [...prev, ...mapped]);
+          setFavoritesItems((prev) => {
+            const seen = new Set(prev.map((i) => i.id));
+            const additions = mapped.filter((i) => !seen.has(i.id));
+            if (!additions.length) return prev;
+            const merged = [...prev, ...additions];
+            const deduped: ContentItem[] = [];
+            const ids = new Set<string>();
+            for (const it of merged) {
+              if (ids.has(it.id)) continue;
+              ids.add(it.id);
+              deduped.push(it);
+            }
+            return deduped;
+          });
         } else {
           setFavoritesItems(mapped);
         }
@@ -454,11 +558,46 @@ export function ModelDetail({
         });
       }
     } finally {
+      if (append) appendLoadLockedRef.current = false;
       setLoadingMore(false);
       setIsFiltering(false);
       setFavoritesLoading(false);
     }
   }, [model.folderName, activeSort]);
+
+  const pullFavoritesFirstPage = useCallback(
+    async (
+      sort: SortOrder,
+    ): Promise<{ items: ContentItem[]; nextCursor: string | null; totalCount: number } | null> => {
+      const params = new URLSearchParams({
+        limit: "24",
+        sort,
+        modelSlug: model.folderName,
+      });
+      const res = await fetch(`/api/favorites?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const mapped: ContentItem[] = (data.items || []).map(
+        (i: {
+          contentItemId: string;
+          contentType: string;
+          duration: number | null;
+          thumbnailUrl?: string | null;
+        }) => ({
+          id: i.contentItemId,
+          contentType: i.contentType,
+          duration: i.duration,
+          thumbnailUrl: i.thumbnailUrl ?? null,
+        }),
+      );
+      return {
+        items: mapped,
+        nextCursor: data.nextCursor ?? null,
+        totalCount: data.totalCount ?? 0,
+      };
+    },
+    [model.folderName],
+  );
 
   useEffect(() => {
     if (activeFilter === "FAVORITES" && isAuthenticated && hasAccess) {
@@ -510,11 +649,27 @@ export function ModelDetail({
   };
 
   const handleContentClick = (contentId: string) => {
+    const item = displayItems.find((i) => i.id === contentId);
+    const contentType = item?.contentType ?? "UNKNOWN";
+    const thumbExtra = {
+      content_type: contentType,
+      model_id: model.id,
+      folder_name: model.folderName,
+      filter: activeFilter,
+      sort: activeSort,
+    } as const;
+
     if (!isAuthenticated) {
+      trackContentThumbClick(contentId, { ...thumbExtra, outcome: "login_required" });
       router.push("/login");
       return;
     }
-    if (!hasAccess) return;
+    if (!hasAccess) {
+      trackContentThumbClick(contentId, { ...thumbExtra, outcome: "no_access" });
+      return;
+    }
+    trackContentThumbClick(contentId, { ...thumbExtra, outcome: "open" });
+    markProfileContentOpen();
     savedScrollY.current = window.scrollY;
     sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
     setSelectedItemId(contentId);
@@ -539,6 +694,11 @@ export function ModelDetail({
       });
       if (res.ok) {
         const data = await res.json();
+        trackFavoriteToggled(contentItemId, !!data.favorited, {
+          model_id: model.id,
+          folder_name: model.folderName,
+        });
+        markProfileEngagementFavorite();
         setFavoritedIds((prev) => {
           const next = new Set(prev);
           if (data.favorited) {
@@ -562,46 +722,84 @@ export function ModelDetail({
     }
   };
 
-  const loadContent = useCallback(async (
-    filter: ContentFilter,
-    sort: SortOrder,
-    append = false,
-    cursorVal?: string | null,
-  ) => {
-    if (filter === "FAVORITES") {
-      setIsFiltering(false);
-      setLoadingMore(false);
-      return;
-    }
-
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setIsFiltering(true);
-    }
-    try {
+  const pullModelContentPage = useCallback(
+    async (
+      filter: ContentFilter,
+      sort: SortOrder,
+      append: boolean,
+      cursorVal?: string | null,
+    ): Promise<{ items: ContentItem[]; nextCursor: string | null; totalCount: number } | null> => {
+      if (filter === "FAVORITES") return null;
       const params = new URLSearchParams({ limit: "24", sort });
       if (filter !== "ALL") params.set("type", filter);
       if (append && cursorVal) params.set("cursor", cursorVal);
-
       const res = await fetch(`/api/models/${model.folderName}/content?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (append) {
-          setContentItems((prev) => [...prev, ...data.items]);
-          checkFavorites(data.items.map((i: ContentItem) => i.id));
-        } else {
-          setContentItems(data.items);
-          checkFavorites(data.items.map((i: ContentItem) => i.id));
-        }
-        setCursor(data.nextCursor);
-        setFilteredTotal(data.totalCount);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const rawItems: ContentItem[] = data.items ?? [];
+      return {
+        items: rawItems,
+        nextCursor: data.nextCursor ?? null,
+        totalCount: data.totalCount ?? 0,
+      };
+    },
+    [model.folderName],
+  );
+
+  const loadContent = useCallback(
+    async (
+      filter: ContentFilter,
+      sort: SortOrder,
+      append = false,
+      cursorVal?: string | null,
+    ) => {
+      if (filter === "FAVORITES") {
+        setIsFiltering(false);
+        setLoadingMore(false);
+        return;
       }
-    } finally {
-      setLoadingMore(false);
-      setIsFiltering(false);
-    }
-  }, [model.folderName, checkFavorites]);
+
+      if (append) {
+        if (appendLoadLockedRef.current) return;
+        appendLoadLockedRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setIsFiltering(true);
+      }
+      try {
+        const page = await pullModelContentPage(filter, sort, append, cursorVal);
+        if (page) {
+          if (append) {
+            setContentItems((prev) => {
+              const seen = new Set(prev.map((i) => i.id));
+              const additions = page.items.filter((i) => !seen.has(i.id));
+              if (!additions.length) return prev;
+              const merged = [...prev, ...additions];
+              const deduped: ContentItem[] = [];
+              const ids = new Set<string>();
+              for (const it of merged) {
+                if (ids.has(it.id)) continue;
+                ids.add(it.id);
+                deduped.push(it);
+              }
+              return deduped;
+            });
+            checkFavorites(page.items.map((i: ContentItem) => i.id));
+          } else {
+            setContentItems(page.items);
+            checkFavorites(page.items.map((i: ContentItem) => i.id));
+          }
+          setCursor(page.nextCursor);
+          setFilteredTotal(page.totalCount);
+        }
+      } finally {
+        if (append) appendLoadLockedRef.current = false;
+        setLoadingMore(false);
+        setIsFiltering(false);
+      }
+    },
+    [pullModelContentPage, checkFavorites],
+  );
 
   const triggerLoadMoreForNav = useCallback(() => {
     if (loadingMore) return;
@@ -618,17 +816,24 @@ export function ModelDetail({
     const handleKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "Escape") { closeOverlay(); return; }
+      if (e.key === "Escape") {
+        if (overlayFolderMenuOpen) {
+          setOverlayFolderMenuOpen(false);
+          return;
+        }
+        closeOverlay();
+        return;
+      }
       const isVideo = selectedItem?.contentType === "VIDEO";
       if (isVideo ? (e.key === "ArrowLeft" && e.shiftKey) : e.key === "ArrowLeft") {
         e.preventDefault();
         e.stopPropagation();
-        if (overlayPrevId) navigateToOverlayItem(overlayPrevId);
+        if (overlayPrevId) navigateToOverlayItem(overlayPrevId, "keyboard");
       } else if (isVideo ? (e.key === "ArrowRight" && e.shiftKey) : e.key === "ArrowRight") {
         e.preventDefault();
         e.stopPropagation();
         if (overlayNextId) {
-          navigateToOverlayItem(overlayNextId);
+          navigateToOverlayItem(overlayNextId, "keyboard");
         } else if (cursor || favoritesCursor) {
           pendingNextAfterLoadRef.current = true;
           triggerLoadMoreForNav();
@@ -637,7 +842,18 @@ export function ModelDetail({
     };
     document.addEventListener("keydown", handleKey, { capture: true });
     return () => document.removeEventListener("keydown", handleKey, { capture: true });
-  }, [selectedItemId, selectedItem, overlayPrevId, overlayNextId, closeOverlay, navigateToOverlayItem, cursor, favoritesCursor, triggerLoadMoreForNav]);
+  }, [
+    selectedItemId,
+    selectedItem,
+    overlayPrevId,
+    overlayNextId,
+    overlayFolderMenuOpen,
+    closeOverlay,
+    navigateToOverlayItem,
+    cursor,
+    favoritesCursor,
+    triggerLoadMoreForNav,
+  ]);
 
   // Fix #2: Fetch-ahead — when keyboard-navigating close to end, pre-load more items (aggressive: 6 items)
   useEffect(() => {
@@ -659,7 +875,7 @@ export function ModelDetail({
       pendingNextAfterLoadRef.current = false;
       const nextIndex = displaySelectedIndex + 1;
       if (nextIndex < displayItems.length) {
-        navigateToOverlayItem(displayItems[nextIndex].id);
+        navigateToOverlayItem(displayItems[nextIndex].id, "load_more");
       }
     }
     prevLoadingMoreRef.current = loadingMore;
@@ -667,6 +883,11 @@ export function ModelDetail({
 
   const handleFilterChange = (filter: ContentFilter) => {
     if (filter === activeFilter) return;
+    trackCatalogFilterUsed({
+      surface: "model_folder",
+      model_id: model.id,
+      filter,
+    });
     setSelectedItemId(null);
     setViewItemFallback(null);
     setActiveFilter(filter);
@@ -699,9 +920,162 @@ export function ModelDetail({
     }
   };
 
+  /** Close gallery overlay and sync URL when the new folder context has no items to show. */
+  const dismissOverlayToGrid = useCallback(
+    (filter: ContentFilter, sort: SortOrder) => {
+      exitFullscreen();
+      setSelectedItemId(null);
+      setViewItemFallback(null);
+      updateUrlParams(filter, sort, null);
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
+      });
+    },
+    [exitFullscreen, updateUrlParams],
+  );
+
+  const applyOverlayFilterChange = useCallback(
+    async (filter: ContentFilter) => {
+      if (filter === activeFilter) {
+        setOverlayFolderMenuOpen(false);
+        return;
+      }
+      if (!selectedItemId || !hasAccess || !isAuthenticated) return;
+      setOverlayFolderMenuOpen(false);
+      const keepId = selectedItemId;
+      trackCatalogFilterUsed({ surface: "model_overlay", model_id: model.id, filter });
+      setOverlayContextLoading(true);
+      try {
+        if (filter === "FAVORITES") {
+          const page = await pullFavoritesFirstPage(activeSort);
+          if (!page) return;
+          setActiveFilter("FAVORITES");
+          setFavoritesItems(page.items);
+          setFavoritesCursor(page.nextCursor);
+          setFavoritesTotal(page.totalCount);
+          setCursor(null);
+          setFavoritedIds((prev) => {
+            const next = new Set(prev);
+            page.items.forEach((i) => next.add(i.id));
+            return next;
+          });
+          const viewId = page.items.some((i) => i.id === keepId) ? keepId : page.items[0]?.id ?? null;
+          if (viewId == null) {
+            dismissOverlayToGrid("FAVORITES", activeSort);
+            return;
+          }
+          setSelectedItemId(viewId);
+          setViewItemFallback(null);
+          router.replace(buildModelUrl({ filter: "FAVORITES", sort: activeSort, view: viewId }), { scroll: false });
+        } else {
+          const page = await pullModelContentPage(filter, activeSort, false, null);
+          if (!page) return;
+          setActiveFilter(filter);
+          setContentItems(page.items);
+          setCursor(page.nextCursor);
+          setFilteredTotal(page.totalCount);
+          setFavoritesCursor(null);
+          checkFavorites(page.items.map((i) => i.id));
+          const viewId = page.items.some((i) => i.id === keepId) ? keepId : page.items[0]?.id ?? null;
+          if (viewId == null) {
+            dismissOverlayToGrid(filter, activeSort);
+            return;
+          }
+          setSelectedItemId(viewId);
+          setViewItemFallback(null);
+          router.replace(buildModelUrl({ filter, sort: activeSort, view: viewId }), { scroll: false });
+        }
+      } finally {
+        setOverlayContextLoading(false);
+      }
+    },
+    [
+      activeFilter,
+      activeSort,
+      selectedItemId,
+      hasAccess,
+      isAuthenticated,
+      model.id,
+      pullFavoritesFirstPage,
+      pullModelContentPage,
+      router,
+      buildModelUrl,
+      checkFavorites,
+      dismissOverlayToGrid,
+    ],
+  );
+
+  const applyOverlaySortChange = useCallback(
+    async (sort: SortOrder) => {
+      if (sort === activeSort) {
+        setOverlayFolderMenuOpen(false);
+        return;
+      }
+      if (!selectedItemId || !hasAccess || !isAuthenticated) return;
+      setOverlayFolderMenuOpen(false);
+      const keepId = selectedItemId;
+      const filterAtStart = activeFilter;
+      setOverlayContextLoading(true);
+      try {
+        if (filterAtStart === "FAVORITES") {
+          const page = await pullFavoritesFirstPage(sort);
+          if (!page) return;
+          setActiveSort(sort);
+          setFavoritesItems(page.items);
+          setFavoritesCursor(page.nextCursor);
+          setFavoritesTotal(page.totalCount);
+          setFavoritedIds((prev) => {
+            const next = new Set(prev);
+            page.items.forEach((i) => next.add(i.id));
+            return next;
+          });
+          const viewId = page.items.some((i) => i.id === keepId) ? keepId : page.items[0]?.id ?? null;
+          if (viewId == null) {
+            dismissOverlayToGrid("FAVORITES", sort);
+            return;
+          }
+          setSelectedItemId(viewId);
+          setViewItemFallback(null);
+          router.replace(buildModelUrl({ filter: "FAVORITES", sort, view: viewId }), { scroll: false });
+        } else {
+          const page = await pullModelContentPage(filterAtStart, sort, false, null);
+          if (!page) return;
+          setActiveSort(sort);
+          setContentItems(page.items);
+          setCursor(page.nextCursor);
+          setFilteredTotal(page.totalCount);
+          checkFavorites(page.items.map((i) => i.id));
+          const viewId = page.items.some((i) => i.id === keepId) ? keepId : page.items[0]?.id ?? null;
+          if (viewId == null) {
+            dismissOverlayToGrid(filterAtStart, sort);
+            return;
+          }
+          setSelectedItemId(viewId);
+          setViewItemFallback(null);
+          router.replace(buildModelUrl({ filter: filterAtStart, sort, view: viewId }), { scroll: false });
+        }
+      } finally {
+        setOverlayContextLoading(false);
+      }
+    },
+    [
+      activeFilter,
+      activeSort,
+      selectedItemId,
+      hasAccess,
+      isAuthenticated,
+      pullFavoritesFirstPage,
+      pullModelContentPage,
+      router,
+      buildModelUrl,
+      checkFavorites,
+      dismissOverlayToGrid,
+    ],
+  );
+
   const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
-    if (loadingMore) return;
+    if (loadingMore || appendLoadLockedRef.current) return;
     if (activeFilter === "FAVORITES") {
       if (!favoritesCursor) return;
       loadFavorites(favoritesCursor, true);
@@ -811,22 +1185,108 @@ export function ModelDetail({
     };
   }, [checkAtBottomAndLoad]);
 
-  // Resize (DevTools dock, window drag): IO can miss intersections; re-attach + bottom check.
+  // Resize (DevTools dock, window drag): IO can miss intersections; re-attach + debounced bottom check
+  // so we don't fire loadMore many times while layout thrashes (giant grid tile / duplicate append).
+  const resizeBottomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const onResize = () => {
       attachSentinelObserver();
-      requestAnimationFrame(() => checkAtBottomAndLoad());
+      if (resizeBottomDebounceRef.current) clearTimeout(resizeBottomDebounceRef.current);
+      resizeBottomDebounceRef.current = setTimeout(() => {
+        resizeBottomDebounceRef.current = null;
+        requestAnimationFrame(() => checkAtBottomAndLoad());
+      }, 120);
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (resizeBottomDebounceRef.current) clearTimeout(resizeBottomDebounceRef.current);
+    };
   }, [attachSentinelObserver, checkAtBottomAndLoad]);
+
+  // Subtle header response to scroll (Overdrive dir. 2) — global reduced-motion zeros transitions.
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const next = window.scrollY > 56;
+        setFolderHeroScrolled((p) => (p === next ? p : next));
+      });
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Grid tiles: reveal when entering viewport; cap stagger via --reveal-stagger.
+  useEffect(() => {
+    if (showEmptyState) return;
+    let cancelled = false;
+    let disconnectIo: (() => void) | undefined;
+
+    const setup = () => {
+      if (cancelled) return;
+      const root = contentGridRef.current;
+      if (!root) return;
+      const nodes = root.querySelectorAll<HTMLElement>("[data-model-folder-reveal]");
+      if (nodes.length === 0) return;
+
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        nodes.forEach((el) => el.classList.add("model-folder-reveal-visible"));
+        return;
+      }
+
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const el = entry.target as HTMLElement;
+            el.classList.add("model-folder-reveal-visible");
+            io.unobserve(el);
+          }
+        },
+        { root: null, rootMargin: "12% 0px 8% 0px", threshold: [0, 0.04, 0.12] },
+      );
+
+      const vh = window.innerHeight;
+      nodes.forEach((el) => {
+        if (el.classList.contains("model-folder-reveal-visible")) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.top < vh * 1.08 && rect.bottom > -vh * 0.08) {
+          el.classList.add("model-folder-reveal-visible");
+        } else {
+          io.observe(el);
+        }
+      });
+
+      disconnectIo = () => io.disconnect();
+    };
+
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(setup);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+      disconnectIo?.();
+    };
+  }, [showEmptyState, displayItems, activeFilter, activeSort]);
 
   // displayItems and displayTotal are hoisted above (near overlay nav computation)
 
   return (
     <>
       {/* Header */}
-      <div className="mb-6 slide-up">
+      <div
+        className={cn(
+          "mb-6 slide-up transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          folderHeroScrolled && "opacity-[0.9] -translate-y-1",
+        )}
+      >
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
@@ -926,7 +1386,13 @@ export function ModelDetail({
       )}
 
       {/* Filters + Sort row */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap slide-up relative z-10" style={{ animationDelay: "0.15s" }}>
+      <div
+        className={cn(
+          "flex items-center gap-2 mb-6 flex-wrap slide-up relative z-10 pb-2 -mb-2 transition-[border-color,box-shadow] duration-300",
+          folderHeroScrolled && "border-b border-white/[0.07] shadow-[0_12px_24px_-20px_rgba(0,0,0,0.85)]",
+        )}
+        style={{ animationDelay: "0.15s" }}
+      >
         <Button
           variant={activeFilter === "ALL" ? "default" : "outline"}
           size="sm"
@@ -1038,17 +1504,22 @@ export function ModelDetail({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5 items-start [grid-auto-rows:minmax(0,auto)]">
+          <div
+            ref={contentGridRef}
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5 items-start [grid-auto-rows:minmax(0,auto)]"
+          >
             {displayItems.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                className={cn("cursor-pointer group text-left w-full self-start rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0", index < 8 ? `animate-in fade-in stagger-${Math.min(index + 1, 8)}` : "")}
+                data-model-folder-reveal
+                style={{ "--reveal-stagger": index % 12 } as CSSProperties}
+                className="model-folder-reveal grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0"
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
-                {/* h-0 + % padding: height tied only to column width — avoids aspect-ratio + absolute img blow-ups after resize */}
-                <div className="relative isolate w-full h-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] pb-[133.333333%] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300 [contain:layout_paint]">
+                {/* aspect-ratio + contain: layout isolate each cell from grid reflow glitches (DevTools / overlay close). */}
+                <div className="relative isolate w-full aspect-[3/4] min-h-0 min-w-0 overflow-hidden rounded-xl bg-card border border-white/[0.12] shadow-sm shadow-black/30 card-hover group-hover:border-primary/30 transition-all duration-300 contain-layout">
                   {hasAccess ? (
                     <>
                       <LazyRetryImage
@@ -1179,16 +1650,16 @@ export function ModelDetail({
             const dy = Math.abs(e.changedTouches[0].clientY - el.__touchStartY);
             if (Math.abs(dx) < 50 || dy > Math.abs(dx)) return;
             if (dx < 0) {
-              if (overlayNextId) navigateToOverlayItem(overlayNextId);
+              if (overlayNextId) navigateToOverlayItem(overlayNextId, "swipe");
               else if (cursor || favoritesCursor) {
                 pendingNextAfterLoadRef.current = true;
                 triggerLoadMoreForNav();
               }
-            } else if (dx > 0 && overlayPrevId) navigateToOverlayItem(overlayPrevId);
+            } else if (dx > 0 && overlayPrevId) navigateToOverlayItem(overlayPrevId, "swipe");
           }}
         >
           {/* Overlay top bar */}
-          <div className="flex items-center justify-between px-4 py-3 shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 lg:px-6 shrink-0">
             <button
               onClick={closeOverlay}
               className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
@@ -1198,35 +1669,157 @@ export function ModelDetail({
               <span className="sm:hidden">Back</span>
             </button>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 lg:gap-2">
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => overlayPrevId && navigateToOverlayItem(overlayPrevId)}
+                onClick={() => overlayPrevId && navigateToOverlayItem(overlayPrevId, "prev")}
                 disabled={!overlayPrevId}
-                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4 lg:h-5 lg:w-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  if (overlayNextId) navigateToOverlayItem(overlayNextId);
+                  if (overlayNextId) navigateToOverlayItem(overlayNextId, "next");
                   else if (cursor || favoritesCursor) {
                     pendingNextAfterLoadRef.current = true;
                     triggerLoadMoreForNav();
                   }
                 }}
                 disabled={!overlayNextId && !(cursor || favoritesCursor)}
-                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
                 {!overlayNextId && (cursor || favoritesCursor) && loadingMore ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
                 ) : (
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-4 w-4 lg:h-5 lg:w-5" />
                 )}
               </Button>
+
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setOverlayFolderMenuOpen((o) => !o)}
+                  disabled={overlayContextLoading}
+                  aria-expanded={overlayFolderMenuOpen}
+                  aria-haspopup="dialog"
+                  aria-label={t("overlayFolderView")}
+                  className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10 shrink-0"
+                >
+                  {overlayContextLoading ? (
+                    <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
+                  ) : (
+                    <LayoutGrid className="h-4 w-4 lg:h-5 lg:w-5" />
+                  )}
+                </Button>
+                {overlayFolderMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[205]"
+                      aria-hidden
+                      onClick={() => setOverlayFolderMenuOpen(false)}
+                    />
+                    <div
+                      className="absolute right-0 top-full mt-1.5 z-[210] w-[min(calc(100vw-1.5rem),17rem)] rounded-xl border border-white/[0.1] bg-zinc-950/95 backdrop-blur-md py-2 shadow-xl"
+                      role="dialog"
+                      aria-label={t("overlayFolderView")}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex flex-wrap gap-1 px-2">
+                        <button
+                          type="button"
+                          onClick={() => void applyOverlayFilterChange("ALL")}
+                          disabled={overlayContextLoading}
+                          className={cn(
+                            "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                            activeFilter === "ALL"
+                              ? "bg-white/15 text-white"
+                              : "text-white/55 hover:bg-white/[0.06] hover:text-white",
+                          )}
+                        >
+                          {t("all")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void applyOverlayFilterChange("VIDEO")}
+                          disabled={overlayContextLoading}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                            activeFilter === "VIDEO"
+                              ? "bg-white/15 text-white"
+                              : "text-white/55 hover:bg-white/[0.06] hover:text-white",
+                          )}
+                        >
+                          <Film className="h-3 w-3 shrink-0 opacity-80" />
+                          {t("videos")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void applyOverlayFilterChange("PHOTO")}
+                          disabled={overlayContextLoading}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                            activeFilter === "PHOTO"
+                              ? "bg-white/15 text-white"
+                              : "text-white/55 hover:bg-white/[0.06] hover:text-white",
+                          )}
+                        >
+                          <Camera className="h-3 w-3 shrink-0 opacity-80" />
+                          {t("photos")}
+                        </button>
+                        {isAuthenticated && hasAccess && (
+                          <button
+                            type="button"
+                            onClick={() => void applyOverlayFilterChange("FAVORITES")}
+                            disabled={overlayContextLoading}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                              activeFilter === "FAVORITES"
+                                ? "bg-white/15 text-white"
+                                : "text-white/55 hover:bg-white/[0.06] hover:text-white",
+                            )}
+                          >
+                            <Heart
+                              className={cn(
+                                "h-3 w-3 shrink-0 opacity-80",
+                                activeFilter === "FAVORITES" && "fill-red-400 text-red-400",
+                              )}
+                            />
+                            {t("favorite")}
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 border-t border-white/[0.06] pt-2 px-2 space-y-0.5">
+                        {([
+                          { value: "newest" as const, label: t("newest") },
+                          { value: "oldest" as const, label: t("oldest") },
+                          { value: "longest" as const, label: t("longest") },
+                          { value: "shortest" as const, label: t("shortest") },
+                        ]).map((opt) => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => void applyOverlaySortChange(opt.value)}
+                            disabled={overlayContextLoading}
+                            className={cn(
+                              "flex w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors cursor-pointer",
+                              activeSort === opt.value
+                                ? "bg-white/12 text-white font-medium"
+                                : "text-white/50 hover:bg-white/[0.05] hover:text-white/90",
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
 
@@ -1235,11 +1828,11 @@ export function ModelDetail({
                 size="sm"
                 onClick={overlayToggleFavorite}
                 disabled={overlayTogglingFav}
-                className="gap-1.5 text-white/70 hover:text-white hover:bg-white/10"
+                className="gap-1.5 text-white/70 hover:text-white hover:bg-white/10 lg:h-10 lg:px-3"
               >
                 <Heart
                   className={cn(
-                    "h-4 w-4 transition-all",
+                    "h-4 w-4 lg:h-5 lg:w-5 transition-all",
                     overlayFavorited ? "fill-red-500 text-red-500 scale-110" : ""
                   )}
                 />
@@ -1251,17 +1844,31 @@ export function ModelDetail({
               {isAdmin && (
                 <>
                   <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block" />
+                  <a
+                    href={resolveApiPathForBrowser(
+                      `/api/admin/content/${selectedItemId}/source-download`
+                    )}
+                    className={cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "gap-1.5 text-white/70 hover:text-white hover:bg-white/10 no-underline lg:h-10 lg:px-3"
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Download className="h-4 w-4 lg:h-5 lg:w-5 shrink-0" />
+                    <span className="hidden sm:inline">{t("downloadContent")}</span>
+                  </a>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleDeleteContent}
                     disabled={overlayDeleting}
-                    className="gap-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10"
+                    className="gap-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10 lg:h-10 lg:px-3"
                   >
                     {overlayDeleting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
                     )}
                     <span className="hidden sm:inline">{t("deleteContent")}</span>
                   </Button>
@@ -1274,16 +1881,16 @@ export function ModelDetail({
                 variant="ghost"
                 size="icon"
                 onClick={closeOverlay}
-                className="h-8 w-8 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
+                className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg text-white/70 hover:text-white hover:bg-white/10"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 lg:h-5 lg:w-5" />
               </Button>
             </div>
           </div>
 
           {/* Content area — click on backdrop (outside media) closes overlay */}
           <div
-            className="flex-1 flex items-center justify-center overflow-y-auto overflow-x-hidden px-4 pb-4 cursor-pointer min-w-0 scrollbar-hide"
+            className="flex-1 flex items-center justify-center overflow-y-auto overflow-x-hidden px-3 pb-3 sm:px-4 sm:pb-4 lg:px-6 lg:pb-5 cursor-pointer min-w-0 scrollbar-hide"
             onClick={(e) => {
               const target = e.target as HTMLElement;
               if (target.closest("[data-video-player], img, button")) return;
@@ -1291,7 +1898,7 @@ export function ModelDetail({
             }}
           >
             <div
-              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl cursor-default min-w-0 shrink"
+              className="relative rounded-xl sm:rounded-2xl overflow-hidden bg-black flex items-center justify-center w-full max-w-6xl lg:max-w-7xl xl:max-w-[min(1680px,94vw)] cursor-default min-w-0 shrink"
               onClick={(e) => e.stopPropagation()}
             >
               {selectedItem.contentType === "VIDEO" ? (
@@ -1299,14 +1906,19 @@ export function ModelDetail({
                   {/* Fix #3 (real): No key prop — React keeps VideoPlayer mounted between video changes.
                     The HLS useEffect re-initializes on contentItemId change without unmounting the
                     container. This preserves the browser's native fullscreen state. */}
-                  <VideoPlayer contentItemId={selectedItemId} />
+                  <VideoPlayer
+                    contentItemId={selectedItemId}
+                    modelId={model.id}
+                    folderName={model.folderName}
+                    galleryOverlay
+                  />
                 </div>
               ) : (
                 <RetryImage
                   src={contentThumbnailSrc(selectedItemId, selectedItem.thumbnailUrl)}
                   fallbackSrc={contentThumbnailProxySrc(selectedItemId)}
                   alt=""
-                  className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
+                  className="max-h-[85vh] max-w-full w-auto mx-auto object-contain lg:max-h-[min(90dvh,1020px)]"
                   onContextMenu={(e) => e.preventDefault()}
                   draggable={false}
                   fallback={
@@ -1319,6 +1931,66 @@ export function ModelDetail({
               )}
             </div>
           </div>
+
+          {filmstripSlice.items.length > 0 && (
+            <div
+              className="shrink-0 px-2 sm:px-4 lg:px-6 pb-2 lg:pb-3 border-t border-white/[0.06] pt-2 lg:pt-3"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              role="navigation"
+              aria-label={t("overlayGalleryStrip")}
+            >
+              <div className="flex gap-2 sm:gap-2.5 lg:gap-3 justify-start lg:justify-center overflow-x-auto py-1 lg:py-1.5 scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] snap-x snap-mandatory max-w-full mx-auto">
+                {filmstripSlice.items.map((item, i) => {
+                  const active = i === filmstripSlice.activeOffset;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      ref={active ? filmstripActiveRef : undefined}
+                      onClick={() => {
+                        if (item.id !== selectedItemId) {
+                          navigateToOverlayItem(item.id, "strip");
+                        }
+                      }}
+                      className={cn(
+                        "relative shrink-0 snap-center rounded-md lg:rounded-lg overflow-hidden transition-[opacity,box-shadow] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+                        active
+                          ? "ring-2 ring-primary ring-offset-0 opacity-100"
+                          : "opacity-55 hover:opacity-90",
+                      )}
+                      aria-current={active ? "true" : undefined}
+                      aria-label={
+                        item.contentType === "VIDEO" ? t("video") : t("photo")
+                      }
+                    >
+                      <div className="h-12 w-[2.6rem] sm:h-16 sm:w-12 lg:h-[5.25rem] lg:w-[4.15rem] xl:h-[5.75rem] xl:w-[4.5rem] bg-black/60">
+                        <LazyRetryImage
+                          src={contentThumbnailSrc(item.id, item.thumbnailUrl)}
+                          fallbackSrc={contentThumbnailProxySrc(item.id)}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          rootMargin="80px"
+                          placeholder={
+                            <div className="h-full w-full bg-white/[0.04] animate-pulse" />
+                          }
+                          fallback={
+                            <div className="h-full w-full flex items-center justify-center bg-white/[0.06]">
+                              {item.contentType === "VIDEO" ? (
+                                <Play className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
+                              ) : (
+                                <Image className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
+                              )}
+                            </div>
+                          }
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <p className="text-center text-xs text-white/30 pb-3">
             <span className="hidden sm:inline">

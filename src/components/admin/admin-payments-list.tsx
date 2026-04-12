@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -18,6 +19,7 @@ import {
   Wallet,
   FileCheck,
   FileX,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,6 +32,8 @@ import {
 } from "@/components/ui/dialog";
 import { formatPrice } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { PurchaseReferralSourceHover } from "@/components/admin/purchase-referral-source-hover";
+import { parseReferralReferrer, type ReferralReferrer } from "@/lib/referral-referrer";
 
 interface PurchaseItem {
   id: string;
@@ -48,6 +52,42 @@ interface PurchaseItem {
   adminNotes: string | null;
   expirationTime: string;
   createdAt: string;
+  fromCustomLink: boolean;
+  customLinkSlug: string | null;
+  fromUserReferral: boolean;
+  /** Present when fromUserReferral — who shared the /r/ or ?ref= link */
+  referralReferrer: ReferralReferrer | null;
+}
+
+function purchaseItemFromApi(p: Record<string, unknown>): PurchaseItem {
+  const user = p.user as { email?: string; name?: string | null } | undefined;
+  const pkg = p.creditPackage as { name?: string; credits?: number; price?: number } | undefined;
+  return {
+    id: String(p.id ?? ""),
+    userEmail: user?.email ?? "—",
+    userName: user?.name ?? null,
+    packageName: pkg?.name ?? "—",
+    credits: Number(p.credits ?? 0),
+    amount: Number(p.amount ?? 0),
+    paymentMethod: String(p.paymentMethod ?? ""),
+    transactionCode: String(p.transactionCode ?? ""),
+    blikCode: (p.blikCode as string | null | undefined) ?? null,
+    cryptoCurrency: (p.cryptoCurrency as string | null | undefined) ?? null,
+    txId: (p.txId as string | null | undefined) ?? null,
+    status: String(p.status ?? "PENDING"),
+    paymentProofUrl: (p.paymentProofUrl as string | null | undefined) ?? null,
+    adminNotes: (p.adminNotes as string | null | undefined) ?? null,
+    expirationTime: String(p.expirationTime ?? ""),
+    createdAt: String(p.createdAt ?? ""),
+    fromCustomLink: Boolean(p.fromCustomLink),
+    customLinkSlug: (p.customLinkSlug as string | null | undefined) ?? null,
+    fromUserReferral: Boolean(p.fromUserReferral),
+    referralReferrer: parseReferralReferrer(p.referralReferrer),
+  };
+}
+
+function referralReferrerKey(r: ReferralReferrer | null): string {
+  return r ? `${r.id}|${r.email}` : "";
 }
 
 interface Props {
@@ -101,6 +141,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
   const [selectedPurchase, setSelectedPurchase] = useState<PurchaseItem | null>(null);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [blikEnabled, setBlikEnabled] = useState(initialBlikEnabled);
   const [blikSaving, setBlikSaving] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -129,24 +170,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
         const data = await res.json();
         const found = (data.purchases ?? []).find((p: any) => p.id === highlightId);
         if (found) {
-          const item: PurchaseItem = {
-            id: found.id,
-            userEmail: found.user?.email ?? "—",
-            userName: found.user?.name ?? null,
-            packageName: found.creditPackage?.name ?? "—",
-            credits: found.credits ?? 0,
-            amount: found.amount ?? 0,
-            paymentMethod: found.paymentMethod ?? "",
-            transactionCode: found.transactionCode ?? "",
-            blikCode: found.blikCode ?? null,
-            cryptoCurrency: found.cryptoCurrency ?? null,
-            txId: found.txId ?? null,
-            status: found.status ?? "",
-            paymentProofUrl: found.paymentProofUrl ?? null,
-            adminNotes: found.adminNotes ?? null,
-            expirationTime: found.expirationTime ?? "",
-            createdAt: found.createdAt ?? "",
-          };
+          const item = purchaseItemFromApi(found as Record<string, unknown>);
           setSelectedPurchase(item);
           setNotes(item.adminNotes || "");
         }
@@ -172,24 +196,14 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
         const data = JSON.parse(event.data);
 
         if (data.event === "new_purchase") {
-          const newItem: PurchaseItem = {
-            id: data.id,
-            userEmail: data.user?.email ?? "—",
-            userName: data.user?.name ?? null,
-            packageName: data.creditPackage?.name ?? "—",
-            credits: data.credits ?? 0,
-            amount: data.amount ?? 0,
-            paymentMethod: data.paymentMethod ?? "",
-            transactionCode: data.transactionCode ?? "",
-            blikCode: data.blikCode ?? null,
-            cryptoCurrency: data.cryptoCurrency ?? null,
-            txId: null,
+          const newItem = purchaseItemFromApi({
+            ...(data as Record<string, unknown>),
             status: "PENDING",
+            txId: null,
             paymentProofUrl: null,
             adminNotes: null,
-            expirationTime: data.expirationTime ?? "",
-            createdAt: data.createdAt ?? new Date().toISOString(),
-          };
+            createdAt: (data as { createdAt?: string }).createdAt ?? new Date().toISOString(),
+          });
           setItems((prev) => {
             if (prev.some((p) => p.id === newItem.id)) return prev;
             return [newItem, ...prev];
@@ -243,24 +257,9 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
         });
         if (!res.ok) return;
         const data = await res.json();
-        const fetched: PurchaseItem[] = (data.purchases ?? []).map((p: any) => ({
-          id: p.id,
-          userEmail: p.user?.email ?? "—",
-          userName: p.user?.name ?? null,
-          packageName: p.creditPackage?.name ?? "—",
-          credits: p.credits ?? 0,
-          amount: p.amount ?? 0,
-          paymentMethod: p.paymentMethod ?? "",
-          transactionCode: p.transactionCode ?? "",
-          blikCode: p.blikCode ?? null,
-          cryptoCurrency: p.cryptoCurrency ?? null,
-          txId: p.txId ?? null,
-          status: p.status ?? "PENDING",
-          paymentProofUrl: p.paymentProofUrl ?? null,
-          adminNotes: p.adminNotes ?? null,
-          expirationTime: p.expirationTime ?? "",
-          createdAt: p.createdAt ?? "",
-        }));
+        const fetched: PurchaseItem[] = (data.purchases ?? []).map((p: Record<string, unknown>) =>
+          purchaseItemFromApi(p)
+        );
         setItems((prev) => {
           const existingIds = new Set(prev.map((i) => i.id));
           const newOnes = fetched.filter((f) => !existingIds.has(f.id));
@@ -270,9 +269,25 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
             let changed = false;
             const updated = prev.map((item) => {
               const fresh = fetchedMap.get(item.id);
-              if (fresh && (fresh.blikCode !== item.blikCode || fresh.expirationTime !== item.expirationTime)) {
+              if (
+                fresh &&
+                (fresh.blikCode !== item.blikCode ||
+                  fresh.expirationTime !== item.expirationTime ||
+                  fresh.fromCustomLink !== item.fromCustomLink ||
+                  fresh.customLinkSlug !== item.customLinkSlug ||
+                  fresh.fromUserReferral !== item.fromUserReferral ||
+                  referralReferrerKey(fresh.referralReferrer) !== referralReferrerKey(item.referralReferrer))
+              ) {
                 changed = true;
-                return { ...item, blikCode: fresh.blikCode, expirationTime: fresh.expirationTime };
+                return {
+                  ...item,
+                  blikCode: fresh.blikCode,
+                  expirationTime: fresh.expirationTime,
+                  fromCustomLink: fresh.fromCustomLink,
+                  customLinkSlug: fresh.customLinkSlug,
+                  fromUserReferral: fresh.fromUserReferral,
+                  referralReferrer: fresh.referralReferrer,
+                };
               }
               return item;
             });
@@ -291,11 +306,15 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
   }, []);
 
   const handleAction = async (id: string, action: "approve" | "reject") => {
+    setActionError(null);
     setLoading(true);
+    // Use /complete instead of /approve — some CDNs/WAFs block the literal path "approve" on payment URLs
+    const segment = action === "approve" ? "complete" : "reject";
     try {
-      const res = await fetch(`/api/admin/credits/purchases/${id}/${action}`, {
+      const res = await fetch(`/api/admin/credits/purchases/${id}/${segment}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ reason: notes }),
       });
       if (res.ok) {
@@ -303,9 +322,22 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
         setSelectedPurchase(null);
         setNotes("");
         router.refresh();
+        return;
       }
+      const text = await res.text();
+      let detail = `${res.status}`;
+      try {
+        const data = JSON.parse(text) as { message?: string; error?: string };
+        if (data?.message) detail = data.message;
+        else if (data?.error) detail = data.error;
+      } catch {
+        if (text) detail = text.slice(0, 200);
+      }
+      setActionError(detail);
+      logger.error("Purchase action failed", { status: res.status, segment, id });
     } catch (error) {
       logger.error("Failed to update purchase status", error);
+      setActionError(error instanceof Error ? error.message : "Network error");
     } finally {
       setLoading(false);
     }
@@ -335,6 +367,15 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
 
   return (
     <>
+      {actionError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive-foreground"
+        >
+          <p className="font-medium">Could not update purchase</p>
+          <p className="mt-1 opacity-90 break-words">{actionError}</p>
+        </div>
+      )}
       {/* BLIK Shop Toggle */}
       <Card
         className={`mb-8 border-2 transition-colors ${
@@ -400,13 +441,14 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
               <motion.div
                 key={p.id}
                 layout
+                className="overflow-visible"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
                 transition={{ duration: 0.3 }}
               >
-                <Card className="border-warning/20 hover:border-warning/40 transition-colors h-full">
-                  <CardContent className="p-5 flex flex-col h-full">
+                <Card className="border-warning/20 hover:border-warning/40 transition-colors h-full overflow-visible">
+                  <CardContent className="p-5 flex flex-col h-full overflow-visible">
                     {/* Header: user + time */}
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center gap-3 min-w-0">
@@ -440,6 +482,46 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Package</span>
                         <span className="font-medium">{p.packageName}</span>
+                      </div>
+                      <div
+                        className={`flex items-center justify-between gap-2 text-sm ${
+                          p.fromUserReferral && p.referralReferrer ? "group relative" : ""
+                        }`}
+                      >
+                        <span
+                          className={`text-muted-foreground shrink-0 inline-flex items-center gap-1.5 ${
+                            p.fromUserReferral && p.referralReferrer ? "cursor-help" : ""
+                          }`}
+                        >
+                          <Link2 className="h-3.5 w-3.5 opacity-80" aria-hidden />
+                          {t("purchaseSource")}
+                        </span>
+                        <span className="text-right min-w-0">
+                          {p.fromCustomLink ? (
+                            <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                              <span className="inline-flex items-center rounded-full bg-emerald-500/12 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 ring-1 ring-emerald-500/25">
+                                {t("purchaseFromRefLink")}
+                              </span>
+                              {p.customLinkSlug ? (
+                                <span className="font-mono text-[11px] text-muted-foreground truncate max-w-[9rem]">
+                                  /{p.customLinkSlug}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : p.fromUserReferral ? (
+                            <PurchaseReferralSourceHover
+                              badgeClassName="bg-violet-500/12 text-violet-800 dark:text-violet-300 ring-violet-500/25"
+                              label={t("purchaseFromUserReferral")}
+                              referrer={p.referralReferrer}
+                              referrerHeading={t("referralReferrerHeading")}
+                              openProfileLabel={t("referralOpenInAdmin")}
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              {t("purchaseNotFromRefLink")}
+                            </span>
+                          )}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Amount</span>
@@ -493,6 +575,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                     {/* Actions */}
                     <div className="flex gap-2 pt-3 border-t border-border">
                       <Button
+                        type="button"
                         className="flex-1"
                         variant="success"
                         size="sm"
@@ -503,6 +586,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                         {t("approve")}
                       </Button>
                       <Button
+                        type="button"
                         className="flex-1"
                         variant="destructive"
                         size="sm"
@@ -568,6 +652,52 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
               <div>
                 <p className="text-muted-foreground">Method</p>
                 <p className="font-medium">{selectedPurchase.paymentMethod}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground flex items-center gap-1.5">
+                  <Link2 className="h-3.5 w-3.5" aria-hidden />
+                  {t("purchaseSource")}
+                </p>
+                <p className="font-medium">
+                  {selectedPurchase.fromCustomLink ? (
+                    <>
+                      {t("purchaseFromRefLink")}
+                      {selectedPurchase.customLinkSlug ? (
+                        <span className="block font-mono text-xs text-muted-foreground mt-0.5">
+                          /{selectedPurchase.customLinkSlug}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : selectedPurchase.fromUserReferral ? (
+                    <span className="space-y-2 block">
+                      <span>{t("purchaseFromUserReferral")}</span>
+                      {selectedPurchase.referralReferrer ? (
+                        <span className="block mt-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-sm">
+                          <span className="text-muted-foreground text-xs block mb-1">
+                            {t("referralReferrerHeading")}
+                          </span>
+                          <span className="font-medium">
+                            {selectedPurchase.referralReferrer.name?.trim() ||
+                              selectedPurchase.referralReferrer.email}
+                          </span>
+                          {selectedPurchase.referralReferrer.name?.trim() ? (
+                            <span className="block text-xs text-muted-foreground mt-0.5">
+                              {selectedPurchase.referralReferrer.email}
+                            </span>
+                          ) : null}
+                          <Link
+                            href={`/admin/users?userId=${encodeURIComponent(selectedPurchase.referralReferrer.id)}`}
+                            className="inline-block mt-2 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                          >
+                            {t("referralOpenInAdmin")}
+                          </Link>
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    t("purchaseNotFromRefLink")
+                  )}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Created</p>
@@ -637,6 +767,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
 
           <DialogFooter>
             <Button
+              type="button"
               variant="destructive"
               onClick={() => handleAction(selectedPurchase.id, "reject")}
               disabled={loading}
@@ -645,6 +776,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
               {t("reject")}
             </Button>
             <Button
+              type="button"
               variant="success"
               onClick={() => handleAction(selectedPurchase.id, "approve")}
               disabled={loading}

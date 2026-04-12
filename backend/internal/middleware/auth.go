@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -45,16 +46,15 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		claims, err := am.extractAndValidateToken(c)
 		if err != nil {
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return common.Unauthorized(c)
 		}
 
 		// Check session is still active in Redis
 		sessionKey := fmt.Sprintf("session:%s", claims.UserID)
 		storedToken, err := am.redis.Get(c.Request().Context(), sessionKey).Result()
 		if err != nil || storedToken != claims.ID {
-			return c.JSON(http.StatusUnauthorized, map[string]string{
-				"error": "Session expired or logged in on another device",
-			})
+			return common.JSONError(c, http.StatusUnauthorized, "SESSION_EXPIRED",
+				"You were signed out or logged in elsewhere. Sign in again.")
 		}
 
 		// Check if user is banned
@@ -63,7 +63,7 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 			`SELECT COALESCE(is_banned, false) FROM users WHERE id = $1`, claims.UserID,
 		).Scan(&isBanned); banErr == nil && isBanned {
 			am.redis.Del(c.Request().Context(), sessionKey)
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "Account suspended"})
+			return common.JSONError(c, http.StatusForbidden, "ACCOUNT_SUSPENDED", "This account is suspended.")
 		}
 
 		// Set context values
@@ -89,10 +89,8 @@ func (am *AuthMiddleware) RequireEmailVerified(next echo.HandlerFunc) echo.Handl
 		if err := am.db.QueryRow(c.Request().Context(),
 			`SELECT COALESCE(email_verified, false) FROM users WHERE id = $1`, userID,
 		).Scan(&emailVerified); err != nil || !emailVerified {
-			return c.JSON(http.StatusForbidden, map[string]string{
-				"error": "Please verify your email to continue.",
-				"code":  "EMAIL_NOT_VERIFIED",
-			})
+			return common.JSONError(c, http.StatusForbidden, "EMAIL_NOT_VERIFIED",
+				"Please verify your email to continue.")
 		}
 		return next(c)
 	}

@@ -1,6 +1,7 @@
 package content
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -87,5 +88,54 @@ func TestSanitizeSegmentPath_RejectsPathTraversal(t *testing.T) {
 		if err == nil {
 			t.Errorf("sanitizeSegmentPath(%q) expected error, got nil", tc)
 		}
+	}
+}
+
+func TestPlaylistObjectCandidates_masterPrefersFolderThenDB(t *testing.T) {
+	folder := "models/x/abc_source/hls"
+	dbPath := "models/x/abc_source/hls/old-master.m3u8"
+	got := playlistObjectCandidates("master.m3u8", folder, true, strPtr(dbPath))
+	if len(got) < 2 {
+		t.Fatalf("expected multiple candidates, got %v", got)
+	}
+	if got[0] != folder+"/master.m3u8" {
+		t.Errorf("first key = %q, want %q", got[0], folder+"/master.m3u8")
+	}
+	if got[len(got)-1] != dbPath {
+		t.Errorf("last key (DB path) = %q, want %q", got[len(got)-1], dbPath)
+	}
+}
+
+func TestPlaylistObjectCandidates_variantOnlyFolder(t *testing.T) {
+	folder := "models/x/uid_source"
+	got := playlistObjectCandidates("720p.m3u8", folder, true, strPtr("ignored-for-non-master"))
+	want := []string{folder + "/720p.m3u8"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+func TestHlsPathsUnset(t *testing.T) {
+	empty := ""
+	if !hlsPathsUnset(nil, nil) {
+		t.Fatal("expected unset when both nil")
+	}
+	if !hlsPathsUnset(&empty, &empty) {
+		t.Fatal("expected unset when both empty strings")
+	}
+	m := "models/x/a.m3u8"
+	if hlsPathsUnset(&m, nil) {
+		t.Fatal("expected set when master path present")
+	}
+}
+
+func TestSyntheticHLSFolder(t *testing.T) {
+	if got := syntheticHLSFolder("alinaxrose", "08gept328tlq3pcs27jp"); got != "alinaxrose/08gept328tlq3pcs27jp_source" {
+		t.Fatalf("syntheticHLSFolder = %q", got)
+	}
+	if syntheticHLSFolder("", "x") != "" || syntheticHLSFolder("m", "") != "" {
+		t.Fatal("expected empty for missing parts")
 	}
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Copy, Check, Gift } from "lucide-react";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -47,14 +47,24 @@ function pathHidesModal(pathname: string | null): boolean {
   return HIDE_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function allowReferralModalPreview(): boolean {
+  return process.env.NEXT_PUBLIC_REFERRAL_MODAL_PREVIEW !== "false";
+}
+
 export function ReferralProgramModal() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const previewMode = useMemo(() => {
+    if (searchParams.get("refModal") !== "preview") return false;
+    return allowReferralModalPreview();
+  }, [searchParams]);
   const t = useTranslations("referral");
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<ReferralMe | null>(null);
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trackedShownRef = useRef(false);
+  const previewActiveRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -63,13 +73,37 @@ export function ReferralProgramModal() {
   }, []);
 
   useEffect(() => {
+    if (previewMode) return;
     if (pathHidesModal(pathname)) {
       setOpen(false);
       setData(null);
     }
-  }, [pathname]);
+  }, [pathname, previewMode]);
+
+  /** UI-only preview: ?refModal=preview (opcjonalnie wyłącz env: NEXT_PUBLIC_REFERRAL_MODAL_PREVIEW=false). */
+  useEffect(() => {
+    if (!previewMode) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      previewActiveRef.current = true;
+      setData({
+        referralLink: origin ? `${origin}/r/PREVIEW` : "https://example.com/r/PREVIEW",
+        bonuses: { creditsReferrer: 10, bonusPercentReferee: 20 },
+      });
+      setOpen(true);
+    }, OPEN_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [previewMode]);
 
   useEffect(() => {
+    if (previewMode) return;
     if (pathHidesModal(pathname)) return;
     if (!shouldShowReferralPromoModal()) return;
     if (hasAutoShownModalThisSession()) return;
@@ -101,19 +135,26 @@ export function ReferralProgramModal() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [pathname]);
+  }, [pathname, previewMode]);
 
   useEffect(() => {
     if (!open || trackedShownRef.current) return;
     trackedShownRef.current = true;
-    trackReferralProgramNudge("promo_modal", "shown");
+    if (!previewActiveRef.current) {
+      trackReferralProgramNudge("promo_modal", "shown");
+    }
   }, [open]);
 
   const handleDismiss = (reason: "later" | "overlay") => {
-    dismissReferralPromoModal();
+    if (!previewActiveRef.current) {
+      dismissReferralPromoModal();
+      trackReferralProgramNudge("promo_modal", "dismissed", { reason });
+    } else {
+      trackedShownRef.current = false;
+    }
+    previewActiveRef.current = false;
     setOpen(false);
     setData(null);
-    trackReferralProgramNudge("promo_modal", "dismissed", { reason });
   };
 
   const handleCopy = async () => {
@@ -122,7 +163,9 @@ export function ReferralProgramModal() {
     try {
       await navigator.clipboard.writeText(data.referralLink);
       setCopied(true);
-      trackReferralProgramNudge("promo_modal", "cta_click", { target: "copy" });
+      if (!previewActiveRef.current) {
+        trackReferralProgramNudge("promo_modal", "cta_click", { target: "copy" });
+      }
       copyTimeoutRef.current = setTimeout(() => {
         setCopied(false);
         copyTimeoutRef.current = null;
@@ -201,8 +244,13 @@ export function ReferralProgramModal() {
               href="/referral"
               className={cn(buttonVariants(), "inline-flex")}
               onClick={() => {
-                trackReferralProgramNudge("promo_modal", "cta_click", { target: "referral_page" });
-                dismissReferralPromoModal();
+                if (!previewActiveRef.current) {
+                  trackReferralProgramNudge("promo_modal", "cta_click", { target: "referral_page" });
+                  dismissReferralPromoModal();
+                } else {
+                  trackedShownRef.current = false;
+                }
+                previewActiveRef.current = false;
                 setOpen(false);
                 setData(null);
               }}

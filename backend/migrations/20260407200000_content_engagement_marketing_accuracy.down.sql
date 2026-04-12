@@ -1,0 +1,3 @@
+-- Revert trigger to previous definition (without detail_views / delta semantics) — optional manual restore.
+-- Column detail_views left in place with DROP only if you need strict rollback:
+-- ALTER TABLE content_engagement_daily DROP COLUMN IF EXISTS detail_views;

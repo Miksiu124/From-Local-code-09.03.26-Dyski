@@ -13,6 +13,7 @@ import (
 
 	"content-platform-backend/internal/admin"
 	"content-platform-backend/internal/auth"
+	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/credits"
@@ -106,12 +107,9 @@ func main() {
 		}
 		if code == http.StatusInternalServerError {
 			log.Printf("[HTTP] Internal error: %v", err)
-			msg = "Internal server error"
+			msg = http.StatusText(code)
 		}
-		_ = c.JSON(code, map[string]interface{}{
-			"error":   http.StatusText(code),
-			"message": msg,
-		})
+		_ = c.JSON(code, common.HTTPRecoverError(code, msg))
 	}
 
 	// ── Services ─────────────────────────────────────────────────────────
@@ -185,6 +183,7 @@ func main() {
 	contentGroup.GET("/:slug/:contentItemId/details", contentHandler.GetContentDetails, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail", contentHandler.Thumbnail, authMW.OptionalAuth)
 	contentGroup.GET("/:id/thumbnail/:filename", contentHandler.Thumbnail, authMW.OptionalAuth)
+	contentGroup.GET("/:id/source", contentHandler.DownloadSource, authMW.Authenticate, authMW.RequireEmailVerified)
 	contentGroup.GET("/:id/playlist/:filename", contentHandler.Playlist, authMW.Authenticate, authMW.RequireEmailVerified)
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
 
@@ -242,7 +241,7 @@ func main() {
 	// Public referral link tracking (no auth) - /r/[code] redirects here
 	api.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
 
-	obsHandler := observability.NewHandler(pgPool, rateLimiter)
+	obsHandler := observability.NewHandler(pgPool, rateLimiter, cfg.PostgresBackupDir, cfg.PostgresBackupDBName)
 	api.POST("/public/client-errors", obsHandler.PostClientError)
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
@@ -253,6 +252,8 @@ func main() {
 	adminGroup.GET("/credits/purchases/stream", adminHandler.StreamPendingPurchases)
 	adminGroup.GET("/credits/purchases/:id/proof", adminHandler.GetPurchaseProof)
 	adminGroup.POST("/credits/purchases/:id/approve", adminHandler.ApprovePurchase)
+	// Alias: some proxies/WAFs block path segment "approve"; UI uses /complete
+	adminGroup.POST("/credits/purchases/:id/complete", adminHandler.ApprovePurchase)
 	adminGroup.POST("/credits/purchases/:id/reject", adminHandler.RejectPurchase)
 	adminGroup.GET("/users", adminHandler.ListUsers)
 	adminGroup.GET("/users/:id", adminHandler.GetUser)
@@ -285,15 +286,23 @@ func main() {
 	adminGroup.POST("/r2/import", adminHandler.ImportR2)
 	adminGroup.POST("/r2/avatars", adminHandler.UploadAvatar, echomw.BodyLimit("6M"))
 	adminGroup.GET("/analytics", adminHandler.GetAnalytics)
+	adminGroup.GET("/content-performance", adminHandler.GetContentPerformance)
+	adminGroup.GET("/catalog-model-performance", adminHandler.GetCatalogModelPerformance)
+	adminGroup.POST("/content/bulk-zip", adminHandler.BulkDownloadContentZip, echomw.BodyLimit("512k"))
+	adminGroup.GET("/content/:id/source-download", adminHandler.DownloadContentSource)
 	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
 	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)
 	adminGroup.DELETE("/observability/client-errors", obsHandler.ClearClientErrors)
 	adminGroup.GET("/observability/runtime", obsHandler.GetRuntimeStats)
+	adminGroup.GET("/observability/db-backup", obsHandler.GetDBBackupStatus)
 
 	// ── Health check ─────────────────────────────────────────────────────
 	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"status":  "ok",
+			"message": "Service is running.",
+		})
 	})
 
 	// ── Graceful shutdown ────────────────────────────────────────────────

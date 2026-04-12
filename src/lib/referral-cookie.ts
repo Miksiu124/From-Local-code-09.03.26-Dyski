@@ -3,14 +3,16 @@
  * HttpOnly: false so JS can read it for registration.
  */
 
-const REF_COOKIE_NAME = "ref_code";
+export const REF_COOKIE_NAME = "ref_code";
 const REF_COOKIE_MAX_AGE_DAYS = 60;
+/** Shared with server-side Set-Cookie (see referral-server-cookie.ts). */
+export const REF_COOKIE_MAX_AGE_SEC = REF_COOKIE_MAX_AGE_DAYS * 24 * 60 * 60;
 
 export function setRefCookie(code: string): void {
   if (typeof document === "undefined" || !code || code.length > 32) return;
   const value = code.trim().toUpperCase().slice(0, 32);
   if (!value) return;
-  const maxAge = REF_COOKIE_MAX_AGE_DAYS * 24 * 60 * 60;
+  const maxAge = REF_COOKIE_MAX_AGE_SEC;
   const secure = typeof window !== "undefined" && window.location?.protocol === "https:";
   document.cookie = `${REF_COOKIE_NAME}=${encodeURIComponent(value)};path=/;max-age=${maxAge};SameSite=Lax${secure ? ";Secure" : ""}`;
 }

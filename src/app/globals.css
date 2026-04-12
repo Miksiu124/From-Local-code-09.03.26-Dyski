@@ -191,6 +191,28 @@ body {
   contain-intrinsic-size: 200px 267px;
 }
 
+/* Model folder — scroll-into-view reveals (IntersectionObserver toggles .model-folder-reveal-visible) */
+@media (prefers-reduced-motion: no-preference) {
+  .model-folder-reveal {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  .model-folder-reveal.model-folder-reveal-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    transition:
+      opacity 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--reveal-stagger, 0) * 38ms);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-folder-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 /* Grid card hover lift effect */
 .card-hover {
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease;

@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { fetchApi } from "@/lib/api-client";
 import { AdminPaymentsList } from "@/components/admin/admin-payments-list";
+import { parseReferralReferrer } from "@/lib/referral-referrer";
 
 interface ApiPurchase {
   id: string;
@@ -16,6 +17,10 @@ interface ApiPurchase {
   adminNotes: string | null;
   expirationTime: string;
   createdAt: string;
+  fromCustomLink?: boolean;
+  customLinkSlug?: string | null;
+  fromUserReferral?: boolean;
+  referralReferrer?: { id: string; email: string; name: string | null } | null;
   user: { id: string; email: string; name: string | null };
   creditPackage: { name: string; credits: number; price: number };
 }
@@ -56,6 +61,10 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
       adminNotes: p.adminNotes,
       expirationTime: p.expirationTime,
       createdAt: p.createdAt,
+      fromCustomLink: Boolean(p.fromCustomLink),
+      customLinkSlug: p.customLinkSlug ?? null,
+      fromUserReferral: Boolean(p.fromUserReferral),
+      referralReferrer: parseReferralReferrer(p.referralReferrer),
     }));
 
   const settings = await fetchApi<SettingItem[]>("/admin/settings").catch(() => [] as SettingItem[]);

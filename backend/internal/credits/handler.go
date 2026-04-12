@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -262,6 +263,33 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	var fromCustomLink bool
+	var customLinkSlug *string
+	var fromUserReferral bool
+	var effectiveLinkID *string
+	_ = h.db.QueryRow(ctx, `
+		SELECT COALESCE(cp.custom_link_id, u.custom_link_id)
+		FROM credit_purchases cp JOIN users u ON u.id = cp.user_id WHERE cp.id = $1
+	`, purchaseID).Scan(&effectiveLinkID)
+	if effectiveLinkID != nil && *effectiveLinkID != "" {
+		fromCustomLink = true
+		_ = h.db.QueryRow(ctx, `SELECT slug FROM custom_links WHERE id = $1`, *effectiveLinkID).Scan(&customLinkSlug)
+	}
+	_ = h.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM referrals WHERE referee_id = $1)`, userID).Scan(&fromUserReferral)
+
+	var referralReferrer interface{}
+	if fromUserReferral {
+		var rid, remail string
+		var rname *string
+		if err := h.db.QueryRow(ctx, `
+			SELECT u.id, u.email, u.name
+			FROM referrals r JOIN users u ON u.id = r.referrer_id
+			WHERE r.referee_id = $1
+		`, userID).Scan(&rid, &remail, &rname); err == nil && rid != "" {
+			referralReferrer = map[string]interface{}{"id": rid, "email": remail, "name": rname}
+		}
+	}
+
 	// Get crypto wallet if needed
 	var walletAddress *string
 	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
@@ -343,7 +371,11 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"status":          "PENDING",
 		"expirationTime":  expirationTime,
 		"createdAt":       time.Now().UTC().Format(time.RFC3339),
-		"user":            map[string]interface{}{"email": discordInfo.UserEmail, "name": discordInfo.UserName},
+		"fromCustomLink":   fromCustomLink,
+		"customLinkSlug":   customLinkSlug,
+		"fromUserReferral": fromUserReferral,
+		"referralReferrer": referralReferrer,
+		"user":             map[string]interface{}{"email": discordInfo.UserEmail, "name": discordInfo.UserName},
 		"creditPackage":   map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
 	})
 	_ = h.redis.Publish(ctx, "admin:purchases", string(adminPayload))
@@ -415,13 +447,13 @@ func sanitizeProofFilename(s string) string {
 func (h *Handler) UploadProof(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
 	}
-	if !common.IsValidUUID(purchaseID) {
-		return common.NotFound(c, "Purchase not found")
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	file, err := c.FormFile("file")
@@ -462,7 +494,11 @@ func (h *Handler) UploadProof(c echo.Context) error {
 		WHERE cp.id = $1 AND cp.user_id = $2
 	`, purchaseID, userID).Scan(&status, &userName, &userEmail, &amount, &createdAt, &paymentMethod)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[UploadProof] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 	if status != "PENDING" {
 		return common.BadRequest(c, "Can only upload proof for PENDING purchases")
@@ -653,10 +689,13 @@ func (h *Handler) ListPackages(c echo.Context) error {
 func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	// Auto-expire (skip BLIK with retries remaining)
@@ -682,7 +721,11 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 		FROM credit_purchases WHERE id = $1 AND user_id = $2
 	`, purchaseID, userID).Scan(&status, &paymentMethod, &expirationTime, &paymentProofUrl)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[GetPurchaseStatus] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 
 	return common.Success(c, map[string]interface{}{
@@ -697,10 +740,13 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	// Verify ownership
@@ -709,7 +755,11 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 		SELECT status FROM credit_purchases WHERE id = $1 AND user_id = $2
 	`, purchaseID, userID).Scan(&status)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[StreamPurchaseStatus] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 
 	// If already resolved, return immediately
@@ -779,10 +829,13 @@ func (h *Handler) StreamPurchaseStatus(c echo.Context) error {
 func (h *Handler) SubmitTxId(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	var req struct {
@@ -810,10 +863,13 @@ func (h *Handler) SubmitTxId(c echo.Context) error {
 func (h *Handler) UpdateBlikCode(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
-	purchaseID := c.Param("id")
+	purchaseID, uuidOK := common.ParseUUIDParam(c.Param("id"))
 
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	if !uuidOK {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	var req struct {

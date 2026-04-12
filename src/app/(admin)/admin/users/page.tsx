@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -83,8 +84,10 @@ interface UserDetail {
 type SortKey = "user" | "credits" | "purchases" | "access" | "joined";
 type SortDir = "asc" | "desc";
 
-export default function AdminUsersPage() {
+function AdminUsersPageInner() {
   const t = useTranslations("admin");
+  const searchParams = useSearchParams();
+  const openedUserFromQuery = useRef<string | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -154,6 +157,17 @@ export default function AdminUsersPage() {
       // Error handled silently
     }
   };
+
+  const userIdQuery = searchParams.get("userId");
+  useEffect(() => {
+    if (!userIdQuery) {
+      openedUserFromQuery.current = null;
+      return;
+    }
+    if (openedUserFromQuery.current === userIdQuery) return;
+    openedUserFromQuery.current = userIdQuery;
+    void handleViewUser(userIdQuery);
+  }, [userIdQuery]);
 
   const handleGrantAccess = async () => {
     if (!selectedUser) return;
@@ -649,5 +663,19 @@ export default function AdminUsersPage() {
         </DialogFooter>
       </Dialog>
     </div>
+  );
+}
+
+export default function AdminUsersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground text-sm">
+          Loading…
+        </div>
+      }
+    >
+      <AdminUsersPageInner />
+    </Suspense>
   );
 }

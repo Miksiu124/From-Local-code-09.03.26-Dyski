@@ -16,7 +16,6 @@ import {
   ShoppingCart,
   UserPlus,
 } from "lucide-react";
-import { NotificationBell } from "@/components/layout/notification-bell";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
@@ -42,7 +41,6 @@ export function Header() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const rightSideRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -117,6 +115,9 @@ export function Header() {
 
   const isAdmin = user?.role === "ADMIN";
 
+  const adminHomeHref = "/admin/content-insights/engagement";
+  const isAdminNavActive = pathname?.startsWith("/admin") ?? false;
+
   const handleLogoClick = (e: React.MouseEvent) => {
     // Reset models search state so logo returns to clean main page
     if (typeof window !== "undefined") {
@@ -133,9 +134,9 @@ export function Header() {
 
   const navLinks = [
     { href: "/", label: t("nav.models"), show: true },
-    { href: "/purchase", label: t("nav.buyCredits"), show: !!user },
+    { href: "/purchase", label: t("nav.buyCredits"), show: true },
     { href: "/dashboard", label: t("nav.dashboard"), show: !!user },
-    { href: "/admin", label: t("nav.admin"), show: isAdmin },
+    { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
 
   return (
@@ -155,25 +156,37 @@ export function Header() {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-1 ml-8">
-          {navLinks.map((link) => (
+          {navLinks.map((link) => {
+            const navActive =
+              link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+            return (
             <Link
               key={link.href}
               href={link.href}
-              data-tour={link.href === "/" ? "tour-models" : link.href === "/purchase" ? "tour-buy" : undefined}
+              data-tour={
+                link.href === "/"
+                  ? "tour-models"
+                  : link.href === "/purchase"
+                    ? user
+                      ? "tour-buy"
+                      : "tour-guest-credits"
+                    : undefined
+              }
               className={cn(
                 "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                pathname === link.href
+                navActive
                   ? "text-foreground bg-white/[0.06]"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
               )}
             >
               {link.label}
             </Link>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Right side */}
-        <div ref={rightSideRef} className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-2 relative">
           {/* Credit Balance */}
           {user && (
             <>
@@ -194,16 +207,13 @@ export function Header() {
             </>
           )}
 
-          {/* Notifications */}
-          {user && <NotificationBell dropdownAnchorRef={rightSideRef} />}
-
-          {/* Guest: pricing / buy credits — always visible (incl. mobile) for tour spotlight */}
+          {/* Guest: compact "buy credits" on small screens (desktop nav is hidden < md). Same data-tour as nav link — tour picks first visible rect. */}
           {!loading && !user && (
             <Link
               href="/purchase"
               data-tour="tour-guest-credits"
               className={cn(
-                "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 shrink-0",
+                "md:hidden flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 shrink-0",
                 pathname === "/purchase"
                   ? "text-foreground bg-white/[0.06]"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
@@ -271,7 +281,7 @@ export function Header() {
                         { href: "/my-purchases", icon: ShoppingCart, label: t("nav.myPurchases") },
                         { href: "/favorites", icon: Heart, label: t("nav.favorites") },
                         { href: "/referral", icon: UserPlus, label: t("nav.referral") },
-                        ...(isAdmin ? [{ href: "/admin", icon: ShieldCheck, label: t("nav.admin") }] : []),
+                        ...(isAdmin ? [{ href: adminHomeHref, icon: ShieldCheck, label: t("nav.admin") }] : []),
                       ].map((item) => (
                         <Link
                           key={item.href}
@@ -335,13 +345,16 @@ export function Header() {
             className="grid md:hidden border-t border-white/[0.06] bg-background/95 backdrop-blur-xl"
           >
             <nav className="flex flex-col p-3 gap-0.5 min-h-0 overflow-hidden">
-              {navLinks.map((link) => (
+              {navLinks.map((link) => {
+                const navActive =
+                  link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+                return (
                 <Link
                   key={link.href}
                   href={link.href}
                   className={cn(
                     "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
-                    pathname === link.href
+                    navActive
                       ? "bg-white/[0.06] text-foreground"
                       : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
                   )}
@@ -349,21 +362,8 @@ export function Header() {
                 >
                   {link.label}
                 </Link>
-              ))}
-              {!user && (
-                <Link
-                  href="/purchase"
-                  className={cn(
-                    "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
-                    pathname === "/purchase"
-                      ? "bg-white/[0.06] text-foreground"
-                      : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-                  )}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {t("nav.buyCredits")}
-                </Link>
-              )}
+                );
+              })}
               {user && (
                 <>
                   <Link

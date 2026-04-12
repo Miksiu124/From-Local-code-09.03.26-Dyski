@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -56,20 +57,12 @@ func (h *Handler) GetMe(c echo.Context) error {
 	}
 
 	if referralCode == nil || *referralCode == "" {
-		for i := 0; i < 5; i++ {
-			code := generateReferralCode()
-			_, err = h.db.Exec(ctx, `UPDATE users SET referral_code = $1 WHERE id = $2 AND (referral_code IS NULL OR referral_code = '')`, code, userID)
-			if err != nil {
-				if strings.Contains(err.Error(), "unique") {
-					continue
-				}
-				log.Printf("[Referral] Failed to set code: %v", err)
-				return common.InternalError(c)
-			}
-			referralCode = &code
-			break
+		if err := EnsureReferralCodeForUser(ctx, h.db, userID); err != nil {
+			log.Printf("[Referral] EnsureReferralCodeForUser in GetMe: %v", err)
+			return common.InternalError(c)
 		}
-		if referralCode == nil || *referralCode == "" {
+		err = h.db.QueryRow(ctx, `SELECT referral_code FROM users WHERE id = $1`, userID).Scan(&referralCode)
+		if err != nil || referralCode == nil || *referralCode == "" {
 			return common.InternalError(c)
 		}
 	}
@@ -138,7 +131,7 @@ func (h *Handler) GetMe(c echo.Context) error {
 		JOIN users u ON u.id = r.referee_id
 		WHERE r.referrer_id = $1 AND r.credits_awarded_at IS NOT NULL
 		ORDER BY r.credits_awarded_at DESC
-		LIMIT 10
+		LIMIT 100
 	`, userID)
 	if err == nil {
 		defer rows.Close()
@@ -270,8 +263,11 @@ func SaveReferralFromCode(ctx context.Context, db *pgxpool.Pool, refereeID, refC
 	refCode = strings.TrimSpace(strings.ToUpper(refCode))
 	var referrerID string
 	err := db.QueryRow(ctx, `SELECT id FROM users WHERE referral_code = $1 AND id != $2`, refCode, refereeID).Scan(&referrerID)
-	if err == pgx.ErrNoRows || err != nil {
-		return nil
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
 	}
 	_, err = db.Exec(ctx, `
 		INSERT INTO referrals (id, referrer_id, referee_id)

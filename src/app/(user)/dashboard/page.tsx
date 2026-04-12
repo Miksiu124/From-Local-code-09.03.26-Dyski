@@ -98,6 +98,15 @@ export default function DashboardPage() {
   const [autoplayStatus, setAutoplayStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [resendVerifyLoading, setResendVerifyLoading] = useState(false);
   const [verifyResendStatus, setVerifyResendStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [resendVerifyCooldownSec, setResendVerifyCooldownSec] = useState(0);
+
+  useEffect(() => {
+    if (resendVerifyCooldownSec <= 0) return;
+    const id = setInterval(() => {
+      setResendVerifyCooldownSec((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [resendVerifyCooldownSec]);
 
   useEffect(() => {
     async function load() {
@@ -162,7 +171,7 @@ export default function DashboardPage() {
         setNameStatus({ type: "success", message: "Nickname updated" });
         window.dispatchEvent(new CustomEvent("auth-change"));
       } else {
-        setNameStatus({ type: "error", message: data.error || "Failed to update" });
+        setNameStatus({ type: "error", message: data.message || data.error || "Failed to update" });
       }
     } catch {
       setNameStatus({ type: "error", message: "Network error" });
@@ -188,7 +197,7 @@ export default function DashboardPage() {
         setEmailPassword("");
         window.dispatchEvent(new CustomEvent("auth-change"));
       } else {
-        setEmailStatus({ type: "error", message: data.error || "Failed to update" });
+        setEmailStatus({ type: "error", message: data.message || data.error || "Failed to update" });
       }
     } catch {
       setEmailStatus({ type: "error", message: "Network error" });
@@ -220,7 +229,7 @@ export default function DashboardPage() {
         setNewPassword("");
         setConfirmPassword("");
       } else {
-        setPasswordStatus({ type: "error", message: data.error || "Failed to update" });
+        setPasswordStatus({ type: "error", message: data.message || data.error || "Failed to update" });
       }
     } catch {
       setPasswordStatus({ type: "error", message: "Network error" });
@@ -273,11 +282,22 @@ export default function DashboardPage() {
     setVerifyResendStatus(null);
     try {
       const res = await fetch("/api/auth/resend-verification", { method: "POST", credentials: "include" });
-      const data = await res.json();
+      const data = (await res.json()) as { error?: string; message?: string };
+      if (res.status === 429) {
+        const ra = res.headers.get("Retry-After");
+        const secs = ra ? Math.max(1, parseInt(ra, 10) || 0) : 0;
+        if (secs > 0) setResendVerifyCooldownSec(secs);
+        setVerifyResendStatus({
+          type: "error",
+          message: data.message || data.error || "Too many requests",
+        });
+        return;
+      }
       if (res.ok) {
         setVerifyResendStatus({ type: "success", message: data.message || "Verification email sent. Check your inbox." });
+        setResendVerifyCooldownSec(120);
       } else {
-        setVerifyResendStatus({ type: "error", message: data.error || "Failed to send" });
+        setVerifyResendStatus({ type: "error", message: data.message || data.error || "Failed to send" });
       }
     } catch {
       setVerifyResendStatus({ type: "error", message: "Network error" });
@@ -297,11 +317,13 @@ export default function DashboardPage() {
             variant="outline"
             size="sm"
             className="border-yellow-500/30 text-yellow-200 hover:bg-yellow-500/10 shrink-0 gap-2"
-            disabled={resendVerifyLoading}
+            disabled={resendVerifyLoading || resendVerifyCooldownSec > 0}
             onClick={handleResendVerification}
           >
             {resendVerifyLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {tAuth("resendVerification")}
+            {resendVerifyCooldownSec > 0
+              ? tAuth("resendVerificationWait", { seconds: resendVerifyCooldownSec })
+              : tAuth("resendVerification")}
           </Button>
           </div>
           {verifyResendStatus && (

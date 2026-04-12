@@ -85,7 +85,8 @@ if ($RebuildFresh) {
   $resumeArg = if ($PgResume) { " --resume " } else { "" }
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh${resumeArg}$bmArg"
 } elseif ($Build) {
-  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose $composeFiles build && docker compose $composeFiles up -d"
+  # Po recreate frontend/api nginx może trzymać stare IP upstream — reload nginx po up (obeszło też przed poprawką resolver w nginx.conf.production)
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose $composeFiles build && docker compose $composeFiles up -d && docker compose $composeFiles exec -T nginx nginx -s reload 2>/dev/null || docker compose $composeFiles restart nginx"
 } else {
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose $composeFiles up -d"
 }

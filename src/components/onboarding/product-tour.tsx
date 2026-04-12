@@ -40,11 +40,12 @@ function resolveStepIds(step: TourStepTarget): readonly string[] {
 function measureTargets(ids: readonly string[]): Rect | null {
   if (typeof document === "undefined") return null;
   for (const id of ids) {
-    const el = document.querySelector(`[data-tour="${id}"]`);
-    if (!el) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width >= 2 && r.height >= 2) {
-      return { top: r.top, left: r.left, width: r.width, height: r.height };
+    const nodes = document.querySelectorAll(`[data-tour="${id}"]`);
+    for (const el of nodes) {
+      const r = el.getBoundingClientRect();
+      if (r.width >= 2 && r.height >= 2) {
+        return { top: r.top, left: r.left, width: r.width, height: r.height };
+      }
     }
   }
   return null;
@@ -53,10 +54,11 @@ function measureTargets(ids: readonly string[]): Rect | null {
 function firstVisibleTargetEl(ids: readonly string[]): Element | null {
   if (typeof document === "undefined") return null;
   for (const id of ids) {
-    const el = document.querySelector(`[data-tour="${id}"]`);
-    if (!el) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width >= 2 && r.height >= 2) return el;
+    const nodes = document.querySelectorAll(`[data-tour="${id}"]`);
+    for (const el of nodes) {
+      const r = el.getBoundingClientRect();
+      if (r.width >= 2 && r.height >= 2) return el;
+    }
   }
   return null;
 }

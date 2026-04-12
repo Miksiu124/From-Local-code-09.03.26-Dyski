@@ -246,10 +246,10 @@ func (h *Handler) GetDetails(c echo.Context) error {
 	// Verify user has favorited this item and get content + model (+ paths for CDN thumb URL)
 	var ciID, ciType, modelID, modelName, modelFolder, favCreatedAt, favID string
 	var ciDuration *int
-	var thumbPath, hlsPath *string
+	var thumbPath, hlsPath, sourcePath *string
 	baseQuery := `
 		SELECT ci.id, ci.content_type, ci.duration,
-		       ci.thumbnail_path, ci.hls_folder_path,
+		       ci.thumbnail_path, ci.hls_folder_path, ci.source_video_path,
 		       m.id, m.name, m.folder_name, f.created_at::text, f.id
 		FROM favorites f
 		JOIN content_items ci ON ci.id = f.content_item_id AND ci.is_active = true AND ci.is_hidden = false
@@ -257,7 +257,7 @@ func (h *Handler) GetDetails(c echo.Context) error {
 		WHERE f.user_id = $1 AND f.content_item_id = $2
 	`
 	err := h.db.QueryRow(ctx, baseQuery, userID, contentItemID).Scan(
-		&ciID, &ciType, &ciDuration, &thumbPath, &hlsPath,
+		&ciID, &ciType, &ciDuration, &thumbPath, &hlsPath, &sourcePath,
 		&modelID, &modelName, &modelFolder, &favCreatedAt, &favID,
 	)
 	if err != nil {
@@ -334,6 +334,7 @@ func (h *Handler) GetDetails(c echo.Context) error {
 	}
 
 	thumbURL := h.thumbnailCDNUrl(thumbPath, hlsPath)
+	hasSourceMp4 := sourcePath != nil && strings.TrimSpace(*sourcePath) != ""
 	return common.Success(c, map[string]interface{}{
 		"model": map[string]interface{}{
 			"id":         modelID,
@@ -345,6 +346,7 @@ func (h *Handler) GetDetails(c echo.Context) error {
 			"contentType":   ciType,
 			"duration":      ciDuration,
 			"thumbnailUrl":  thumbURL,
+			"hasSourceMp4":  hasSourceMp4,
 		},
 		"hasAccess":  hasAccess,
 		"prevItemId": prevID,

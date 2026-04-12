@@ -80,7 +80,16 @@ export function LazyRetryImage({
     const raf = requestAnimationFrame(() => tryLoad());
 
     // Fallback: viewport resize (e.g. dev tools open) can cause IO to miss elements.
-    const resizeHandler = () => tryLoad();
+    // Throttle like scroll — rapid resize was thrashing layout with the content grid under the overlay.
+    let resizeTicking = false;
+    const resizeHandler = () => {
+      if (resizeTicking) return;
+      resizeTicking = true;
+      requestAnimationFrame(() => {
+        resizeTicking = false;
+        tryLoad();
+      });
+    };
     window.addEventListener("resize", resizeHandler);
 
     // Fallback: fast scroll can miss IO callbacks; throttle scroll check

@@ -18,6 +18,9 @@ services:
       - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
       - PORT=8080
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
+      # Observability: last DB backup file — mount postgres_backups (docker-compose.vps.yml) i ustaw w .env: POSTGRES_BACKUP_DIR=/backups
+      - POSTGRES_BACKUP_DIR=${POSTGRES_BACKUP_DIR:-}
+      - POSTGRES_BACKUP_DB_NAME=${POSTGRES_BACKUP_DB_NAME:-content_platform}
     expose:
       - "8080"
     ports:
@@ -50,6 +53,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        # Baked at build time; use https://yourdomain.com in production .env before `docker compose build`
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
         - NEXT_PUBLIC_MEDIA_HOST=${NEXT_PUBLIC_MEDIA_HOST}
     container_name: content-frontend

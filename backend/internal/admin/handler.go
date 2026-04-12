@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"content-platform-backend/internal/mailer"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
@@ -107,10 +110,17 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			   cp.payment_proof_url, cp.admin_notes, cp.retry_count,
 			   cp.expiration_time::text, cp.created_at::text, cp.updated_at::text,
 			   u.id AS user_id, u.email, u.name,
-			   pkg.name AS pkg_name, pkg.credits AS pkg_credits, pkg.price AS pkg_price
+			   pkg.name AS pkg_name, pkg.credits AS pkg_credits, pkg.price AS pkg_price,
+			   COALESCE(cp.custom_link_id, u.custom_link_id)::text AS effective_custom_link_id,
+			   cl_eff.slug,
+			   (r.id IS NOT NULL) AS from_user_referral,
+			   referrer.id::text AS ref_referrer_id, referrer.email AS ref_referrer_email, referrer.name AS ref_referrer_name
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
 		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
+		LEFT JOIN custom_links cl_eff ON cl_eff.id = COALESCE(cp.custom_link_id, u.custom_link_id)
+		LEFT JOIN referrals r ON r.referee_id = u.id
+		LEFT JOIN users referrer ON referrer.id = r.referrer_id
 	`
 	args := []interface{}{}
 	argIdx := 1
@@ -146,6 +156,10 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			pkgName                  string
 			pkgCredits               int
 			pkgPrice                 float64
+			effectiveCustomLinkID, customSlug *string
+			fromUserReferral         bool
+			refReferrerID, refReferrerEmail *string
+			refReferrerName          *string
 		)
 
 		if err := rows.Scan(&id, &credits, &amount, &paymentMethod, &txCode,
@@ -153,11 +167,25 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			&proofUrl, &adminNotes, &retryCount,
 			&expiration, &created, &upd,
 			&uid, &email, &uname,
-			&pkgName, &pkgCredits, &pkgPrice); err != nil {
+			&pkgName, &pkgCredits, &pkgPrice,
+			&effectiveCustomLinkID, &customSlug, &fromUserReferral,
+			&refReferrerID, &refReferrerEmail, &refReferrerName); err != nil {
 			continue
 		}
 
 		creditsInt, _ := strconv.Atoi(credits)
+		fromCustomLink := effectiveCustomLinkID != nil && *effectiveCustomLinkID != ""
+		var referralReferrer interface{}
+		if fromUserReferral && refReferrerID != nil && *refReferrerID != "" {
+			rr := map[string]interface{}{"id": *refReferrerID}
+			if refReferrerEmail != nil {
+				rr["email"] = *refReferrerEmail
+			} else {
+				rr["email"] = ""
+			}
+			rr["name"] = refReferrerName
+			referralReferrer = rr
+		}
 		purchases = append(purchases, map[string]interface{}{
 			"id": id, "credits": creditsInt, "amount": amount,
 			"paymentMethod": paymentMethod, "transactionCode": txCode,
@@ -165,8 +193,12 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 			"status": status, "paymentProofUrl": proofUrl, "adminNotes": adminNotes,
 			"retryCount": retryCount, "expirationTime": expiration,
 			"createdAt": created, "updatedAt": upd,
-			"user":          map[string]interface{}{"id": uid, "email": email, "name": uname},
-			"creditPackage": map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
+			"fromCustomLink":   fromCustomLink,
+			"customLinkSlug":   customSlug,
+			"fromUserReferral": fromUserReferral,
+			"referralReferrer": referralReferrer,
+			"user":             map[string]interface{}{"id": uid, "email": email, "name": uname},
+			"creditPackage":    map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
 		})
 	}
 	if purchases == nil {
@@ -180,8 +212,8 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 
 func (h *Handler) ApprovePurchase(c echo.Context) error {
 	ctx := c.Request().Context()
-	purchaseID := c.Param("id")
-	if !common.IsValidUUID(purchaseID) {
+	purchaseID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
 		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
@@ -203,10 +235,14 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 		FROM credit_purchases cp
 		JOIN users u ON u.id = cp.user_id
 		LEFT JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		WHERE cp.id = $1 FOR UPDATE
+		WHERE cp.id = $1 FOR UPDATE OF cp, u
 	`, purchaseID).Scan(&userID, &credits, &amount, &userEmail, &status, &promoCodeID, &paymentMethod, &tier)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[ApprovePurchase] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 	if status != "PENDING" {
 		return common.BadRequest(c, "Purchase is not pending")
@@ -303,8 +339,8 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 
 func (h *Handler) RejectPurchase(c echo.Context) error {
 	ctx := c.Request().Context()
-	purchaseID := c.Param("id")
-	if !common.IsValidUUID(purchaseID) {
+	purchaseID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
 		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
@@ -326,7 +362,11 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 		SELECT user_id, credits, status, payment_method::text FROM credit_purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&userID, &credits, &status, &paymentMethod)
 	if err != nil {
-		return common.NotFound(c, "Purchase not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Purchase not found")
+		}
+		log.Printf("[RejectPurchase] lookup failed: %v", err)
+		return common.InternalError(c)
 	}
 	if status != "PENDING" {
 		return common.BadRequest(c, "Purchase is not pending")
@@ -379,9 +419,9 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 // GetPurchaseProof streams the payment proof file from R2 for admin viewing.
 func (h *Handler) GetPurchaseProof(c echo.Context) error {
 	ctx := c.Request().Context()
-	purchaseID := c.Param("id")
-	if !common.IsValidUUID(purchaseID) {
-		return common.NotFound(c, "Purchase not found")
+	purchaseID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
+		return common.BadRequest(c, "Invalid purchase ID format")
 	}
 
 	var proofKey string
@@ -1965,4 +2005,696 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 			"revenue":       referralRevenue,
 		},
 	})
+}
+
+// adminGrowthUserFilterSQL matches growth funnel: exclude ADMIN users from metrics.
+const adminGrowthUserFilterSQL = `(g.user_id IS NULL OR u.id IS NULL OR u.role IS DISTINCT FROM 'ADMIN'::user_role)`
+
+func pgErrCode(err error) string {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return pe.Code
+	}
+	return ""
+}
+
+// ContentPerformanceRow is one row for /api/admin/content-performance.
+type ContentPerformanceRow struct {
+	ContentItemID     string  `json:"contentItemId"`
+	ContentType       string  `json:"contentType"`
+	ModelFolderName   string  `json:"modelFolderName"`
+	ModelName         string  `json:"modelName"`
+	ThumbOpens        int64   `json:"thumbOpens"`
+	DetailViews       int64   `json:"detailViews"`
+	FirstPlays        int64   `json:"firstPlays"`
+	PhotoFirstViews   int64   `json:"photoFirstViews"`
+	TotalWatchSeconds float64 `json:"totalWatchSeconds"`
+	EngagementSessions int64  `json:"engagementSessions"`
+	AvgWatchSeconds   float64 `json:"avgWatchSeconds"`
+	HasSourceFile     bool    `json:"hasSourceFile"`
+	CanExportZip      bool    `json:"canExportZip"`
+}
+
+// GetContentPerformance ranks content by engagement (excludes admin users from metrics).
+// Reads from content_engagement_daily (UTC buckets, maintained by trigger on growth_events) so
+// the admin query does not full-scan growth_events. Historical rows were backfilled in migration.
+// GET /api/admin/content-performance?days=30&limit=100&sort=...&order=asc|desc
+// sort: combined | watch | opens | model | type | thumb_opens | first | avg | source
+func (h *Handler) GetContentPerformance(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	days := 30
+	if q := c.QueryParam("days"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 && n <= 365 {
+			days = n
+		}
+	}
+	limit := 100
+	if q := c.QueryParam("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	sortKey := strings.ToLower(strings.TrimSpace(c.QueryParam("sort")))
+	if sortKey == "" {
+		sortKey = "combined"
+	}
+	orderParam := strings.ToLower(strings.TrimSpace(c.QueryParam("order")))
+	orderDir := "DESC"
+	switch orderParam {
+	case "asc":
+		orderDir = "ASC"
+	case "desc", "":
+		orderDir = "DESC"
+	default:
+		orderDir = "DESC"
+	}
+
+	var orderSQL string
+	switch sortKey {
+	case "watch":
+		orderSQL = fmt.Sprintf("COALESCE(x.total_watch_sec, 0) %s, COALESCE(x.engagement_sessions, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "opens":
+		orderSQL = fmt.Sprintf("(COALESCE(x.thumb_opens, 0) + COALESCE(x.detail_views, 0) + COALESCE(x.first_plays, 0) + COALESCE(x.photo_first_views, 0)) %s, COALESCE(x.total_watch_sec, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "combined":
+		orderSQL = fmt.Sprintf("(COALESCE(x.total_watch_sec, 0) + 30.0 * (COALESCE(x.thumb_opens, 0) + COALESCE(x.detail_views, 0) + COALESCE(x.first_plays, 0) + COALESCE(x.photo_first_views, 0))) %s, LOWER(m.folder_name) ASC", orderDir)
+	case "model":
+		orderSQL = fmt.Sprintf("LOWER(m.folder_name) %s, LOWER(m.name) %s, ci.id::text ASC", orderDir, orderDir)
+	case "type":
+		orderSQL = fmt.Sprintf("ci.content_type::text %s, LOWER(m.folder_name) ASC, ci.id::text ASC", orderDir)
+	case "thumb_opens":
+		orderSQL = fmt.Sprintf("COALESCE(x.thumb_opens, 0) %s, COALESCE(x.total_watch_sec, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "detail_views":
+		orderSQL = fmt.Sprintf("COALESCE(x.detail_views, 0) %s, COALESCE(x.total_watch_sec, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "first":
+		orderSQL = fmt.Sprintf("(COALESCE(x.first_plays, 0) + COALESCE(x.photo_first_views, 0)) %s, COALESCE(x.total_watch_sec, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "avg":
+		orderSQL = fmt.Sprintf("(CASE WHEN COALESCE(x.engagement_sessions, 0) > 0 THEN COALESCE(x.total_watch_sec, 0) / x.engagement_sessions::double precision ELSE 0 END) %s, COALESCE(x.total_watch_sec, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "source":
+		srcExpr := `(ci.source_video_path IS NOT NULL AND trim(ci.source_video_path) <> '')`
+		orderSQL = fmt.Sprintf("%s %s, LOWER(m.folder_name) ASC, ci.id::text ASC", srcExpr, orderDir)
+	default:
+		sortKey = "combined"
+		orderDir = "DESC"
+		orderSQL = "(COALESCE(x.total_watch_sec, 0) + 30.0 * (COALESCE(x.thumb_opens, 0) + COALESCE(x.detail_views, 0) + COALESCE(x.first_plays, 0) + COALESCE(x.photo_first_views, 0))) DESC, LOWER(m.folder_name) ASC"
+	}
+
+	// Prefer content_engagement_daily (fast). If migrations were not applied on this DB yet,
+	// fall back to aggregating growth_events (same filters; slower but works after deploy).
+	rollupSQL := `
+WITH agg AS (
+  SELECT
+    d.content_item_id AS cid,
+    SUM(d.thumb_opens)::bigint AS thumb_opens,
+    SUM(COALESCE(d.detail_views, 0))::bigint AS detail_views,
+    SUM(d.first_plays)::bigint AS first_plays,
+    SUM(d.photo_first_views)::bigint AS photo_first_views,
+    COALESCE(SUM(d.total_watch_sec), 0) AS total_watch_sec,
+    SUM(d.engagement_sessions)::bigint AS engagement_sessions
+  FROM content_engagement_daily d
+  WHERE d.bucket_date >= ((now() AT TIME ZONE 'utc')::date - ($1::int - 1))
+  GROUP BY d.content_item_id
+)
+SELECT
+  ci.id,
+  ci.content_type::text,
+  m.folder_name,
+  m.name,
+  COALESCE(x.thumb_opens, 0),
+  COALESCE(x.detail_views, 0),
+  COALESCE(x.first_plays, 0),
+  COALESCE(x.photo_first_views, 0),
+  COALESCE(x.total_watch_sec, 0),
+  COALESCE(x.engagement_sessions, 0),
+  (ci.source_video_path IS NOT NULL AND trim(ci.source_video_path) <> ''),
+  (
+    (ci.content_type = 'VIDEO' AND (
+      trim(coalesce(ci.source_video_path, '')) <> ''
+      OR trim(coalesce(ci.thumbnail_path, '')) <> ''
+      OR trim(coalesce(ci.hls_folder_path, '')) <> ''
+      OR trim(coalesce(ci.hls_master_path, '')) <> ''
+    ))
+    OR (ci.content_type = 'PHOTO' AND trim(coalesce(ci.thumbnail_path, '')) <> '')
+  )
+FROM agg x
+JOIN content_items ci ON ci.id = x.cid
+JOIN models m ON m.id = ci.model_id
+WHERE ci.is_active = true
+ORDER BY ` + orderSQL + `
+LIMIT $2`
+
+	legacySQL := `
+WITH agg AS (
+  SELECT
+    g.props->>'content_item_id' AS cid,
+    COUNT(*) FILTER (WHERE g.event_name = 'content_thumb_click' AND g.props->>'outcome' = 'open')::bigint AS thumb_opens,
+    COUNT(*) FILTER (WHERE g.event_name = 'content_detail_view')::bigint AS detail_views,
+    COUNT(*) FILTER (WHERE g.event_name = 'first_play')::bigint AS first_plays,
+    COUNT(*) FILTER (WHERE g.event_name = 'photo_view_first')::bigint AS photo_first_views,
+    COALESCE(SUM(CASE
+      WHEN g.event_name = 'video_engagement' AND NULLIF(TRIM(g.props->>'watch_delta_sec'), '') IS NOT NULL
+        THEN (NULLIF(TRIM(g.props->>'watch_delta_sec'), ''))::double precision
+      WHEN g.event_name = 'video_engagement' THEN (g.props->>'watched_seconds')::double precision
+      ELSE 0
+    END), 0) AS total_watch_sec,
+    COUNT(*) FILTER (WHERE g.event_name = 'video_engagement' AND (g.props->>'flush_kind' IS NULL OR TRIM(g.props->>'flush_kind') = 'final'))::bigint AS engagement_sessions
+  FROM growth_events g
+  LEFT JOIN users u ON u.id = g.user_id
+  WHERE g.created_at >= NOW() - ($1::int * INTERVAL '1 day')
+    AND ` + adminGrowthUserFilterSQL + `
+    AND g.props->>'content_item_id' IS NOT NULL
+    AND length(trim(g.props->>'content_item_id')) >= 32
+  GROUP BY g.props->>'content_item_id'
+)
+SELECT
+  ci.id,
+  ci.content_type::text,
+  m.folder_name,
+  m.name,
+  COALESCE(x.thumb_opens, 0),
+  COALESCE(x.detail_views, 0),
+  COALESCE(x.first_plays, 0),
+  COALESCE(x.photo_first_views, 0),
+  COALESCE(x.total_watch_sec, 0),
+  COALESCE(x.engagement_sessions, 0),
+  (ci.source_video_path IS NOT NULL AND trim(ci.source_video_path) <> ''),
+  (
+    (ci.content_type = 'VIDEO' AND (
+      trim(coalesce(ci.source_video_path, '')) <> ''
+      OR trim(coalesce(ci.thumbnail_path, '')) <> ''
+      OR trim(coalesce(ci.hls_folder_path, '')) <> ''
+      OR trim(coalesce(ci.hls_master_path, '')) <> ''
+    ))
+    OR (ci.content_type = 'PHOTO' AND trim(coalesce(ci.thumbnail_path, '')) <> '')
+  )
+FROM agg x
+JOIN content_items ci ON ci.id = x.cid
+JOIN models m ON m.id = ci.model_id
+WHERE ci.is_active = true
+ORDER BY ` + orderSQL + `
+LIMIT $2`
+
+	rows, err := h.db.Query(ctx, rollupSQL, days, limit)
+	if err != nil {
+		code := pgErrCode(err)
+		if code == "42P01" || code == "42703" {
+			log.Printf("[GetContentPerformance] rollup unavailable (%s), using growth_events fallback: %v", code, err)
+			rows, err = h.db.Query(ctx, legacySQL, days, limit)
+		}
+	}
+	if err != nil {
+		log.Printf("[GetContentPerformance] query: %v", err)
+		return common.InternalError(c)
+	}
+	defer rows.Close()
+
+	out := []ContentPerformanceRow{}
+	for rows.Next() {
+		var r ContentPerformanceRow
+		var tw float64
+		var es int64
+		if err := rows.Scan(
+			&r.ContentItemID, &r.ContentType, &r.ModelFolderName, &r.ModelName,
+			&r.ThumbOpens, &r.DetailViews, &r.FirstPlays, &r.PhotoFirstViews, &tw, &es, &r.HasSourceFile, &r.CanExportZip,
+		); err != nil {
+			return common.InternalError(c)
+		}
+		r.TotalWatchSeconds = tw
+		r.EngagementSessions = es
+		if es > 0 {
+			r.AvgWatchSeconds = tw / float64(es)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return common.InternalError(c)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"days":   days,
+		"sort":   sortKey,
+		"order":  strings.ToLower(orderDir),
+		"items":  out,
+	})
+}
+
+// CatalogModelPerformanceRow is one row for /api/admin/catalog-model-performance.
+type CatalogModelPerformanceRow struct {
+	ModelID               string  `json:"modelId"`
+	FolderName            string  `json:"folderName"`
+	ModelName             string  `json:"modelName"`
+	Impressions           int64   `json:"impressions"`
+	ClicksOpen            int64   `json:"clicksOpen"`
+	ClicksLoginWall       int64   `json:"clicksLoginWall"`
+	EngagedImpressions    int64   `json:"engagedImpressions"`
+	ProfileSessions       int64   `json:"profileSessions"`
+	AvgTimeOnProfileSec   float64 `json:"avgTimeOnProfileSec"`
+	DeepProfileSessions   int64   `json:"deepProfileSessions"`
+	CTR                   float64 `json:"ctr"`
+	CTREngaged            float64 `json:"ctrEngaged"`
+}
+
+// GetCatalogModelPerformance aggregates catalog + profile engagement per model (excludes admin users).
+// GET /api/admin/catalog-model-performance?days=30&limit=100&sort=...&order=asc|desc&surface=grid|featured_hero|featured_side
+// surface: optional; filtruje tylko zdarzenia katalogu (impression / engaged / click) po props.surface — profile engagement bez zmian.
+func (h *Handler) GetCatalogModelPerformance(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	days := 30
+	if q := c.QueryParam("days"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 && n <= 365 {
+			days = n
+		}
+	}
+	limit := 100
+	if q := c.QueryParam("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	surface := strings.TrimSpace(c.QueryParam("surface"))
+	validSurface := surface == "grid" || surface == "featured_hero" || surface == "featured_side"
+
+	sortKey := strings.ToLower(strings.TrimSpace(c.QueryParam("sort")))
+	if sortKey == "" {
+		sortKey = "combined"
+	}
+	orderParam := strings.ToLower(strings.TrimSpace(c.QueryParam("order")))
+	orderDir := "DESC"
+	switch orderParam {
+	case "asc":
+		orderDir = "ASC"
+	case "desc", "":
+		orderDir = "DESC"
+	default:
+		orderDir = "DESC"
+	}
+
+	var orderSQL string
+	switch sortKey {
+	case "impressions":
+		orderSQL = fmt.Sprintf("COALESCE(x.impressions, 0) %s, COALESCE(x.clicks_open, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "engaged_impressions":
+		orderSQL = fmt.Sprintf("COALESCE(x.engaged_impressions, 0) %s, COALESCE(x.clicks_open, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "clicks_open":
+		orderSQL = fmt.Sprintf("COALESCE(x.clicks_open, 0) %s, COALESCE(x.impressions, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "clicks_wall", "clicks_login":
+		orderSQL = fmt.Sprintf("COALESCE(x.clicks_login_wall, 0) %s, COALESCE(x.clicks_open, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "ctr":
+		orderSQL = fmt.Sprintf(
+			"(CASE WHEN COALESCE(x.impressions, 0) > 0 THEN COALESCE(x.clicks_open, 0)::double precision / x.impressions::double precision ELSE 0 END) %s, COALESCE(x.clicks_open, 0) DESC, LOWER(m.folder_name) ASC",
+			orderDir,
+		)
+	case "ctr_engaged":
+		orderSQL = fmt.Sprintf(
+			"(CASE WHEN COALESCE(x.engaged_impressions, 0) > 0 THEN COALESCE(x.clicks_open, 0)::double precision / x.engaged_impressions::double precision ELSE 0 END) %s, COALESCE(x.clicks_open, 0) DESC, LOWER(m.folder_name) ASC",
+			orderDir,
+		)
+	case "avg_time_profile":
+		orderSQL = fmt.Sprintf("COALESCE(x.avg_profile_sec, 0) %s, COALESCE(x.profile_sessions, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "profile_sessions":
+		orderSQL = fmt.Sprintf("COALESCE(x.profile_sessions, 0) %s, COALESCE(x.avg_profile_sec, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "deep_profile_sessions":
+		orderSQL = fmt.Sprintf("COALESCE(x.deep_profile_sessions, 0) %s, COALESCE(x.profile_sessions, 0) DESC, LOWER(m.folder_name) ASC", orderDir)
+	case "model":
+		orderSQL = fmt.Sprintf("LOWER(m.folder_name) %s, LOWER(m.name) %s, m.id::text ASC", orderDir, orderDir)
+	case "combined":
+		orderSQL = fmt.Sprintf(
+			"(COALESCE(x.clicks_open, 0) + COALESCE(x.clicks_login_wall, 0) + 0.0005 * COALESCE(x.impressions, 0)) %s, COALESCE(x.impressions, 0) DESC, LOWER(m.folder_name) ASC",
+			orderDir,
+		)
+	default:
+		sortKey = "combined"
+		orderDir = "DESC"
+		orderSQL = "(COALESCE(x.clicks_open, 0) + COALESCE(x.clicks_login_wall, 0) + 0.0005 * COALESCE(x.impressions, 0)) DESC, COALESCE(x.impressions, 0) DESC, LOWER(m.folder_name) ASC"
+	}
+
+	surfaceSQL := ""
+	if validSurface {
+		surfaceSQL = ` AND (
+    g.event_name NOT IN ('catalog_model_impression', 'catalog_model_engaged_impression', 'catalog_model_click')
+    OR COALESCE(trim(g.props->>'surface'), '') = $2
+  )`
+	}
+
+	q := `
+WITH agg AS (
+  SELECT
+    g.props->>'model_id' AS mid,
+    COUNT(*) FILTER (WHERE g.event_name = 'catalog_model_impression')::bigint AS impressions,
+    COUNT(*) FILTER (WHERE g.event_name = 'catalog_model_engaged_impression')::bigint AS engaged_impressions,
+    COUNT(*) FILTER (WHERE g.event_name = 'catalog_model_click' AND COALESCE(g.props->>'outcome', '') = 'open')::bigint AS clicks_open,
+    COUNT(*) FILTER (WHERE g.event_name = 'catalog_model_click' AND COALESCE(g.props->>'outcome', '') = 'login_required')::bigint AS clicks_login_wall,
+    COUNT(*) FILTER (WHERE g.event_name = 'model_profile_engagement')::bigint AS profile_sessions,
+    COALESCE(AVG((NULLIF(trim(g.props->>'duration_sec'), ''))::double precision) FILTER (WHERE g.event_name = 'model_profile_engagement'), 0)::double precision AS avg_profile_sec,
+    COUNT(*) FILTER (WHERE g.event_name = 'model_profile_engagement' AND COALESCE((g.props->>'deep_engaged')::boolean, false))::bigint AS deep_profile_sessions
+  FROM growth_events g
+  LEFT JOIN users u ON u.id = g.user_id
+  WHERE g.created_at >= NOW() - ($1::int * INTERVAL '1 day')
+    AND ` + adminGrowthUserFilterSQL + `
+    AND g.props->>'model_id' IS NOT NULL
+    AND trim(g.props->>'model_id') <> ''` + surfaceSQL + `
+  GROUP BY g.props->>'model_id'
+)
+SELECT
+  m.id,
+  m.folder_name,
+  m.name,
+  COALESCE(x.impressions, 0),
+  COALESCE(x.clicks_open, 0),
+  COALESCE(x.clicks_login_wall, 0),
+  COALESCE(x.engaged_impressions, 0),
+  COALESCE(x.profile_sessions, 0),
+  COALESCE(x.avg_profile_sec, 0),
+  COALESCE(x.deep_profile_sessions, 0),
+  CASE WHEN COALESCE(x.impressions, 0) > 0
+    THEN COALESCE(x.clicks_open, 0)::double precision / x.impressions::double precision
+    ELSE 0
+  END,
+  CASE WHEN COALESCE(x.engaged_impressions, 0) > 0
+    THEN COALESCE(x.clicks_open, 0)::double precision / x.engaged_impressions::double precision
+    ELSE 0
+  END
+FROM agg x
+JOIN models m ON m.id = x.mid
+WHERE m.is_active = true
+ORDER BY ` + orderSQL + `
+LIMIT `
+	limitArg := "$2"
+	args := []interface{}{days}
+	if validSurface {
+		args = append(args, surface)
+		limitArg = "$3"
+	}
+	args = append(args, limit)
+	q += limitArg
+	rows, err := h.db.Query(ctx, q, args...)
+	if err != nil {
+		log.Printf("[GetCatalogModelPerformance] query: %v", err)
+		return common.InternalError(c)
+	}
+	defer rows.Close()
+
+	out := []CatalogModelPerformanceRow{}
+	for rows.Next() {
+		var r CatalogModelPerformanceRow
+		var ctr, ctrEng float64
+		if err := rows.Scan(
+			&r.ModelID, &r.FolderName, &r.ModelName,
+			&r.Impressions, &r.ClicksOpen, &r.ClicksLoginWall,
+			&r.EngagedImpressions, &r.ProfileSessions, &r.AvgTimeOnProfileSec, &r.DeepProfileSessions,
+			&ctr, &ctrEng,
+		); err != nil {
+			return common.InternalError(c)
+		}
+		r.CTR = ctr
+		r.CTREngaged = ctrEng
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return common.InternalError(c)
+	}
+
+	resp := map[string]interface{}{
+		"days":   days,
+		"sort":   sortKey,
+		"order":  strings.ToLower(orderDir),
+		"items":  out,
+		"surface": func() interface{} {
+			if validSurface {
+				return surface
+			}
+			return nil
+		}(),
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// DownloadContentSource redirects to a presigned R2 URL for the best exportable file (admin).
+// Tries the same key order as bulk-zip: VIDEO prefers source MP4, then thumbnail/HLS fallbacks; PHOTO uses thumbnail.
+// GET /api/admin/content/:id/source-download
+func (h *Handler) DownloadContentSource(c echo.Context) error {
+	ctx := c.Request().Context()
+	id, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
+		return common.BadRequest(c, "Invalid content id")
+	}
+
+	var ctype string
+	var sourcePath, thumbPath, hlsFolder, hlsMaster *string
+	err := h.db.QueryRow(ctx, `
+		SELECT ci.content_type::text, ci.source_video_path, ci.thumbnail_path, ci.hls_folder_path, ci.hls_master_path
+		FROM content_items ci WHERE ci.id = $1 AND ci.is_active = true
+	`, id).Scan(&ctype, &sourcePath, &thumbPath, &hlsFolder, &hlsMaster)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "Content not found")
+		}
+		return common.InternalError(c)
+	}
+
+	keys := exportKeysForItem(ctype, sourcePath, thumbPath, hlsFolder, hlsMaster)
+	var chosen string
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		herr := h.r2.HeadObject(ctx, k)
+		if herr == nil {
+			chosen = k
+			break
+		}
+		if !content.IsS3NotFound(herr) {
+			log.Printf("[DownloadContentSource] HeadObject %s: %v", k, herr)
+			return common.InternalError(c)
+		}
+	}
+	if chosen == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{
+			"error":   "no_source_file",
+			"message": "No downloadable file found for this item in storage.",
+		})
+	}
+
+	url, err := h.r2.PresignGetObjectAttachment(ctx, chosen, 1*time.Hour)
+	if err != nil {
+		log.Printf("[DownloadContentSource] presign %s: %v", chosen, err)
+		return common.InternalError(c)
+	}
+	return c.Redirect(http.StatusFound, url)
+}
+
+const bulkZipMaxItems = 40
+
+// isClientDisconnect is true when the peer closed the connection (browser tab, proxy timeout, cancel).
+// In that case the handler must not write an error response or log as a server bug.
+func isClientDisconnect(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection reset by peer") ||
+		strings.Contains(s, "use of closed network connection")
+}
+
+type bulkZipBody struct {
+	ContentItemIDs []string `json:"contentItemIds"`
+}
+
+// BulkDownloadContentZip streams a zip of source MP4s / photo files from R2 (admin marketing export).
+// POST /api/admin/content/bulk-zip  { "contentItemIds": ["uuid", ...] }  max 40
+func (h *Handler) BulkDownloadContentZip(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var reqBody bulkZipBody
+	if err := c.Bind(&reqBody); err != nil {
+		return common.BadRequest(c, "Invalid JSON")
+	}
+	if len(reqBody.ContentItemIDs) == 0 {
+		return common.BadRequest(c, "contentItemIds required")
+	}
+	if len(reqBody.ContentItemIDs) > bulkZipMaxItems {
+		return common.JSONError(c, http.StatusBadRequest, "TOO_MANY_ITEMS",
+			fmt.Sprintf("Maximum %d items per zip.", bulkZipMaxItems))
+	}
+
+	seen := map[string]struct{}{}
+	var ids []string
+	for _, raw := range reqBody.ContentItemIDs {
+		id, ok := common.ParseUUIDParam(raw)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return common.BadRequest(c, "No valid content ids")
+	}
+
+	// Pre-check: at least one item has candidate keys (avoid empty zip after 200)
+	preflight := 0
+	for _, id := range ids {
+		var ctype string
+		var sourcePath, thumbPath, hlsFolder, hlsMaster *string
+		err := h.db.QueryRow(ctx, `
+			SELECT ci.content_type::text, ci.source_video_path, ci.thumbnail_path, ci.hls_folder_path, ci.hls_master_path
+			FROM content_items ci WHERE ci.id = $1 AND ci.is_active = true
+		`, id).Scan(&ctype, &sourcePath, &thumbPath, &hlsFolder, &hlsMaster)
+		if err != nil {
+			continue
+		}
+		if len(exportKeysForItem(ctype, sourcePath, thumbPath, hlsFolder, hlsMaster)) > 0 {
+			preflight++
+		}
+	}
+	if preflight == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error":   "no_exportable_files",
+			"message": "No R2 paths to try for the selected items.",
+		})
+	}
+
+	fname := fmt.Sprintf("content-export-%s.zip", time.Now().UTC().Format("20060102-150405"))
+	c.Response().Header().Set(echo.HeaderContentType, "application/zip")
+	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, fname))
+	c.Response().WriteHeader(http.StatusOK)
+
+	zw := zip.NewWriter(c.Response().Writer)
+	defer func() { _ = zw.Close() }()
+
+	written := 0
+	for _, id := range ids {
+		var ctype, folder string
+		var sourcePath, thumbPath, hlsFolder, hlsMaster *string
+		err := h.db.QueryRow(ctx, `
+			SELECT ci.content_type::text, m.folder_name, ci.source_video_path, ci.thumbnail_path, ci.hls_folder_path, ci.hls_master_path
+			FROM content_items ci
+			JOIN models m ON m.id = ci.model_id
+			WHERE ci.id = $1 AND ci.is_active = true
+		`, id).Scan(&ctype, &folder, &sourcePath, &thumbPath, &hlsFolder, &hlsMaster)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue
+			}
+			return common.InternalError(c)
+		}
+		keys := exportKeysForItem(ctype, sourcePath, thumbPath, hlsFolder, hlsMaster)
+		var done bool
+		for _, r2Key := range keys {
+			bodyReader, _, err := h.r2.GetObject(ctx, r2Key)
+			if err != nil {
+				continue
+			}
+			ext := path.Ext(path.Base(r2Key))
+			if ext == "" {
+				ext = ".bin"
+			}
+			safeFolder := sanitizeZipPathSegment(folder)
+			entryName := fmt.Sprintf("%s_%s%s", safeFolder, id, strings.ToLower(ext))
+			if len(entryName) > 180 {
+				entryName = entryName[:180]
+			}
+			w, zerr := zw.Create(entryName)
+			if zerr != nil {
+				_ = bodyReader.Close()
+				log.Printf("[BulkDownloadContentZip] zip create %s: %v", entryName, zerr)
+				continue
+			}
+			_, copyErr := io.Copy(w, bodyReader)
+			_ = bodyReader.Close()
+			if copyErr != nil {
+				if isClientDisconnect(copyErr) {
+					return nil
+				}
+				log.Printf("[BulkDownloadContentZip] copy %s: %v", r2Key, copyErr)
+				return common.InternalError(c)
+			}
+			written++
+			done = true
+			break
+		}
+		if !done {
+			log.Printf("[BulkDownloadContentZip] no object found for content id %s (tried %d keys)", id, len(keys))
+		}
+	}
+
+	if written == 0 {
+		log.Printf("[BulkDownloadContentZip] zip had 0 files after streaming")
+	}
+
+	return nil
+}
+
+// exportKeysForItem lists R2 keys to try in order; first existing object is used in bulk-zip.
+// source_video_path is often unset; hls_master_path still points at the playlist — folder for thumbs is EffectiveHLSFolder.
+func exportKeysForItem(ctype string, sourcePath, thumbPath, hlsFolder, hlsMaster *string) []string {
+	var keys []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		for _, existing := range keys {
+			if existing == s {
+				return
+			}
+		}
+		keys = append(keys, s)
+	}
+	switch ctype {
+	case "VIDEO":
+		add(derefString(sourcePath))
+		add(derefString(thumbPath))
+		add(derefString(hlsMaster))
+		eff := content.EffectiveHLSFolder(hlsFolder, hlsMaster)
+		if eff != "" {
+			b := strings.TrimRight(eff, "/")
+			add(b + ".mp4")
+			add(b + "_thumbnail.webp")
+			add(b + "_source_thumbnail.webp")
+			add(b + "/thumbnail.webp")
+			add(b + "/thumbnail.jpg")
+			add(b + "/thumbnail.png")
+		}
+	case "PHOTO":
+		add(derefString(thumbPath))
+	}
+	return keys
+}
+
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func sanitizeZipPathSegment(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "item"
+	}
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		return "item"
+	}
+	if len(out) > 64 {
+		out = out[:64]
+	}
+	return out
 }

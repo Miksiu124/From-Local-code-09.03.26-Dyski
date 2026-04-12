@@ -83,6 +83,39 @@ func retryAfterSeconds(resetAtMs int64) int {
 	return secs
 }
 
+// Minimum time between verification emails to the same address (blocks rapid resend loops).
+const verifyEmailResendCooldownSecs = 120
+
+func verifyResendCooldownRedisKey(email string) string {
+	return "verify-email-resend-cooldown:" + strings.ToLower(strings.TrimSpace(email))
+}
+
+// verifyResendCooldownRemaining returns seconds until another email may be sent; 0 if allowed.
+func (h *Handler) verifyResendCooldownRemaining(ctx context.Context, email string) (int, error) {
+	if h.redis == nil {
+		return 0, nil
+	}
+	ttl, err := h.redis.TTL(ctx, verifyResendCooldownRedisKey(email)).Result()
+	if err != nil {
+		return 0, err
+	}
+	if ttl <= 0 {
+		return 0, nil
+	}
+	secs := int(ttl.Seconds() + 0.999)
+	if secs < 1 {
+		secs = 1
+	}
+	return secs, nil
+}
+
+func (h *Handler) setVerifyResendCooldown(ctx context.Context, email string) error {
+	if h.redis == nil {
+		return nil
+	}
+	return h.redis.Set(ctx, verifyResendCooldownRedisKey(email), "1", time.Duration(verifyEmailResendCooldownSecs)*time.Second).Err()
+}
+
 func (h *Handler) Register(c echo.Context) error {
 	// Rate limit by IP (10/15min to avoid blocking shared IPs: offices, mobile carriers)
 	ip := c.RealIP()
@@ -220,6 +253,15 @@ func (h *Handler) Register(c echo.Context) error {
 		verifyURL := h.cfg.FrontendURL + "/verify-email?token=" + url.QueryEscape(token)
 		if err := h.mailer.SendVerificationEmail(req.Email, req.Name, verifyURL, h.cfg.EmailVerificationTokenTTLSecs); err != nil {
 			log.Printf("[Register] Failed to send verification email to %s after retries: %v", req.Email, err)
+			return
+		}
+		if err := h.setVerifyResendCooldown(ctx, req.Email); err != nil {
+			log.Printf("[Register] setVerifyResendCooldown: %v", err)
+		}
+		u, err := h.service.GetUserByEmail(ctx, req.Email)
+		if err == nil && u != nil {
+			uid := u.ID
+			h.service.EmitGrowthEvent(ctx, "verification_sent", &uid, map[string]interface{}{"source": "register"})
 		}
 	}()
 
@@ -229,8 +271,9 @@ func (h *Handler) Register(c echo.Context) error {
 // ── Login ────────────────────────────────────────────────────────────────────
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	RememberMe  bool   `json:"rememberMe"`
 }
 
 func (h *Handler) Login(c echo.Context) error {
@@ -264,22 +307,22 @@ func (h *Handler) Login(c echo.Context) error {
 		return common.RateLimited(c, retrySecs, "Too many login attempts. Please try again later.")
 	}
 
-	token, user, err := h.service.Login(c.Request().Context(), req.Email, req.Password)
+	token, user, sessionTTLSecs, err := h.service.Login(c.Request().Context(), req.Email, req.Password, req.RememberMe)
 	if err != nil {
 		if errors.Is(err, ErrEmailNotVerified) {
 			return common.JSONError(c, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Please verify your email before signing in.")
 		}
 		security.Emit("auth.login.failed", ip, "/api/auth/login", map[string]interface{}{"email_hash": security.HashEmail(req.Email)})
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		return common.InvalidCredentials(c)
 	}
-	h.service.StoreSessionIP(c.Request().Context(), user.ID, ip)
+	h.service.StoreSessionIP(c.Request().Context(), user.ID, ip, sessionTTLSecs)
 
 	cookie := new(http.Cookie)
 	cookie.Name = "session_token"
 	cookie.Value = token
 	cookie.Path = "/"
 	cookie.HttpOnly = true
-	cookie.MaxAge = h.cfg.JWTExpirySecs
+	cookie.MaxAge = sessionTTLSecs
 	cookie.SameSite = http.SameSiteLaxMode
 	cookie.Secure = h.cfg.IsProduction()
 	c.SetCookie(cookie)
@@ -383,7 +426,15 @@ func (h *Handler) ResendVerification(c echo.Context) error {
 	if err != nil || user.EmailVerified {
 		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 	}
-	token, err := h.service.CreateEmailVerificationToken(c.Request().Context(), user.Email)
+	ctx := c.Request().Context()
+	cooldownSecs, err := h.verifyResendCooldownRemaining(ctx, user.Email)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if cooldownSecs > 0 {
+		return common.RateLimited(c, cooldownSecs, "Please wait before requesting another verification email.")
+	}
+	token, err := h.service.CreateEmailVerificationToken(ctx, user.Email)
 	if err != nil || token == "" {
 		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 	}
@@ -394,6 +445,12 @@ func (h *Handler) ResendVerification(c echo.Context) error {
 	}
 	if err := h.mailer.SendVerificationEmail(user.Email, name, verifyURL, h.cfg.EmailVerificationTokenTTLSecs); err != nil {
 		log.Printf("[ResendVerification] Failed to send verification email: %v", err)
+	} else {
+		if err := h.setVerifyResendCooldown(ctx, user.Email); err != nil {
+			log.Printf("[ResendVerification] setVerifyResendCooldown: %v", err)
+		}
+		uid := userID
+		h.service.EmitGrowthEvent(ctx, "verification_sent", &uid, map[string]interface{}{"source": "resend_session"})
 	}
 	return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 }
@@ -422,6 +479,15 @@ func (h *Handler) ResendVerificationPublic(c echo.Context) error {
 		return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 	}
 
+	ctx := c.Request().Context()
+	cooldownSecs, err := h.verifyResendCooldownRemaining(ctx, req.Email)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if cooldownSecs > 0 {
+		return common.RateLimited(c, cooldownSecs, "Please wait before requesting another verification email.")
+	}
+
 	rl2, err := h.rateLimiter.Check("resend-verify-pub-email:"+req.Email, 3, 60*60*1000)
 	if err != nil {
 		return common.InternalError(c)
@@ -431,7 +497,6 @@ func (h *Handler) ResendVerificationPublic(c echo.Context) error {
 		return common.RateLimited(c, retrySecs, "Too many requests for this email. Please try again later.")
 	}
 
-	ctx := c.Request().Context()
 	user, err := h.service.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -455,6 +520,12 @@ func (h *Handler) ResendVerificationPublic(c echo.Context) error {
 	}
 	if err := h.mailer.SendVerificationEmail(user.Email, name, verifyURL, h.cfg.EmailVerificationTokenTTLSecs); err != nil {
 		log.Printf("[ResendVerificationPublic] send failed: %v", err)
+	} else {
+		if err := h.setVerifyResendCooldown(ctx, user.Email); err != nil {
+			log.Printf("[ResendVerificationPublic] setVerifyResendCooldown: %v", err)
+		}
+		uid := user.ID
+		h.service.EmitGrowthEvent(ctx, "verification_sent", &uid, map[string]interface{}{"source": "resend_public"})
 	}
 	return common.Success(c, map[string]string{"message": "If your email is unverified, a new link has been sent."})
 }
@@ -662,14 +733,22 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 		customLinkID = strings.TrimSpace(cookie.Value)
 	}
 
-	// Find or create user
-	token, user, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID)
+	refCode := ""
+	if cookie, err := c.Cookie("ref_code"); err == nil && cookie.Value != "" {
+		refCode = strings.TrimSpace(cookie.Value)
+	}
+	if refCode == "" {
+		refCode = strings.TrimSpace(c.QueryParam("ref"))
+	}
+
+	// Find or create user (referral row only when account is newly created — same as email/password register)
+	token, user, _, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID, refCode, c.RealIP())
 	if err != nil {
 		log.Printf("[Discord] FindOrCreate failed: %v", err)
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
 
-	h.service.StoreSessionIP(ctx, user.ID, c.RealIP())
+	h.service.StoreSessionIP(ctx, user.ID, c.RealIP(), h.cfg.JWTExpirySecs)
 
 	// Set session cookie
 	cookie := new(http.Cookie)

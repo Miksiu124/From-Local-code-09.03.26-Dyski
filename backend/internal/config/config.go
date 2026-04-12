@@ -15,17 +15,24 @@ type Config struct {
 	Port        string
 	Environment string // "development" or "production"
 	FrontendURL string
+	// CORSExtraOrigins: comma-separated in CORS_EXTRA_ORIGINS (e.g. CDN hostname when API is on main domain)
+	CORSExtraOrigins []string
 
 	// Database
 	DatabaseURL string
+
+	// Observability: local pg_dump volume (Docker) — optional
+	PostgresBackupDir   string // POSTGRES_BACKUP_DIR e.g. /backups; empty = admin UI hides backup status
+	PostgresBackupDBName string // POSTGRES_BACKUP_DB_NAME — must match postgres-backup-local POSTGRES_DB (symlink name)
 
 	// Redis
 	RedisURL string
 
 	// JWT
-	JWTSecret       string
-	JWTExpirySecs   int
-	SessionTokenTTL int // seconds
+	JWTSecret                string
+	JWTExpirySecs            int
+	SessionTokenTTL          int // seconds (default session when not using "remember me")
+	RememberMeSessionTTLSecs int // seconds for password login with rememberMe (default 30d)
 
 	// One-time email links (Redis TTL, seconds)
 	PasswordResetTokenTTLSecs      int // forgot-password link; default 3600
@@ -90,11 +97,14 @@ func Load() (*Config, error) {
 		Port:                  getEnvOrDefault("PORT", "8080"),
 		Environment:           getEnvOrDefault("ENVIRONMENT", "development"),
 		FrontendURL:           getEnvOrDefault("FRONTEND_URL", "http://localhost:3000"),
-		DatabaseURL:           requireEnv("DATABASE_URL"),
-		RedisURL:              getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:             requireEnv("JWT_SECRET"),
-		JWTExpirySecs:         resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
-		SessionTokenTTL:       resolveSessionTTL(),
+		DatabaseURL:            requireEnv("DATABASE_URL"),
+		PostgresBackupDir:      strings.TrimSpace(getEnvOrDefault("POSTGRES_BACKUP_DIR", "")),
+		PostgresBackupDBName:   getEnvOrDefault("POSTGRES_BACKUP_DB_NAME", "content_platform"),
+		RedisURL:               getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:                requireEnv("JWT_SECRET"),
+		JWTExpirySecs:            resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
+		SessionTokenTTL:          resolveSessionTTL(),
+		RememberMeSessionTTLSecs: resolveRememberMeTTL(),
 		DisableBearerAuth:     getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "true" || getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "1",
 		R2AccountID:           getEnvOrDefault("R2_ACCOUNT_ID", ""),
 		R2AccessKeyID:         requireEnv("R2_ACCESS_KEY_ID"),
@@ -129,6 +139,15 @@ func Load() (*Config, error) {
 	cfg.FrontendURL = strings.TrimRight(cfg.FrontendURL, "/")
 	cfg.DiscordRedirectURI = strings.TrimRight(cfg.DiscordRedirectURI, "/")
 	cfg.R2PublicURL = strings.TrimRight(cfg.R2PublicURL, "/")
+
+	if extra := strings.TrimSpace(getEnvOrDefault("CORS_EXTRA_ORIGINS", "")); extra != "" {
+		for _, p := range strings.Split(extra, ",") {
+			p = strings.TrimSpace(strings.TrimRight(p, "/"))
+			if p != "" {
+				cfg.CORSExtraOrigins = append(cfg.CORSExtraOrigins, p)
+			}
+		}
+	}
 
 	// HLS segments: point at R2_PUBLIC_URL (Worker) when set; presign if public URL empty.
 	// HLS_USE_PUBLIC_CDN_SEGMENTS=0 keeps presigned URLs even when R2_PUBLIC_URL is set.
@@ -194,6 +213,18 @@ func (c *Config) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}
+
+	// Cloudflare R2 S3 API: Access Key ID is always 32 chars; Secret is 64 hex. Swapping them yields:
+	// InvalidArgument: Credential access key has length 64, should be 32
+	ak := strings.TrimSpace(c.R2AccessKeyID)
+	sk := strings.TrimSpace(c.R2SecretAccessKey)
+	if len(ak) != 32 {
+		return fmt.Errorf("R2_ACCESS_KEY_ID must be exactly 32 characters (Cloudflare R2); got length %d — if your value is 64 characters, that is the Secret key: put it in R2_SECRET_ACCESS_KEY and paste the 32-char Access Key ID from R2 → Manage API tokens → Create API token", len(ak))
+	}
+	if len(sk) != 64 {
+		return fmt.Errorf("R2_SECRET_ACCESS_KEY must be exactly 64 hex characters (Cloudflare R2); got length %d — if your value is 32 characters, you may have swapped it with R2_ACCESS_KEY_ID", len(sk))
+	}
+
 	if len(c.JWTSecret) < 32 {
 		return errors.New("JWT_SECRET must be at least 32 characters")
 	}
@@ -284,4 +315,25 @@ func resolveSessionTTL() int {
 		return v
 	}
 	return 7 * 24 * 3600
+}
+
+// resolveRememberMeTTL returns TTL in seconds for "remember me" logins (long-lived session).
+// Order: REMEMBER_ME_TTL_DAYS > REMEMBER_ME_SESSION_TTL > 30 days. Capped at 365 days.
+func resolveRememberMeTTL() int {
+	var sec int
+	if days := getEnvOrDefaultInt("REMEMBER_ME_TTL_DAYS", 0); days > 0 {
+		sec = days * 24 * 3600
+	} else if v := getEnvOrDefaultInt("REMEMBER_ME_SESSION_TTL", 0); v > 0 {
+		sec = v
+	} else {
+		sec = 30 * 24 * 3600
+	}
+	const maxSec = 365 * 24 * 3600
+	if sec > maxSec {
+		sec = maxSec
+	}
+	if sec < 60 {
+		sec = 30 * 24 * 3600
+	}
+	return sec
 }

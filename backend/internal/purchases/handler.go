@@ -8,6 +8,7 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/middleware"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -246,6 +247,14 @@ func (h *Handler) Create(c echo.Context) error {
 	if err := tx.Commit(ctx); err != nil {
 		return common.InternalError(c)
 	}
+
+	uid := userID
+	_ = growth.InsertEvent(ctx, h.db, "content_unlocked", &uid, map[string]interface{}{
+		"purchase_id": purchaseID,
+		"bundle":      isBundle,
+		"duration":    req.AccessDuration,
+	})
+	growth.EmitJSON("content_unlocked", &uid, map[string]interface{}{"purchase_id": purchaseID, "bundle": isBundle})
 
 	h.publishNotification(ctx, userID, "PURCHASE_COMPLETE", title, message)
 

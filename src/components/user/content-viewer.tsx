@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
 import { RetryImage } from "@/components/ui/retry-image";
+import { trackContentDetailView, trackPhotoViewFirst } from "@/lib/growth-analytics";
 
 const VideoPlayer = dynamic(
   () => import("@/components/user/video-player").then((m) => ({ default: m.VideoPlayer })),
@@ -28,10 +29,14 @@ interface ContentViewerProps {
   contentType: string;
   modelName: string;
   modelSlug: string;
+  /** Opcjonalnie — video_engagement w analytics */
+  modelId?: string;
   prevItemId: string | null;
   nextItemId: string | null;
   /** CDN thumbnail from API when R2_PUBLIC_URL is set */
   thumbnailUrl?: string | null;
+  /** Original MP4 in R2 (source_video_path) — show download in player */
+  hasSourceMp4?: boolean;
   backHref?: string;
   backLabel?: string;
   navBasePath?: string;
@@ -46,6 +51,7 @@ interface DisplayedState {
   prevItemId: string | null;
   nextItemId: string | null;
   thumbnailUrl?: string | null;
+  hasSourceMp4?: boolean;
 }
 
 export function ContentViewer({
@@ -53,9 +59,11 @@ export function ContentViewer({
   contentType,
   modelName,
   modelSlug,
+  modelId,
   prevItemId,
   nextItemId,
   thumbnailUrl: initialThumbnailUrl,
+  hasSourceMp4: initialHasSourceMp4,
   backHref: backHrefProp,
   backLabel,
   navBasePath,
@@ -129,6 +137,33 @@ export function ContentViewer({
   const effectiveNextId = displayedState?.nextItemId ?? nextItemId;
   const effectiveThumbUrl =
     displayedState?.thumbnailUrl ?? initialThumbnailUrl ?? null;
+  const effectiveHasSourceMp4 =
+    displayedState?.hasSourceMp4 ?? initialHasSourceMp4 ?? false;
+
+  useEffect(() => {
+    const surface =
+      navBasePath === "/favorites" ? "favorites_page" : "content_page";
+    trackContentDetailView(effectiveItemId, {
+      surface,
+      content_type: effectiveContentType,
+      model_id: modelId,
+      folder_name: modelSlug,
+    });
+  }, [effectiveItemId, effectiveContentType, modelId, modelSlug, navBasePath]);
+
+  const GF_PHOTO_FIRST_KEY = "gf_photo_first_ids";
+  useEffect(() => {
+    if (effectiveContentType !== "PHOTO") return;
+    try {
+      const raw = sessionStorage.getItem(GF_PHOTO_FIRST_KEY);
+      const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+      if (arr.includes(effectiveItemId)) return;
+      sessionStorage.setItem(GF_PHOTO_FIRST_KEY, JSON.stringify([...arr, effectiveItemId]));
+      trackPhotoViewFirst(effectiveItemId, { model_slug: modelSlug });
+    } catch {
+      trackPhotoViewFirst(effectiveItemId, { model_slug: modelSlug });
+    }
+  }, [effectiveContentType, effectiveItemId, modelSlug]);
 
   useEffect(() => {
     if (displayedState) setDisplayedState(null);
@@ -197,6 +232,7 @@ export function ContentViewer({
           prevItemId: data.prevItemId,
           nextItemId: data.nextItemId,
           thumbnailUrl: data.contentItem.thumbnailUrl ?? null,
+          hasSourceMp4: data.contentItem.hasSourceMp4 === true,
         });
         router.replace(targetUrl);
       } catch {
@@ -380,7 +416,12 @@ export function ContentViewer({
       >
         {effectiveContentType === "VIDEO" ? (
           <div className="w-full max-w-6xl min-w-0 shrink">
-            <VideoPlayer contentItemId={effectiveItemId} />
+            <VideoPlayer
+              contentItemId={effectiveItemId}
+              modelId={modelId}
+              folderName={modelSlug}
+              hasSourceMp4={effectiveHasSourceMp4}
+            />
           </div>
         ) : (
           <RetryImage

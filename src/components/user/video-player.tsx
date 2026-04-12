@@ -15,9 +15,12 @@ import {
   Loader2,
   AlertTriangle,
   RotateCcw,
+  Download,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
-import { trackVideoPlayStarted, trackVideoPlaySubsequent } from "@/lib/growth-analytics";
+import { trackFirstPlay, trackVideoPlayRepeat, trackVideoEngagement } from "@/lib/growth-analytics";
+import { getEffectiveAppOrigin, resolveApiPathForBrowser } from "@/lib/public-app-origin";
 
 interface QualityLevel {
   index: number;
@@ -27,9 +30,22 @@ interface QualityLevel {
 
 interface VideoPlayerProps {
   contentItemId: string;
+  /** Optional — dopisywane do video_engagement dla raportów admina */
+  modelId?: string;
+  folderName?: string;
+  /** Plik źródłowy MP4 w R2 — pokaż przycisk pobrania (HLS to tylko .m3u8 w przeglądarce) */
+  hasSourceMp4?: boolean;
+  /** Pełnoekranowa galeria modelu: większy obszar na desktop, lepsze skalowanie pionowych klipów */
+  galleryOverlay?: boolean;
 }
 
-export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
+export function VideoPlayer({
+  contentItemId,
+  modelId,
+  folderName,
+  hasSourceMp4,
+  galleryOverlay = false,
+}: VideoPlayerProps) {
   const t = useTranslations("videoPlayer");
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -59,6 +75,13 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
   const retryCountRef = useRef(0);
   const [initKey, setInitKey] = useState(0);
   const GF_VIDEO_PLAY_KEY = "gf_video_play_ids";
+  /** Rzeczywisty czas „treści” (sekundy): suma małych przyrostów currentTime; skoki seek są odrzucane. */
+  const accumulatedWatchSecRef = useRef(0);
+  const lastVideoTimeForWatchRef = useRef<number | null>(null);
+  const lastVideoWallMsRef = useRef(0);
+  const lastEmittedAccumulatedWatchRef = useRef(0);
+  const finalEngagementSentRef = useRef(false);
+  const durationRef = useRef(0);
   const [isIOS, setIsIOS] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const qualityButtonRef = useRef<HTMLButtonElement>(null);
@@ -69,6 +92,11 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
   const MAX_AUTO_RETRIES = 2;
   const LOADING_TIMEOUT_MS = 25_000;
+
+  const mp4DownloadHref =
+    hasSourceMp4 === true
+      ? resolveApiPathForBrowser(`/api/content/${contentItemId}/source`)
+      : null;
 
   useEffect(() => {
     const ua = navigator.userAgent;
@@ -99,6 +127,86 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       })
       .catch(() => { });
   }, []);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  const flushVideoEngagement = useCallback(
+    (kind: "progress" | "final") => {
+      if (kind === "final" && finalEngagementSentRef.current) return;
+      const w = Math.floor(accumulatedWatchSecRef.current);
+      const delta = Math.max(0, w - lastEmittedAccumulatedWatchRef.current);
+      const base = {
+        duration_seconds: Math.floor(durationRef.current) || undefined,
+        model_id: modelId,
+        folder_name: folderName,
+      };
+      if (kind === "progress") {
+        if (delta < 1) return;
+        lastEmittedAccumulatedWatchRef.current = w;
+        trackVideoEngagement(contentItemId, {
+          ...base,
+          watch_delta_sec: delta,
+          watched_seconds: w,
+          flush_kind: "progress",
+        });
+        return;
+      }
+      if (w < 1) return;
+      if (delta >= 1) {
+        lastEmittedAccumulatedWatchRef.current = w;
+        trackVideoEngagement(contentItemId, {
+          ...base,
+          watch_delta_sec: delta,
+          watched_seconds: w,
+          flush_kind: "final",
+        });
+      } else {
+        trackVideoEngagement(contentItemId, {
+          ...base,
+          watch_delta_sec: 0,
+          watched_seconds: w,
+          flush_kind: "final",
+        });
+      }
+      finalEngagementSentRef.current = true;
+    },
+    [contentItemId, modelId, folderName],
+  );
+
+  useEffect(() => {
+    accumulatedWatchSecRef.current = 0;
+    lastVideoTimeForWatchRef.current = null;
+    lastVideoWallMsRef.current = 0;
+    lastEmittedAccumulatedWatchRef.current = 0;
+    finalEngagementSentRef.current = false;
+  }, [contentItemId]);
+
+  useEffect(() => {
+    return () => {
+      flushVideoEngagement("final");
+    };
+  }, [flushVideoEngagement]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "hidden") flushVideoEngagement("progress");
+    };
+    const onPageHide = () => flushVideoEngagement("progress");
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+  }, [flushVideoEngagement]);
+
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => flushVideoEngagement("progress"), 60_000);
+    return () => clearInterval(id);
+  }, [playing, flushVideoEngagement]);
 
   // Initialize HLS.js
   useEffect(() => {
@@ -152,21 +260,26 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         if (destroyed) return;
 
         if (Hls.isSupported() && videoRef.current) {
-          // Credentials only for same-origin (playlist API). Presigned R2 URLs must NOT
-          // use credentials — R2 CORS doesn't support Access-Control-Allow-Credentials,
-          // which causes "blocked by CORS policy" when withCredentials=true.
+          // Credentials for same-origin API and for NEXT_PUBLIC_APP_URL when the page is on another host
+          // (e.g. cdn.example.com): relative /api would hit the CDN and 404 — resolveApiPathForBrowser fixes that.
+          // Presigned R2 segment URLs must NOT use credentials.
           const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const appOrigin = getEffectiveAppOrigin();
+          const playlistUrl = resolveApiPathForBrowser(
+            `/api/content/${contentItemId}/playlist/master.m3u8`,
+          );
           const hls = new Hls({
             xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-              const isSameOrigin = !url || url.startsWith("/") || url.startsWith(origin);
-              // Only same-origin (playlist via /api/...) may use credentials. CDN segment URLs carry
-              // ?token=&expires= on every request — withCredentials would require a strict ACAO + credentials
-              // handshake and breaks when the edge returns * or CORS is slightly off (red 200 in DevTools).
-              xhr.withCredentials = isSameOrigin;
+              const isAppApi =
+                !url ||
+                url.startsWith("/") ||
+                url.startsWith(origin) ||
+                (!!appOrigin && url.startsWith(appOrigin));
+              xhr.withCredentials = isAppApi;
             },
           });
 
-          hls.loadSource(`/api/content/${contentItemId}/playlist/master.m3u8`);
+          hls.loadSource(playlistUrl);
           hls.attachMedia(videoRef.current);
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -251,7 +364,9 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
               setLoading(false);
             }
           }, LOADING_TIMEOUT_MS);
-          video.src = `/api/content/${contentItemId}/playlist/master.m3u8`;
+          video.src = resolveApiPathForBrowser(
+            `/api/content/${contentItemId}/playlist/master.m3u8`,
+          );
 
           nativeErrorHandler = () => {
             if (!destroyed) {
@@ -304,7 +419,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     };
   }, [contentItemId, initKey]);
 
-  // First play per content id in tab session → video_play_started; later plays → video_play_subsequent
+  // First play per content id in tab session → first_play; later → video_play_repeat
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -314,14 +429,14 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
         const arr: string[] = raw ? (JSON.parse(raw) as string[]) : [];
         const seen = new Set(arr);
         if (seen.has(contentItemId)) {
-          trackVideoPlaySubsequent(contentItemId);
+          trackVideoPlayRepeat(contentItemId);
         } else {
           seen.add(contentItemId);
           sessionStorage.setItem(GF_VIDEO_PLAY_KEY, JSON.stringify([...seen]));
-          trackVideoPlayStarted(contentItemId);
+          trackFirstPlay(contentItemId);
         }
       } catch {
-        trackVideoPlayStarted(contentItemId);
+        trackFirstPlay(contentItemId);
       }
     };
     video.addEventListener("playing", onPlaying);
@@ -345,14 +460,47 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     const video = videoRef.current;
     if (!video) return;
 
+    /** Powyżej: typowy klatkowy przyrost; poniżej: seek (nagły skok bez czasu ściennego). */
+    const SEEK_JUMP_THRESHOLD_SEC = 1.75;
+
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    const onSeeked = () => {
+      lastVideoTimeForWatchRef.current = video.currentTime;
+      lastVideoWallMsRef.current = performance.now();
+    };
     let timeupdateRaf: number | null = null;
     const onTimeUpdate = () => {
       if (timeupdateRaf != null) return;
       timeupdateRaf = requestAnimationFrame(() => {
         timeupdateRaf = null;
-        setCurrentTime(video.currentTime);
+        const v = videoRef.current;
+        if (!v) return;
+        setCurrentTime(v.currentTime);
+        if (v.seeking) return;
+
+        const t = v.currentTime;
+        const now = performance.now();
+        const lastT = lastVideoTimeForWatchRef.current;
+        const lastWall = lastVideoWallMsRef.current;
+
+        if (lastT !== null && !v.paused) {
+          const dt = t - lastT;
+          if (dt > 0) {
+            if (dt <= SEEK_JUMP_THRESHOLD_SEC) {
+              accumulatedWatchSecRef.current += dt;
+            } else {
+              const rate = Math.max(v.playbackRate, 0.05);
+              const wallSec = (now - lastWall) / 1000;
+              const expectedWall = dt / rate;
+              if (wallSec >= expectedWall * 0.2) {
+                accumulatedWatchSecRef.current += dt;
+              }
+            }
+          }
+        }
+        lastVideoTimeForWatchRef.current = t;
+        lastVideoWallMsRef.current = now;
       });
     };
     const onDurationChange = () => setDuration(video.duration || 0);
@@ -376,6 +524,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
+    video.addEventListener("seeked", onSeeked);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("progress", onProgress);
@@ -387,6 +536,7 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
       if (timeupdateRaf != null) cancelAnimationFrame(timeupdateRaf);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("progress", onProgress);
@@ -755,7 +905,12 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     <div
       ref={containerRef}
       data-video-player
-      className="relative bg-black rounded-xl sm:rounded-2xl overflow-hidden aspect-video group select-none min-w-0 w-full"
+      className={cn(
+        "relative bg-black rounded-xl sm:rounded-2xl overflow-hidden group select-none min-w-0 w-full",
+        galleryOverlay
+          ? "aspect-video max-h-[min(70vh,560px)] lg:aspect-auto lg:max-h-none lg:h-[min(88dvh,980px)] lg:flex lg:items-center lg:justify-center"
+          : "aspect-video",
+      )}
       style={{ touchAction: "manipulation" } as React.CSSProperties}
       onMouseMove={resetHideTimer}
       onMouseLeave={() => { if (playing) setShowControls(false); }}
@@ -766,7 +921,12 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
     >
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className={cn(
+          "object-contain",
+          galleryOverlay
+            ? "h-full w-full max-lg:max-h-full lg:h-auto lg:w-auto lg:max-h-full lg:max-w-full"
+            : "h-full w-full",
+        )}
         playsInline
         controls={isIOS}
         controlsList="nodownload"
@@ -926,6 +1086,19 @@ export function VideoPlayer({ contentItemId }: VideoPlayerProps) {
 
           {/* Spacer */}
           <div className="flex-1" />
+
+          {mp4DownloadHref && (
+            <a
+              href={mp4DownloadHref}
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 flex items-center gap-1.5 text-white hover:text-white/80 transition-colors p-1.5 text-sm min-w-[44px] min-h-[44px] justify-center rounded-lg hover:bg-white/10"
+              title={t("downloadMp4")}
+              aria-label={t("downloadMp4")}
+            >
+              <Download className="h-5 w-5" />
+              <span className="hidden sm:inline">MP4</span>
+            </a>
+          )}
 
           {/* Quality selector — menu rendered via portal to avoid overflow clipping */}
           {qualityLevels.length > 0 && (

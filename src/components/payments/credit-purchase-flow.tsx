@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2, UserPlus } from "lucide-react";
+import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2, UserPlus, Check } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaymentCountdown } from "@/components/payments/payment-countdown";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatCredits, formatPrice } from "@/lib/utils";
+import { GROWTH } from "@/lib/growth-event-names";
 import { emitGrowthEvent } from "@/lib/growth-events";
 import {
   trackBlikPaymentExpired,
@@ -59,11 +60,13 @@ export function CreditPurchaseFlow({
   packages,
   blikEnabled = true,
   priorApprovedCreditPurchases = 0,
+  creditBalance,
 }: {
   packages: CreditPackage[];
   blikEnabled?: boolean;
   /** Approved credit purchases before this page load (used for first-purchase referral prompt). */
   priorApprovedCreditPurchases?: number;
+  creditBalance: number;
 }) {
   const t = useTranslations("credits");
   const router = useRouter();
@@ -211,13 +214,13 @@ export function CreditPurchaseFlow({
   useEffect(() => {
     if (step !== "select-package" || pricingViewLogged.current) return;
     pricingViewLogged.current = true;
-    emitGrowthEvent("pricing_viewed", { surface: "credit_purchase" });
+    emitGrowthEvent(GROWTH.PRICING_VIEWED, { surface: "credit_purchase" });
   }, [step]);
 
   useEffect(() => {
     if (step !== "select-method" || !selectedPackage || checkoutStartedLogged.current) return;
     checkoutStartedLogged.current = true;
-    emitGrowthEvent("checkout_started", { tier: selectedPackage.tier });
+    emitGrowthEvent(GROWTH.CHECKOUT_STARTED, { tier: selectedPackage.tier });
   }, [step, selectedPackage]);
 
   // Sync proofUploaded from server when entering waiting step (e.g. after refresh)
@@ -375,7 +378,7 @@ export function CreditPurchaseFlow({
     setError("");
 
     try {
-      emitGrowthEvent("payment_method_selected", {
+      emitGrowthEvent(GROWTH.PAYMENT_METHOD_SELECTED, {
         method: selectedMethod,
         crypto: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
       });
@@ -538,8 +541,235 @@ export function CreditPurchaseFlow({
     }
   };
 
+  const showBlikMilestone =
+    selectedMethod === "BLIK" ||
+    step === "blik-code" ||
+    paymentResult?.paymentMethod === "BLIK";
+
+  const showPendingPaymentUi =
+    step === "waiting" &&
+    paymentResult &&
+    (!paymentStatus || paymentStatus === "PENDING" || paymentStatus === "EXPIRED");
+
+  const visibleMilestones = [
+    { key: "pkg", label: t("selectPackage") },
+    { key: "meth", label: t("selectMethod") },
+    ...(showBlikMilestone ? [{ key: "blik" as const, label: t("enterBlikCode") }] : []),
+    { key: "pend", label: t("pending") },
+  ];
+
+  let currentMsIdx = 0;
+  if (step === "select-package") currentMsIdx = 0;
+  else if (step === "select-method") currentMsIdx = 1;
+  else if (step === "blik-code") currentMsIdx = showBlikMilestone ? 2 : 1;
+  else if (step === "waiting") currentMsIdx = visibleMilestones.length - 1;
+
+  const allMilestonesComplete =
+    step === "waiting" && (paymentStatus === "APPROVED" || paymentStatus === "REJECTED");
+
+  const selectedMethodLabel = selectedMethod
+    ? methods.find((m) => m.id === selectedMethod)?.label ?? selectedMethod
+    : null;
+
+  const stickyMobileActions = cn(
+    "sticky bottom-0 z-30 -mx-4 mt-4 flex gap-3 px-4 py-3",
+    "border-t border-border/50 bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md",
+    "supports-[backdrop-filter]:bg-background/80",
+    "lg:static lg:z-auto lg:mx-0 lg:border-t-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none",
+  );
+
+  const orderSummaryDesktop = selectedPackage && (
+    <div className="rounded-xl border border-border/70 bg-background/60 p-4 text-sm dark:bg-background/40 hidden lg:block">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t("selectPackage")}</p>
+      <p className="mt-1 font-semibold text-foreground">{selectedPackage.name}</p>
+      <div className="mt-2 flex justify-between gap-2 text-muted-foreground">
+        <span>
+          {promoApplied ? promoApplied.finalCredits : selectedPackage.credits} {t("creditsLabel")}
+        </span>
+        <span className="font-medium tabular-nums text-foreground">
+          {formatPrice(promoApplied ? promoApplied.finalPrice : selectedPackage.price)}
+        </span>
+      </div>
+      {selectedMethodLabel && step !== "select-package" && (
+        <p className="mt-3 border-t border-border/50 pt-3 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{t("selectMethod")}:</span> {selectedMethodLabel}
+          {selectedMethod === "CRYPTO" && (
+            <span className="ml-1 font-mono text-[11px]">({selectedCrypto})</span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+
+  const orderSummaryMobileDetails =
+    selectedPackage &&
+    step !== "select-package" && (
+      <details className="rounded-xl border border-border/70 bg-background/60 lg:hidden dark:bg-background/40">
+        <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center justify-between gap-2">
+            <span className="truncate">{selectedPackage.name}</span>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {formatPrice(promoApplied ? promoApplied.finalPrice : selectedPackage.price)}
+            </span>
+          </span>
+        </summary>
+        <div className="space-y-2 border-t border-border/50 px-3 pb-3 pt-2 text-xs text-muted-foreground">
+          <div className="flex justify-between gap-2">
+            <span>{t("creditsLabel")}</span>
+            <span className="font-medium text-foreground">
+              {promoApplied ? promoApplied.finalCredits : selectedPackage.credits}
+            </span>
+          </div>
+          {selectedMethodLabel && (
+            <p>
+              <span className="font-medium text-foreground">{t("selectMethod")}:</span> {selectedMethodLabel}
+              {selectedMethod === "CRYPTO" && (
+                <span className="ml-1 font-mono">({selectedCrypto})</span>
+              )}
+            </p>
+          )}
+        </div>
+      </details>
+    );
+
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-6xl mx-auto w-full">
+      <div className="grid gap-4 lg:grid-cols-[minmax(272px,320px)_minmax(0,1fr)] lg:gap-10 xl:gap-12 items-start">
+        <aside
+          className={cn(
+            "space-y-3 rounded-2xl border border-border/80 bg-muted/20 p-3 sm:p-4 lg:space-y-5 lg:p-5 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:self-start",
+            "dark:border-white/[0.08] dark:bg-muted/10",
+            showPendingPaymentUi ? "order-1 lg:order-1" : "order-2 lg:order-1",
+          )}
+          aria-label={t("title")}
+        >
+          <header className="border-b border-border/60 pb-3 lg:space-y-1 lg:pb-4">
+            <h1 className="sr-only">{t("title")}</h1>
+            <div className="flex items-start justify-between gap-2 lg:hidden">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("title")}</p>
+                <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-sm text-foreground">
+                  <Coins className="inline h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                  <span className="font-semibold tabular-nums">
+                    {formatCredits(creditBalance)} {t("creditsLabel")}
+                  </span>
+                </p>
+              </div>
+              <span
+                className="shrink-0 rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-primary"
+                aria-hidden
+              >
+                {currentMsIdx + 1}/{visibleMilestones.length}
+              </span>
+            </div>
+            <p className="hidden lg:flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+              <span className="text-base font-semibold tracking-tight text-foreground">{t("title")}</span>
+              <span className="text-muted-foreground/40" aria-hidden>
+                ·
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Coins className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                {t("balance")}:
+              </span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatCredits(creditBalance)} {t("creditsLabel")}
+              </span>
+            </p>
+            <p className="mt-1.5 truncate text-xs text-muted-foreground lg:hidden" title={visibleMilestones[currentMsIdx]?.label}>
+              {visibleMilestones[currentMsIdx]?.label}
+            </p>
+          </header>
+
+          <nav aria-label="Checkout progress" className="hidden lg:block">
+            <ol className="space-y-0">
+              {visibleMilestones.map((ms, i) => {
+                const done = allMilestonesComplete || i < currentMsIdx;
+                const current = !allMilestonesComplete && i === currentMsIdx;
+                return (
+                  <li key={ms.key} className="flex gap-3">
+                    <span className="flex flex-col items-center pt-0.5">
+                      <span
+                        className={cn(
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-medium",
+                          done && "border-primary/40 bg-primary/15 text-primary",
+                          current && !done && "border-primary bg-primary text-primary-foreground",
+                          !done && !current && "border-border bg-muted/50 text-muted-foreground",
+                        )}
+                      >
+                        {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : i + 1}
+                      </span>
+                      {i < visibleMilestones.length - 1 && (
+                        <span
+                          className={cn(
+                            "my-1 min-h-[12px] w-px flex-1",
+                            i < currentMsIdx || allMilestonesComplete ? "bg-primary/30" : "bg-border",
+                          )}
+                          aria-hidden
+                        />
+                      )}
+                    </span>
+                    <span
+                      className={cn(
+                        "pb-4 text-sm leading-snug last:pb-0",
+                        current && "font-medium text-foreground",
+                        done && !current && "text-muted-foreground",
+                        !done && !current && "text-muted-foreground/80",
+                      )}
+                    >
+                      {ms.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+
+          {orderSummaryDesktop}
+          {orderSummaryMobileDetails}
+
+          {showPendingPaymentUi && paymentResult && (
+            <div className="space-y-2 border-t border-border/60 pt-3 lg:space-y-3 lg:pt-4">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground lg:text-xs">{t("pending")}</p>
+              <div className="max-lg:scale-[0.94] max-lg:origin-top">
+                <PaymentCountdown
+                  expirationTime={paymentResult.expirationTime}
+                  isBlik={paymentResult.paymentMethod === "BLIK"}
+                  onBlikExpired={(expired) => {
+                    setBlikExpired(expired);
+                    if (expired) trackBlikPaymentExpired();
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {step === "waiting" && paymentResult && paymentStatus === "APPROVED" && (
+            <div className="hidden items-start gap-3 rounded-xl border border-green-500/35 bg-green-500/[0.07] p-4 lg:flex">
+              <CheckCircle className="mt-0.5 h-8 w-8 shrink-0 text-green-500" aria-hidden />
+              <div>
+                <p className="font-semibold text-green-600 dark:text-green-400">{t("paymentApprovedTitle")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("creditsAdded", { credits: paymentResult.credits })}</p>
+              </div>
+            </div>
+          )}
+
+          {step === "waiting" && paymentResult && paymentStatus === "REJECTED" && (
+            <div className="hidden items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/[0.06] p-4 lg:flex">
+              <XCircle className="mt-0.5 h-8 w-8 shrink-0 text-destructive" aria-hidden />
+              <div>
+                <p className="font-semibold text-destructive">{t("paymentRejectedTitle")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("paymentRejectedMessage")}</p>
+              </div>
+            </div>
+          )}
+        </aside>
+
+        <div
+          className={cn(
+            "min-w-0",
+            showPendingPaymentUi ? "order-2 lg:order-2" : "order-1 lg:order-2",
+          )}
+        >
       <AnimatePresence mode="wait">
         {/* Step 1: Select Package */}
         {step === "select-package" && (
@@ -549,9 +779,10 @@ export function CreditPurchaseFlow({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3 }}
+            className="pb-1 lg:pb-0"
           >
-            <h2 className="text-lg font-semibold mb-4">{t("selectPackage")}</h2>
-            <div className="grid gap-3">
+            <h2 className="mb-3 text-base font-semibold lg:mb-4 lg:text-lg">{t("selectPackage")}</h2>
+            <div className="grid gap-2 sm:gap-3">
               {packages.map((pkg, index) => (
                 <Card
                   key={pkg.id}
@@ -559,7 +790,7 @@ export function CreditPurchaseFlow({
                     }`}
                   onClick={() => setSelectedPackage(pkg)}
                 >
-                  <CardContent className="flex items-center justify-between p-4">
+                  <CardContent className="flex items-center justify-between p-3 sm:p-4">
                     <div className="flex items-center gap-3 sm:gap-4">
                       <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-primary/10 shrink-0">
                         <Coins className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
@@ -585,7 +816,7 @@ export function CreditPurchaseFlow({
               ))}
             </div>
             {selectedPackage && (
-              <div className="mt-4 space-y-2">
+              <div className="mt-3 space-y-2 lg:mt-4">
                 <p className="text-sm font-medium text-muted-foreground">{t("promoCode")}</p>
                 <div className="flex gap-2">
                   <Input
@@ -614,13 +845,15 @@ export function CreditPurchaseFlow({
                 )}
               </div>
             )}
-            <Button
-              className="w-full mt-6 h-11"
-              disabled={!selectedPackage}
-              onClick={() => setStep("select-method")}
-            >
-              {t("selectMethod")} <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
+            <div className={stickyMobileActions}>
+              <Button
+                className="h-11 w-full"
+                disabled={!selectedPackage}
+                onClick={() => setStep("select-method")}
+              >
+                {t("selectMethod")} <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
           </motion.div>
         )}
 
@@ -632,9 +865,10 @@ export function CreditPurchaseFlow({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3 }}
+            className="pb-1 lg:pb-0"
           >
-            <h2 className="text-lg font-semibold mb-4">{t("selectMethod")}</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <h2 className="mb-3 text-base font-semibold lg:mb-4 lg:text-lg">{t("selectMethod")}</h2>
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               {methods.map((method) => (
                 <Card
                   key={method.id}
@@ -642,7 +876,7 @@ export function CreditPurchaseFlow({
                     }`}
                   onClick={() => setSelectedMethod(method.id)}
                 >
-                  <CardContent className="flex flex-col items-center justify-center p-5 sm:p-6 gap-2">
+                  <CardContent className="flex flex-col items-center justify-center gap-2 p-4 sm:p-6">
                     {method.icon}
                     <p className="font-medium text-xs sm:text-sm">{method.label}</p>
                   </CardContent>
@@ -677,18 +911,18 @@ export function CreditPurchaseFlow({
               </motion.div>
             )}
 
-            {error && <p className="text-sm text-destructive mt-4">{error}</p>}
+            {error && <p className="mt-3 text-sm text-destructive lg:mt-4">{error}</p>}
 
-            <div className="flex gap-3 mt-6">
-              <Button variant="outline" onClick={() => setStep("select-package")} className="flex-1">
-                <ArrowLeft className="h-4 w-4 mr-2" /> {t("back")}
+            <div className={stickyMobileActions}>
+              <Button variant="outline" onClick={() => setStep("select-package")} className="min-h-11 flex-1">
+                <ArrowLeft className="mr-2 h-4 w-4" /> {t("back")}
               </Button>
               <Button
-                className="flex-1"
+                className="min-h-11 flex-1"
                 disabled={!selectedMethod || loading}
                 onClick={handleMethodNext}
               >
-                {loading ? "..." : t("continue")} <ArrowRight className="h-4 w-4 ml-2" />
+                {loading ? "..." : t("continue")} <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
           </motion.div>
@@ -701,10 +935,11 @@ export function CreditPurchaseFlow({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
+            className="pb-1 lg:pb-0"
           >
-            <h2 className="text-xl font-semibold mb-4">{t("enterBlikCode")}</h2>
+            <h2 className="mb-3 text-lg font-semibold lg:mb-4 lg:text-xl">{t("enterBlikCode")}</h2>
             <Card>
-              <CardContent className="p-6 space-y-4">
+              <CardContent className="space-y-3 p-4 sm:space-y-4 sm:p-6">
                 <p className="text-sm text-muted-foreground">{t("blikInstructions")}</p>
                 <Input
                   placeholder="123456"
@@ -716,7 +951,7 @@ export function CreditPurchaseFlow({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete="one-time-code"
-                  className="text-center text-3xl font-mono tracking-[0.5em] h-16"
+                  className="h-14 text-center text-2xl font-mono tracking-[0.45em] sm:h-16 sm:text-3xl sm:tracking-[0.5em]"
                   maxLength={6}
                 />
                 <p className="text-xs text-muted-foreground text-center">
@@ -725,18 +960,18 @@ export function CreditPurchaseFlow({
               </CardContent>
             </Card>
 
-            {error && <p className="text-sm text-destructive mt-4">{error}</p>}
+            {error && <p className="mt-3 text-sm text-destructive lg:mt-4">{error}</p>}
 
-            <div className="flex gap-3 mt-6">
-              <Button variant="outline" onClick={() => setStep("select-method")} className="flex-1">
-                <ArrowLeft className="h-4 w-4 mr-2" /> Back
+            <div className={stickyMobileActions}>
+              <Button variant="outline" onClick={() => setStep("select-method")} className="min-h-11 flex-1">
+                <ArrowLeft className="mr-2 h-4 w-4" /> {t("back")}
               </Button>
               <Button
-                className="flex-1"
+                className="min-h-11 flex-1"
                 disabled={blikCode.length < 6 || loading}
                 onClick={() => handleCreatePurchase()}
               >
-                {loading ? "..." : t("submitBlik")} <ArrowRight className="h-4 w-4 ml-2" />
+                {loading ? "..." : t("submitBlik")} <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
           </motion.div>
@@ -752,7 +987,7 @@ export function CreditPurchaseFlow({
             {/* Payment Approved */}
             {paymentStatus === "APPROVED" && (
               <Card className="border-green-500/50">
-                <CardContent className="p-8 text-center space-y-4">
+                <CardContent className="space-y-4 p-5 text-center sm:p-8">
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -828,7 +1063,7 @@ export function CreditPurchaseFlow({
             {/* Payment Rejected */}
             {paymentStatus === "REJECTED" && (
               <Card className="border-destructive/50">
-                <CardContent className="p-8 text-center space-y-4">
+                <CardContent className="space-y-4 p-5 text-center sm:p-8">
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -862,23 +1097,13 @@ export function CreditPurchaseFlow({
             {/* Pending / Waiting */}
             {(!paymentStatus || paymentStatus === "PENDING" || paymentStatus === "EXPIRED") && (
               <Card>
-                <CardHeader className="text-center">
-                  <CardTitle className="flex items-center justify-center gap-2">
-                    <Clock className="h-5 w-5 text-primary" />
+                <CardHeader className="px-4 pb-2 pt-4 text-center sm:px-6 sm:pb-4 sm:pt-6">
+                  <CardTitle className="flex items-center justify-center gap-2 text-base sm:text-lg">
+                    <Clock className="h-4 w-4 shrink-0 text-primary sm:h-5 sm:w-5" />
                     {t("pending")}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Countdown */}
-                  <PaymentCountdown
-                    expirationTime={paymentResult.expirationTime}
-                    isBlik={paymentResult.paymentMethod === "BLIK"}
-                    onBlikExpired={(expired) => {
-                      setBlikExpired(expired);
-                      if (expired) trackBlikPaymentExpired();
-                    }}
-                  />
-
+                <CardContent className="space-y-4 px-4 pb-4 sm:space-y-6 sm:px-6 sm:pb-6">
                   {/* Transaction code */}
                   <div className="text-center">
                     <p className="text-sm text-muted-foreground">{t("transactionCode")}</p>
@@ -1014,7 +1239,7 @@ export function CreditPurchaseFlow({
                     <span className="font-semibold">{formatPrice(paymentResult.amount)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Credits</span>
+                    <span className="text-muted-foreground">{t("creditsLabel")}</span>
                     <span className="font-semibold">{paymentResult.credits}</span>
                   </div>
 
@@ -1082,6 +1307,8 @@ export function CreditPurchaseFlow({
           </motion.div>
         )}
       </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

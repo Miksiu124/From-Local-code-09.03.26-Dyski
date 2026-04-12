@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/referral"
 
@@ -47,12 +49,15 @@ type UserRow struct {
 }
 
 // StoreSessionIP saves the user's IP for anti-gaming (referral same-person check). TTL matches session.
-func (s *Service) StoreSessionIP(ctx context.Context, userID, ip string) {
+func (s *Service) StoreSessionIP(ctx context.Context, userID, ip string, ttlSecs int) {
 	if userID == "" || ip == "" || s.redis == nil {
 		return
 	}
+	if ttlSecs <= 0 {
+		ttlSecs = s.cfg.SessionTokenTTL
+	}
 	key := fmt.Sprintf("session:ip:%s", userID)
-	s.redis.Set(ctx, key, ip, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
+	s.redis.Set(ctx, key, ip, time.Duration(ttlSecs)*time.Second)
 }
 
 // Register creates a new user with hashed password and optionally saves referral and custom link attribution.
@@ -88,27 +93,38 @@ func (s *Service) Register(ctx context.Context, name, email, password, refCode, 
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if refCode != "" {
-		// Anti-gaming: reject if referrer and referee have same IP (same person)
-		if s.redis != nil && refereeIP != "" {
-			var referrerID string
-			if err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE referral_code = $1 AND id != $2`, strings.TrimSpace(strings.ToUpper(refCode)), userID).Scan(&referrerID); err == nil {
-				referrerIP, _ := s.redis.Get(ctx, fmt.Sprintf("session:ip:%s", referrerID)).Result()
-				if referrerIP != "" && referrerIP == refereeIP {
-					// Same IP = likely same person; skip referral
-					refCode = ""
-				}
-			}
-		}
-		if refCode != "" {
-			_ = referral.SaveReferralFromCode(ctx, s.db, userID, refCode)
-		}
+	if err := referral.EnsureReferralCodeForUser(ctx, s.db, userID); err != nil {
+		log.Printf("[Referral] EnsureReferralCodeForUser failed user=%s: %v", userID, err)
 	}
+	s.applyReferralAfterUserCreate(ctx, userID, refCode, refereeIP)
 	return nil
 }
 
-// Login validates credentials and returns a JWT + sets Redis session
-func (s *Service) Login(ctx context.Context, email, password string) (string, *UserRow, error) {
+// applyReferralAfterUserCreate links a new account to a referrer when refCode is valid and anti-gaming passes.
+func (s *Service) applyReferralAfterUserCreate(ctx context.Context, newUserID, refCode, refereeIP string) {
+	refCode = strings.TrimSpace(refCode)
+	if refCode == "" {
+		return
+	}
+	rc := strings.TrimSpace(strings.ToUpper(refCode))
+	// Anti-gaming: reject if referrer and referee have same IP (same person)
+	if s.redis != nil && refereeIP != "" {
+		var referrerID string
+		if err := s.db.QueryRow(ctx, `SELECT id FROM users WHERE referral_code = $1 AND id != $2`, rc, newUserID).Scan(&referrerID); err == nil {
+			referrerIP, _ := s.redis.Get(ctx, fmt.Sprintf("session:ip:%s", referrerID)).Result()
+			if referrerIP != "" && referrerIP == refereeIP {
+				log.Printf("[Referral] Skipped attribution (referrer and referee same IP): referee=%s referrer=%s", newUserID, referrerID)
+				return
+			}
+		}
+	}
+	if err := referral.SaveReferralFromCode(ctx, s.db, newUserID, refCode); err != nil {
+		log.Printf("[Referral] SaveReferralFromCode failed referee=%s ref=%s: %v", newUserID, rc, err)
+	}
+}
+
+// Login validates credentials and returns a JWT + Redis session TTL in seconds (for cookie MaxAge).
+func (s *Service) Login(ctx context.Context, email, password string, rememberMe bool) (string, *UserRow, int, error) {
 	var user UserRow
 	err := s.db.QueryRow(ctx, `
 		SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
@@ -116,23 +132,23 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, *U
 	`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
 
 	if err != nil {
-		return "", nil, fmt.Errorf("invalid credentials")
+		return "", nil, 0, fmt.Errorf("invalid credentials")
 	}
 
 	if user.Password == nil {
-		return "", nil, fmt.Errorf("this account uses OAuth login")
+		return "", nil, 0, fmt.Errorf("this account uses OAuth login")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.Password), []byte(password)); err != nil {
-		return "", nil, fmt.Errorf("invalid credentials")
+		return "", nil, 0, fmt.Errorf("invalid credentials")
 	}
 
 	if user.IsBanned {
-		return "", nil, fmt.Errorf("account suspended")
+		return "", nil, 0, fmt.Errorf("account suspended")
 	}
 
 	if !user.EmailVerified && !s.cfg.IsAdmin(user.Email) {
-		return "", nil, ErrEmailNotVerified
+		return "", nil, 0, ErrEmailNotVerified
 	}
 
 	// Update last login
@@ -147,17 +163,22 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, *U
 	// Generate unique session ID
 	sessionID := generateSessionID()
 
+	sessionTTLSecs := s.cfg.JWTExpirySecs
+	if rememberMe {
+		sessionTTLSecs = s.cfg.RememberMeSessionTTLSecs
+	}
+
 	// Generate JWT
-	token, err := s.generateJWT(user.ID, user.Email, role, sessionID)
+	token, err := s.generateJWT(user.ID, user.Email, role, sessionID, sessionTTLSecs)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate token: %w", err)
+		return "", nil, 0, fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	// Store session in Redis (invalidates any previous session for this user)
 	sessionKey := fmt.Sprintf("session:%s", user.ID)
-	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
+	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(sessionTTLSecs)*time.Second)
 
-	return token, &user, nil
+	return token, &user, sessionTTLSecs, nil
 }
 
 // Logout invalidates the session in Redis
@@ -212,7 +233,10 @@ func (s *Service) CheckEmailExists(ctx context.Context, email string) (bool, err
 	return exists, err
 }
 
-func (s *Service) generateJWT(userID, email, role, sessionID string) (string, error) {
+func (s *Service) generateJWT(userID, email, role, sessionID string, ttlSecs int) (string, error) {
+	if ttlSecs <= 0 {
+		ttlSecs = s.cfg.JWTExpirySecs
+	}
 	claims := &middleware.Claims{
 		UserID: userID,
 		Email:  email,
@@ -220,7 +244,7 @@ func (s *Service) generateJWT(userID, email, role, sessionID string) (string, er
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        sessionID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(s.cfg.JWTExpirySecs) * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(ttlSecs) * time.Second)),
 		},
 	}
 
@@ -265,9 +289,11 @@ func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) (s
 	return token, nil
 }
 
-// FindOrCreateDiscordUser links a Discord account to an existing user or creates a new one
-func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar, customLinkID string) (string, *UserRow, error) {
+// FindOrCreateDiscordUser links a Discord account to an existing user or creates a new one.
+// createdNew is true only when a new row was inserted (not when linking Discord to an existing account).
+func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID, displayName, avatar, customLinkID, refCode, refereeIP string) (string, *UserRow, bool, error) {
 	var user UserRow
+	createdNew := false
 
 	// Try to find existing user by discord_id
 	err := s.db.QueryRow(ctx, `
@@ -317,8 +343,9 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 				&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified,
 			)
 			if err != nil {
-				return "", nil, fmt.Errorf("failed to create discord user: %w", err)
+				return "", nil, false, fmt.Errorf("failed to create discord user: %w", err)
 			}
+			createdNew = true
 		} else {
 			// Link discord_id to existing user; Discord verifies email
 			_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1, email_verified = true WHERE id = $2`, discordID, user.ID)
@@ -326,8 +353,15 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 		}
 	}
 
+	if createdNew {
+		if err := referral.EnsureReferralCodeForUser(ctx, s.db, user.ID); err != nil {
+			log.Printf("[Referral] EnsureReferralCodeForUser failed user=%s: %v", user.ID, err)
+		}
+		s.applyReferralAfterUserCreate(ctx, user.ID, refCode, refereeIP)
+	}
+
 	if user.IsBanned {
-		return "", nil, fmt.Errorf("account suspended")
+		return "", nil, false, fmt.Errorf("account suspended")
 	}
 
 	// Update last login
@@ -339,15 +373,15 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 	}
 
 	sessionID := generateSessionID()
-	token, err := s.generateJWT(user.ID, user.Email, role, sessionID)
+	token, err := s.generateJWT(user.ID, user.Email, role, sessionID, s.cfg.JWTExpirySecs)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate token: %w", err)
+		return "", nil, false, fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	sessionKey := fmt.Sprintf("session:%s", user.ID)
 	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
 
-	return token, &user, nil
+	return token, &user, createdNew, nil
 }
 
 // CreateEmailVerificationToken creates a token for email verification (Redis TTL from config).
@@ -392,7 +426,23 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 	}
 	s.redis.Del(ctx, key)
 	s.redis.Del(ctx, fmt.Sprintf("email-verify:active:%s", userID))
+
+	uid := userID
+	_ = growth.InsertEvent(ctx, s.db, "email_verified", &uid, map[string]interface{}{})
+	growth.EmitJSON("email_verified", &uid, map[string]interface{}{})
 	return nil
+}
+
+// EmitGrowthEvent persists a funnel row (e.g. verification_sent from handler).
+func (s *Service) EmitGrowthEvent(ctx context.Context, eventName string, userID *string, props map[string]interface{}) {
+	if s.db == nil {
+		return
+	}
+	if props == nil {
+		props = map[string]interface{}{}
+	}
+	_ = growth.InsertEvent(ctx, s.db, eventName, userID, props)
+	growth.EmitJSON(eventName, userID, props)
 }
 
 // ResetPassword validates the token and updates the password

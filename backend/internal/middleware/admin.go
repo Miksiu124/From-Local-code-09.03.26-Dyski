@@ -1,8 +1,7 @@
 package middleware
 
 import (
-	"net/http"
-
+	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 
 	"github.com/labstack/echo/v4"
@@ -22,7 +21,7 @@ func (am *AdminMiddleware) RequireAdmin(next echo.HandlerFunc) echo.HandlerFunc 
 		email := GetUserEmail(c)
 
 		if role != "ADMIN" && !am.cfg.IsAdmin(email) {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
+			return common.Forbidden(c)
 		}
 		return next(c)
 	}
