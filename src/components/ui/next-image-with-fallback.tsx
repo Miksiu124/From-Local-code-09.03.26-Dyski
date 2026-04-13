@@ -5,7 +5,7 @@ import Image, { type ImageLoaderProps } from "next/image";
 import { RetryImage } from "./retry-image";
 import { cn } from "@/lib/utils";
 
-/** Comma-separated hostnames for direct CDN images (unoptimized next/image). */
+/** Comma-separated hostnames for CDN (`cdnImageLoader` + worker `?w=`). */
 const CDN_HOSTS = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
   .split(",")
   .map((s) => s.trim().toLowerCase())
@@ -45,12 +45,14 @@ interface NextImageWithFallbackProps {
   sizes?: string;
   width?: number;
   height?: number;
+  /** Passed to next/image / loader `q` on CDN (default 75). */
+  quality?: number;
 }
 
 /**
- * Uses next/image for CDN URLs with unoptimized + cdnImageLoader: requests go straight to the CDN
- * with ?w= so the Cloudflare Worker can serve Image Resizing (cf.image), not the Next.js optimizer.
- * For non-CDN URLs (e.g. /api/... proxy), uses RetryImage directly.
+ * CDN: `unoptimized` + `cdnImageLoader` — requests go to the worker with `?w=` / `?q=` (edge resize).
+ * `priority` also sets `fetchPriority="high"` for LCP (Lighthouse).
+ * Non-CDN (e.g. /api/...): RetryImage.
  */
 export function NextImageWithFallback({
   src,
@@ -63,6 +65,7 @@ export function NextImageWithFallback({
   sizes,
   width,
   height,
+  quality = 75,
 }: NextImageWithFallbackProps) {
   const [useImgFallback, setUseImgFallback] = useState(false);
   const isCdn = isCdnUrl(src);
@@ -70,6 +73,8 @@ export function NextImageWithFallback({
   const handleError = useCallback(() => {
     setUseImgFallback(true);
   }, []);
+
+  const fetchPriority = priority ? ("high" as const) : undefined;
 
   // Non-CDN or error fallback: use RetryImage (handles retries, proxy URLs)
   if (!isCdn || useImgFallback) {
@@ -80,11 +85,11 @@ export function NextImageWithFallback({
         className={fill ? cn("absolute inset-0 w-full h-full", className) : className}
         fallback={fallback}
         loading={loading}
+        fetchPriority={fetchPriority}
       />
     );
   }
 
-  // CDN URL: unoptimized — fetch directly from CDN, skip _next/image pipeline (avoids MISS, 12s lag)
   if (fill) {
     return (
       <Image
@@ -93,9 +98,11 @@ export function NextImageWithFallback({
         fill
         className={className}
         sizes={sizes}
+        quality={quality}
         loader={cdnImageLoader}
         loading={priority ? undefined : loading}
         priority={priority}
+        fetchPriority={fetchPriority}
         onError={handleError}
         unoptimized
       />
@@ -109,9 +116,12 @@ export function NextImageWithFallback({
       width={width ?? 400}
       height={height ?? 533}
       className={className}
+      sizes={sizes}
+      quality={quality}
       loader={cdnImageLoader}
       loading={priority ? undefined : loading}
       priority={priority}
+      fetchPriority={fetchPriority}
       onError={handleError}
       unoptimized
     />

@@ -165,12 +165,14 @@ const ModelCard = memo(function ModelCard({
   cost7d,
   t,
   onModelClick,
+  imagePriority = false,
 }: {
   model: ModelItem;
   hasAccess: (id: string) => boolean;
   cost7d: number;
   t: ReturnType<typeof useTranslations>;
   onModelClick: (model: ModelItem, e: React.MouseEvent) => void;
+  imagePriority?: boolean;
 }) {
   const thumbSrc = model.avatarUrl || `/api/models/${model.folderName}/thumbnail`;
   return (
@@ -190,7 +192,9 @@ const ModelCard = memo(function ModelCard({
             className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
-            loading="lazy"
+            loading={imagePriority ? "eager" : "lazy"}
+            priority={imagePriority}
+            quality={72}
             fallback={
               <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
                 <span className="text-4xl font-bold text-muted-foreground/30">
@@ -650,7 +654,8 @@ export function ModelsGrid({
                       alt={heroModel.name}
                       className="object-cover"
                       fill
-                      sizes="(max-width: 1024px) 100vw, 66vw"
+                      sizes="(max-width: 1024px) 100vw, 800px"
+                      quality={78}
                       priority
                       loading="eager"
                     />
@@ -738,7 +743,8 @@ export function ModelsGrid({
                         alt={model.name}
                         className="object-cover"
                         fill
-                        sizes="96px"
+                        sizes="(max-width: 1023px) 96px, 20vw"
+                        quality={70}
                         fallback={
                           <div className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground/50 text-2xl font-bold">
                             {model.name.charAt(0).toUpperCase()}
@@ -922,6 +928,7 @@ export function ModelsGrid({
                     cost7d={cost7d}
                     t={t}
                     onModelClick={(m, e) => handleModelClick(m, e, "grid", index)}
+                    imagePriority={index < 6}
                   />
                 </CatalogModelSurfaceTracker>
               );

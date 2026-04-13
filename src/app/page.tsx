@@ -94,12 +94,8 @@ export default async function HomePage() {
     ? ("all" as const)
     : access.modelIds;
 
-  const heroImageUrl = featuredModelsData.models[0]?.headerUrl ?? modelsData.models[0]?.headerUrl;
   return (
     <>
-      {heroImageUrl && (
-        <link rel="preload" as="image" href={heroImageUrl} />
-      )}
       <div className="mx-auto w-full min-w-0 max-w-7xl py-8 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
       <ModelsGrid
         initialModels={modelsData.models.map((m) => ({
