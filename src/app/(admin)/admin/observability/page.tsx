@@ -296,7 +296,7 @@ export default function AdminObservabilityPage() {
                   <tr key={`${g.fingerprint}-${g.errorKind}`} className="border-b border-border/40 align-top">
                     <td className="py-2 pr-3 font-mono tabular-nums">{g.count}</td>
                     <td className="py-2 pr-3">
-                      <span className="inline-flex rounded-md border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                      <span className="inline-flex rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
                         {kindLabel(g.errorKind)}
                       </span>
                     </td>
@@ -326,7 +326,7 @@ export default function AdminObservabilityPage() {
               return (
                 <li key={row.id} className="rounded-xl border border-border/80 bg-background/40 p-4 text-sm space-y-2">
                   <div className="flex flex-wrap gap-2 items-center">
-                    <span className="inline-flex rounded-md border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                    <span className="inline-flex rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
                       {kindLabel(row.errorKind)}
                     </span>
                     {row.browserFamily && (

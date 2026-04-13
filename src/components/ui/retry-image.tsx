@@ -10,6 +10,12 @@ interface RetryImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   fallbackSrc?: string;
   maxRetries?: number;
   retryDelayMs?: number;
+  /**
+   * When `src` changes, keep showing the previous image until the new URL has loaded in memory
+   * (avoids a black frame on `bg-black` containers during gallery navigation). Grid thumbs often
+   * use a different ?w= than the hero, so the larger asset may not be cached yet.
+   */
+  holdPreviousUntilLoaded?: boolean;
 }
 
 /**
@@ -26,18 +32,41 @@ export function RetryImage({
   retryDelayMs = 400,
   onError,
   loading,
+  holdPreviousUntilLoaded = false,
   ...props
 }: RetryImageProps) {
   const [currentSrc, setCurrentSrc] = useState(src);
   const [retryCount, setRetryCount] = useState(0);
   const [showFallback, setShowFallback] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preloadGenRef = useRef(0);
 
   useEffect(() => {
+    if (holdPreviousUntilLoaded) return;
     setCurrentSrc(src);
     setRetryCount(0);
     setShowFallback(false);
-  }, [src]);
+  }, [src, holdPreviousUntilLoaded]);
+
+  useEffect(() => {
+    if (!holdPreviousUntilLoaded) return;
+    if (src === currentSrc) return;
+    const id = ++preloadGenRef.current;
+    const img = new Image();
+    img.onload = () => {
+      if (id !== preloadGenRef.current) return;
+      setCurrentSrc(src);
+      setRetryCount(0);
+      setShowFallback(false);
+    };
+    img.onerror = () => {
+      if (id !== preloadGenRef.current) return;
+      setCurrentSrc(src);
+      setRetryCount(0);
+      setShowFallback(false);
+    };
+    img.src = src;
+  }, [src, holdPreviousUntilLoaded, currentSrc]);
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);

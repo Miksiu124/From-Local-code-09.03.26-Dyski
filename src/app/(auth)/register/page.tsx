@@ -14,7 +14,6 @@ import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import {
   trackSignupPageViewed,
   trackSignupSubmitAttempt,
-  trackSignupCompleted,
   trackSignupFailed,
   trackSignupClientFailed,
 } from "@/lib/growth-analytics";
@@ -112,7 +111,7 @@ export default function RegisterPage() {
         throw e;
       }
 
-      trackSignupCompleted({ has_ref: !!refCode });
+      // signup_completed is recorded server-side (with user_id) when /api/auth/register succeeds
       router.push(safeRedirect ? `/login?registered=1&redirect=${encodeURIComponent(safeRedirect)}` : "/login?registered=1");
     } catch (err: any) {
       const msg = err?.message || "Registration failed. Please try again.";
@@ -136,7 +135,7 @@ export default function RegisterPage() {
       >
         <Card className="border-white/[0.06] bg-card/80 backdrop-blur-xl">
           <CardHeader className="text-center pb-2">
-            <div className="mx-auto mb-4 h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-600/20 border border-primary/20 flex items-center justify-center">
+            <div className="mx-auto mb-4 h-12 w-12 rounded-2xl bg-primary/20 border border-primary/25 flex items-center justify-center">
               <UserPlus className="h-5 w-5 text-primary" />
             </div>
             <CardTitle className="text-2xl font-bold">{t("registerTitle")}</CardTitle>

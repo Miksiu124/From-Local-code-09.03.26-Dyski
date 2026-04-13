@@ -409,7 +409,7 @@ export function CatalogEngagementPanel() {
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{fmtSec(row.avgTimeOnProfileSec)}</td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{row.profileSessions}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-violet-200/85">
+                    <td className="py-2.5 px-3 text-right tabular-nums text-primary/90">
                       {row.deepProfileSessions}
                     </td>
                   </motion.tr>

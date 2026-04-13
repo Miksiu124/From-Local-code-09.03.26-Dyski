@@ -55,7 +55,7 @@ export function PurchaseReferralSourceHover({
           {referrerHeading}
         </p>
         <div className="flex gap-2.5">
-          <UserCircle className="h-9 w-9 shrink-0 text-violet-500/85" aria-hidden />
+          <UserCircle className="h-9 w-9 shrink-0 text-primary/85" aria-hidden />
           <div className="min-w-0 flex-1 space-y-0.5">
             <p className="truncate font-semibold leading-tight text-foreground">{primary}</p>
             {showEmailLine ? (

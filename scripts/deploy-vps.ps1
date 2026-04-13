@@ -34,30 +34,22 @@ if ($PgUpgrade) { Write-Host "Tryb: UPGRADE PostgreSQL 16→18 (backup-first, ze
 if ($PgResume) { Write-Host "Tryb: UPGRADE --resume (kontynuuj od restore)" }
 Write-Host ""
 
-# Sync: rsync lub fallback tar+scp
-$rsync = Get-Command rsync -ErrorAction SilentlyContinue
-if ($rsync) {
-  Write-Host "Syncing (rsync)..."
-  & rsync -avz --delete `
-  --exclude node_modules `
-  --exclude .next `
-  --exclude .git `
-  --exclude uploads `
-  --exclude "*.log" `
-  --exclude .env `
-  --exclude .env.local `
-  "$RepoRoot/" "${VPS_USER}@${VPS_HOST}:${VPS_PATH}/"
-} else {
-  Write-Host "Brak rsync. Uzywam tar+scp (bez .env)..."
+function Sync-WithTarScp {
+  Write-Host "Syncing (tar+scp, bez .env)..."
   $archive = Join-Path $env:TEMP "contentvault-deploy.tar"
   $remoteTar = "$VPS_PATH/contentvault-deploy.tar"
   Push-Location $RepoRoot
   tar -cf $archive --exclude=node_modules --exclude=.next --exclude=.git --exclude=uploads --exclude="*.log" --exclude=.env --exclude=.env.local .
   Pop-Location
+  if ($LASTEXITCODE -ne 0) {
+    Remove-Item $archive -ErrorAction SilentlyContinue
+    Write-Error "tar archiwum nie powiodl sie (kod: $LASTEXITCODE)."
+    exit $LASTEXITCODE
+  }
   scp $archive "${VPS_USER}@${VPS_HOST}:$remoteTar"
   if ($LASTEXITCODE -ne 0) {
     Remove-Item $archive -ErrorAction SilentlyContinue
-    Write-Error "scp nie powiodl sie (ostatni kod: $LASTEXITCODE). Zainstaluj rsync (np. Git for Windows) albo sprawdz prawa do $remoteTar na VPS."
+    Write-Error "scp nie powiodl sie (ostatni kod: $LASTEXITCODE). Sprawdz SSH i $remoteTar na VPS."
     exit $LASTEXITCODE
   }
   Remove-Item $archive -ErrorAction SilentlyContinue
@@ -66,6 +58,42 @@ if ($rsync) {
     Write-Error "Rozpakowanie archiwum na VPS nie powiodlo sie."
     exit $LASTEXITCODE
   }
+}
+
+# Sync: rsync (szybkie) lub tar+scp; cwRsync vs rsync 3.2 na Ubuntu czesto daje blad protokolu — wtedy fallback
+# cwRsync (Windows): lokalna sciezka /cygdrive/x/...
+$rsync = Get-Command rsync -ErrorAction SilentlyContinue
+$syncOk = $false
+if ($rsync) {
+  Write-Host "Syncing (rsync)..."
+  $localSrc = ($RepoRoot -replace '[\\/]+$', '')
+  if ($localSrc -match '^([A-Za-z]):') {
+    $drive = $Matches[1].ToLower()
+    $tail = ($localSrc.Substring(2) -replace '\\', '/').TrimStart('/')
+    $localSrc = "/cygdrive/$drive/$tail"
+  } else {
+    $localSrc = $localSrc -replace '\\', '/'
+  }
+  & rsync -avz --delete `
+  --exclude node_modules `
+  --exclude .next `
+  --exclude .git `
+  --exclude uploads `
+  --exclude "*.log" `
+  --exclude .env `
+  --exclude .env.local `
+  "$localSrc/" "${VPS_USER}@${VPS_HOST}:${VPS_PATH}/"
+  if ($LASTEXITCODE -eq 0) {
+    $syncOk = $true
+  } else {
+    Write-Host "rsync zwrocil kod $LASTEXITCODE - przelaczam na tar+scp."
+  }
+} else {
+  Write-Host "Brak rsync w PATH."
+}
+
+if (-not $syncOk) {
+  Sync-WithTarScp
 }
 
 Write-Host ""
@@ -85,7 +113,7 @@ if ($RebuildFresh) {
   $resumeArg = if ($PgResume) { " --resume " } else { "" }
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh${resumeArg}$bmArg"
 } elseif ($Build) {
-  # Po recreate frontend/api nginx może trzymać stare IP upstream — reload nginx po up (obeszło też przed poprawką resolver w nginx.conf.production)
+  # Po recreate: reload nginx zeby odswiezyc upstream (resolver w nginx.conf.production)
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose $composeFiles build && docker compose $composeFiles up -d && docker compose $composeFiles exec -T nginx nginx -s reload 2>/dev/null || docker compose $composeFiles restart nginx"
 } else {
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose $composeFiles up -d"

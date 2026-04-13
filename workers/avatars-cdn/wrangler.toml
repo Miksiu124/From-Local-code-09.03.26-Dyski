@@ -11,6 +11,9 @@ compatibility_date = "2024-01-01"
 #
 # [vars]
 # MEDIA_CDN_ALLOWED_ORIGINS = "https://dyskiof.net,https://www.dyskiof.net"
+# R2_ACCOUNT_ID = "your_cloudflare_account_id"   # optional image resize (?w=) via cf.image + S3 GET
+# R2_BUCKET_NAME = "files"
+# IMAGE_RESIZE_DISABLED = "0"
 
 # R2 bucket binding — tylko odczyt z bucketa "files"
 [[r2_buckets]]

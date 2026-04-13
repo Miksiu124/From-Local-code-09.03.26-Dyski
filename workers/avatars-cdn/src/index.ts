@@ -1,3 +1,11 @@
+import {
+  fetchTransformedFromR2,
+  hasResizeConfig,
+  isImageResizeKey,
+  isResizeDisabled,
+  parseResizeParams,
+} from "./r2-resize";
+
 /**
  * Cloudflare Worker — R2 FILES bucket.
  * - avatars/* — public (no HMAC)
@@ -303,6 +311,12 @@ interface Env {
   MEDIA_CDN_SIGNING_SECRET?: string;
   MEDIA_CDN_ALLOWED_ORIGINS?: string;
   MEDIA_GATEKEEPER_DISABLED?: string;
+  /** R2 S3 API (same bucket as FILES) — used only for optional ?w=&h= image resize via cf.image */
+  R2_ACCOUNT_ID?: string;
+  R2_BUCKET_NAME?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  IMAGE_RESIZE_DISABLED?: string;
 }
 
 function computeGatekeeperState(env: Env): { secret: string; gatekeeperOff: boolean } {
@@ -376,10 +390,65 @@ export default {
       return new Response("Forbidden", { status: 403, headers: fh });
     }
 
+    const resizeParams = parseResizeParams(url);
+    const gatekeeperActive = needAuth;
+    const resizeEligible =
+      request.method === "GET" &&
+      resizeParams != null &&
+      hasResizeConfig(env) &&
+      !isResizeDisabled(env) &&
+      isImageResizeKey(r2Key);
+
+    let resizeFallbackToBinding = false;
+    let resizeFallbackReason: string | undefined;
+    if (resizeEligible) {
+      try {
+        const t = await fetchTransformedFromR2(env, r2Key, resizeParams);
+        if (t.ok) {
+          const transformed = t.response;
+          const headers = buildCors(origin);
+          const ct = transformed.headers.get("Content-Type");
+          if (ct) {
+            headers.set("Content-Type", ct);
+          } else {
+            const guessed = contentTypeFromKey(r2Key);
+            if (guessed) headers.set("Content-Type", guessed);
+            else headers.set("Content-Type", "application/octet-stream");
+          }
+          headers.set("Cache-Control", cacheControlForKey(r2Key, gatekeeperActive));
+          headers.set("X-CV-Resize", "applied");
+          if (resizeParams.w !== undefined) {
+            headers.set("X-CV-Resize-W", String(resizeParams.w));
+          }
+          if (resizeParams.h !== undefined) {
+            headers.set("X-CV-Resize-H", String(resizeParams.h));
+          }
+          stampGatekeeper(headers, gatekeeperOff);
+          if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
+          const out = new Response(transformed.body, { status: 200, headers });
+          const cache = caches.default;
+          const useEdgeCacheSigned =
+            needAuth && url.searchParams.has("token") && url.searchParams.has("expires");
+          const cachePublicResize = !needAuth;
+          if (useEdgeCacheSigned || cachePublicResize) {
+            ctx.waitUntil(cache.put(request, out.clone()));
+          }
+          return out;
+        }
+        resizeFallbackReason = t.reason;
+        resizeFallbackToBinding = true;
+        console.error("[files-cdn] transform failed:", t.reason);
+      } catch (e) {
+        console.error("[files-cdn] resize error:", e);
+        resizeFallbackReason =
+          e instanceof Error ? e.message.slice(0, 100) : "exception";
+        resizeFallbackToBinding = true;
+      }
+      // Fall through to R2 binding (full object)
+    }
+
     const useEdgeCache =
       needAuth && url.searchParams.has("token") && url.searchParams.has("expires");
-
-    const gatekeeperActive = needAuth;
 
     try {
       const cache = caches.default;
@@ -395,6 +464,46 @@ export default {
       }
 
       if (request.method === "HEAD") {
+        const resizeHeadEligible =
+          resizeParams != null &&
+          hasResizeConfig(env) &&
+          !isResizeDisabled(env) &&
+          isImageResizeKey(r2Key);
+
+        if (resizeHeadEligible) {
+          try {
+            const t = await fetchTransformedFromR2(env, r2Key, resizeParams);
+            if (t.ok) {
+              const transformed = t.response;
+              const headers = buildCors(origin);
+              const ct = transformed.headers.get("Content-Type");
+              if (ct) {
+                headers.set("Content-Type", ct);
+              } else {
+                const guessed = contentTypeFromKey(r2Key);
+                if (guessed) headers.set("Content-Type", guessed);
+                else headers.set("Content-Type", "application/octet-stream");
+              }
+              headers.set("Cache-Control", cacheControlForKey(r2Key, gatekeeperActive));
+              headers.set("X-CV-Resize", "applied");
+              if (resizeParams.w !== undefined) {
+                headers.set("X-CV-Resize-W", String(resizeParams.w));
+              }
+              if (resizeParams.h !== undefined) {
+                headers.set("X-CV-Resize-H", String(resizeParams.h));
+              }
+              const cl = transformed.headers.get("Content-Length");
+              if (cl) headers.set("Content-Length", cl);
+              stampGatekeeper(headers, gatekeeperOff);
+              if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
+              ctx.waitUntil(transformed.arrayBuffer());
+              return new Response(null, { status: 200, headers });
+            }
+          } catch (e) {
+            console.error("[files-cdn] resize HEAD error:", e);
+          }
+        }
+
         const meta = await env.FILES.head(r2Key);
         if (!meta) {
           const nh = buildCors(origin);
@@ -439,13 +548,25 @@ export default {
       );
       stampGatekeeper(headers, gatekeeperOff);
       if (setSessionCookie) headers.append("Set-Cookie", setSessionCookie);
+      if (resizeFallbackToBinding) {
+        headers.set("X-CV-Resize", "skipped-fallback-full");
+        if (resizeFallbackReason) {
+          headers.set(
+            "X-CV-Resize-Reason",
+            resizeFallbackReason.slice(0, 120)
+          );
+        }
+      }
 
       const res = new Response(object.body, {
         status: 200,
         headers,
       });
 
-      if (useEdgeCache) {
+      /** Do not cache full R2 body under a URL that asked for ?w=/h= — avoids poisoned edge cache. */
+      const skipEdgeCachePoisonedResize =
+        useEdgeCache && resizeParams != null && resizeFallbackToBinding;
+      if (useEdgeCache && !skipEdgeCachePoisonedResize) {
         ctx.waitUntil(cache.put(request, res.clone()));
       }
 

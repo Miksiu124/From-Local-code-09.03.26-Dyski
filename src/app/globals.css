@@ -1,31 +1,50 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #020202;
-  --color-foreground: #fafafa;
-  --color-card: #0a0a0f;
-  --color-card-foreground: #fafafa;
-  --color-popover: #0a0a0f;
-  --color-popover-foreground: #fafafa;
-  --color-primary: #7c3aed;
-  --color-primary-foreground: #fafafa;
-  --color-secondary: #18181b;
-  --color-secondary-foreground: #fafafa;
-  --color-muted: #18181b;
-  --color-muted-foreground: #a1a1aa;
-  --color-accent: #7c3aed;
-  --color-accent-foreground: #fafafa;
-  --color-destructive: #ef4444;
-  --color-destructive-foreground: #fafafa;
-  --color-border: #27272a;
-  --color-input: #27272a;
-  --color-ring: #7c3aed;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
+  /* Type: Manrope (UI) + Libre Baskerville (headings) via next/font variables on <html> */
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-libre-display), ui-serif, Georgia, "Times New Roman", serif;
+
+  /* Cool dark surfaces (slight blue-slate tint) + sky/indigo primary + layered blue gradients */
+  --color-background: oklch(0.09 0.018 255);
+  --color-foreground: oklch(0.97 0.008 255);
+  --color-card: oklch(0.14 0.022 255);
+  --color-card-foreground: oklch(0.97 0.008 255);
+  --color-popover: oklch(0.14 0.022 255);
+  --color-popover-foreground: oklch(0.97 0.008 255);
+  --color-primary: oklch(0.6 0.19 251);
+  --color-primary-foreground: oklch(0.99 0.01 255);
+  --color-secondary: oklch(0.19 0.024 255);
+  --color-secondary-foreground: oklch(0.97 0.008 255);
+  --color-muted: oklch(0.2 0.02 255);
+  --color-muted-foreground: oklch(0.7 0.035 255);
+  --color-accent: oklch(0.6 0.19 251);
+  --color-accent-foreground: oklch(0.99 0.01 255);
+  --color-destructive: oklch(0.62 0.2 28);
+  --color-destructive-foreground: oklch(0.99 0.005 85);
+  --color-border: oklch(0.34 0.03 255);
+  --color-input: oklch(0.34 0.03 255);
+  --color-ring: oklch(0.62 0.17 251);
+  --color-success: oklch(0.66 0.17 155);
+  --color-warning: oklch(0.8 0.14 78);
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+}
+
+@layer base {
+  /* Native selects / option lists follow OS theme; without this, dropdowns can render light-on-light on dark pages. */
+  html {
+    color-scheme: dark;
+  }
+  select {
+    color-scheme: dark;
+  }
+  select option {
+    background-color: var(--color-card);
+    color: var(--color-foreground);
+  }
 }
 
 @layer utilities {
@@ -34,41 +53,63 @@
   }
 
   .hero-gradient {
-    background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba(124, 58, 237, 0.15), transparent),
-                radial-gradient(ellipse 60% 50% at 80% 50%, rgba(59, 130, 246, 0.08), transparent),
-                radial-gradient(ellipse 50% 40% at 20% 80%, rgba(124, 58, 237, 0.06), transparent);
+    background: radial-gradient(ellipse 80% 60% at 50% -18%, oklch(0.58 0.17 251 / 0.2), transparent),
+                radial-gradient(ellipse 55% 48% at 88% 42%, oklch(0.52 0.12 230 / 0.12), transparent),
+                radial-gradient(ellipse 50% 42% at 12% 88%, oklch(0.48 0.14 265 / 0.1), transparent);
   }
 
+  /* Solid type emphasis (no gradient fill on text — impeccable) */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-white/70;
+    @apply text-foreground;
   }
 
   .text-gradient-primary {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-400 to-primary;
+    @apply text-primary font-semibold;
   }
 
   .glow-sm {
-    box-shadow: 0 0 15px -3px rgba(124, 58, 237, 0.15);
+    box-shadow: 0 0 15px -3px oklch(0.58 0.17 251 / 0.22);
   }
 
   .glow-md {
-    box-shadow: 0 0 30px -5px rgba(124, 58, 237, 0.2);
+    box-shadow: 0 0 30px -5px oklch(0.58 0.17 251 / 0.28);
   }
 
   .glow-lg {
-    box-shadow: 0 0 60px -10px rgba(124, 58, 237, 0.25);
+    box-shadow: 0 0 60px -10px oklch(0.58 0.17 251 / 0.34);
+  }
+}
+
+/* View Transitions API: root cross-fade; shared names use mt- / mh- prefixes in TS */
+@supports (view-transition-name: none) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.45s;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
   }
 }
 
 html {
   /* Use auto for better scroll performance on long pages; smooth can cause jank */
   scroll-behavior: auto;
+  width: 100%;
+  overflow-x: clip;
 }
 
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+  /* Font family: next/font Manrope via className on <body> in layout.tsx */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -84,18 +125,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in oklch, var(--color-primary) 32%, transparent);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in oklch, var(--color-primary) 48%, transparent);
 }
 
-/* Firefox scrollbar */
+/* Firefox scrollbar — tinted toward primary, not flat gray */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: color-mix(in oklch, var(--color-primary) 35%, transparent) transparent;
 }
 
 /* Hide scrollbar while keeping scroll (Firefox, WebKit, IE/Edge) */
@@ -136,8 +177,8 @@ body {
 }
 
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 15px -3px rgba(124, 58, 237, 0.2); }
-  50% { box-shadow: 0 0 25px -3px rgba(124, 58, 237, 0.4); }
+  0%, 100% { box-shadow: 0 0 15px -3px oklch(0.58 0.17 251 / 0.26); }
+  50% { box-shadow: 0 0 25px -3px oklch(0.58 0.17 251 / 0.42); }
 }
 
 @keyframes float {
@@ -184,12 +225,13 @@ body {
 .stagger-10 { animation-delay: 0.32s; }
 /* Items beyond 10th skip animation (no stagger class) for faster perceived load */
 
-/* Content visibility for long grids - skip rendering off-screen items */
+/* Content visibility: skip off-screen paint on larger screens. On narrow viewports,
+   Safari can mis-size intrinsic tracks when combined with CSS grid — keep layout normal on mobile. */
 .grid-item-contain {
-  content-visibility: auto;
-  /* Use proper width×height (3:4 ratio) so grid stays multi-column; 0 width caused single-column layout */
   contain-intrinsic-size: 200px 267px;
 }
+/* content-visibility: auto was removed — it can cause scroll jank / sizing quirks in
+   WebKit when combined with CSS grid; paint savings are less important than smooth scrolling. */
 
 /* Model folder — scroll-into-view reveals (IntersectionObserver toggles .model-folder-reveal-visible) */
 @media (prefers-reduced-motion: no-preference) {
@@ -201,9 +243,9 @@ body {
     opacity: 1;
     transform: translate3d(0, 0, 0);
     transition:
-      opacity 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-      transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
-    transition-delay: calc(var(--reveal-stagger, 0) * 38ms);
+      opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--reveal-stagger, 0) * 22ms);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -219,7 +261,7 @@ body {
 }
 .card-hover:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.5), 0 0 20px -5px rgba(124, 58, 237, 0.15);
+  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.5), 0 0 20px -5px oklch(0.58 0.17 251 / 0.22);
 }
 
 /* Interactive element press effect */
@@ -244,10 +286,10 @@ img {
 @keyframes tour-spotlight-ring {
   0%,
   100% {
-    border-color: rgb(124 58 237 / 0.72);
+    border-color: oklch(0.62 0.17 251 / 0.75);
   }
   50% {
-    border-color: rgb(124 58 237 / 1);
+    border-color: oklch(0.62 0.17 251 / 1);
   }
 }
 

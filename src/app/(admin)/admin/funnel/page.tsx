@@ -138,7 +138,7 @@ function toneClasses(tone: "core" | "engagement" | "risk") {
     case "risk":
       return "border-amber-500/25 bg-amber-500/[0.07] shadow-[inset_0_1px_0_0_rgba(245,158,11,0.12)]";
     default:
-      return "border-primary/20 bg-primary/[0.06] shadow-[inset_0_1px_0_0_rgba(124,58,237,0.15)]";
+      return "border-primary/20 bg-primary/[0.06] shadow-[inset_0_1px_0_0_rgba(59,130,246,0.18)]";
   }
 }
 
@@ -205,7 +205,7 @@ function RateBarRow({
       <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden ring-1 ring-white/[0.04]">
         {pct != null && (
           <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-primary/90 via-primary to-violet-500/90"
+            className="h-full rounded-full bg-gradient-to-r from-primary/90 via-primary to-primary/80"
             initial={reduceMotion ? false : { width: "0%" }}
             animate={{ width: `${pct}%` }}
             transition={
@@ -487,7 +487,7 @@ function FunnelPageContent() {
     <div className="space-y-8 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1 pb-8">
       {/* Summary */}
       <section className="rounded-2xl border border-white/[0.07] bg-card/80 backdrop-blur-sm overflow-hidden shadow-xl shadow-black/20">
-        <div className="relative border-b border-white/[0.06] bg-gradient-to-br from-primary/[0.08] via-transparent to-violet-600/[0.05] px-5 py-4">
+        <div className="relative border-b border-white/[0.06] bg-gradient-to-br from-primary/[0.08] via-transparent to-warning/[0.06] px-5 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/25">
@@ -580,13 +580,18 @@ function FunnelPageContent() {
 
               <div className="rounded-xl border border-white/[0.06] bg-muted/20 p-4 space-y-4">
                 <p className="text-sm font-medium flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(124,58,237,0.8)]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(59,130,246,0.85)]" />
                   {t("growthFunnelRates")}
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 max-w-2xl">
                   <RateBarRow
                     label={t("growthFunnelRateLabelSignupSession")}
                     rate={summary.rates?.signup_per_session}
+                    fmtPct={fmtPct}
+                  />
+                  <RateBarRow
+                    label={t("growthFunnelRateLabelVerifySignup")}
+                    rate={summary.rates?.verify_per_signup}
                     fmtPct={fmtPct}
                   />
                   <RateBarRow

@@ -20,8 +20,9 @@ type ModelResponse = {
     isActive: boolean;
     countryName: string | null;
     countryFlag: string | null;
+    videoCount?: number;
+    imageCount?: number;
   };
-  contentItems: unknown[];
 };
 
 type ContentPageResponse = {
@@ -47,7 +48,7 @@ type MeResponse = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const data = await fetchApi<ModelResponse>(`/models/${slug}`).catch(() => null);
+  const data = await fetchApi<ModelResponse>(`/models/${slug}`, { revalidate: 60 }).catch(() => null);
   if (!data?.model) return {};
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
   return {
@@ -72,7 +73,7 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
   const initialSort = validSorts.includes(sp.sort as any) ? sp.sort! : "newest";
   const initialType = sp.filter === "VIDEO" || sp.filter === "PHOTO" ? sp.filter : "";
 
-  const data = await fetchApi<ModelResponse>(`/models/${slug}`).catch(() => null);
+  const data = await fetchApi<ModelResponse>(`/models/${slug}`, { revalidate: 60 }).catch(() => null);
 
   if (!data || !data.model) {
     notFound();
@@ -85,10 +86,11 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
 
   const [contentPage, access, settings, me] = await Promise.all([
     fetchApi<ContentPageResponse>(
-      `/models/${slug}/content?${contentQs.toString()}`
+      `/models/${slug}/content?${contentQs.toString()}`,
+      { revalidate: 60 }
     ).catch(() => ({ items: [], nextCursor: null, totalCount: 0 })),
     fetchApi<AccessResponse>(`/models/${model.id}/access`).catch(() => ({ hasAccess: false })),
-    fetchApi<any>("/settings/public").catch(() => ({})),
+    fetchApi<any>("/settings/public", { revalidate: 60 }).catch(() => ({})),
     fetchApi<MeResponse>("/auth/me").catch(() => null),
   ]);
 
@@ -108,6 +110,8 @@ export default async function ModelDetailPage({ params, searchParams }: Props) {
           description: model.description,
           countryName: model.countryName,
           countryFlag: model.countryFlag,
+          videoCount: model.videoCount,
+          imageCount: model.imageCount,
         }}
         initialContentItems={contentPage.items.map((item) => ({
           id: item.id,

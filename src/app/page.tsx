@@ -100,7 +100,7 @@ export default async function HomePage() {
       {heroImageUrl && (
         <link rel="preload" as="image" href={heroImageUrl} />
       )}
-      <div className="container mx-auto px-4 py-8">
+      <div className="mx-auto w-full min-w-0 max-w-7xl py-8 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
       <ModelsGrid
         initialModels={modelsData.models.map((m) => ({
           id: m.id,

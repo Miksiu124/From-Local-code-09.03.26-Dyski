@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Outfit } from "next/font/google";
+import { Libre_Baskerville, Manrope } from "next/font/google";
 import { getLocale, getMessages } from "next-intl/server";
 import { Providers } from "@/components/providers";
 import { Header } from "@/components/layout/header";
 import { ConditionalFooter } from "@/components/layout/conditional-footer";
 import { CookieBanner } from "@/components/cookie-banner";
+import { SkipToMainLink } from "@/components/layout/skip-to-main";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ClientErrorReporter } from "@/components/client-error-reporter";
 import { GrowthFunnelChrome } from "@/components/growth/growth-funnel-chrome";
@@ -13,11 +14,23 @@ import { ReferralProgramModal } from "@/components/growth/referral-program-modal
 import { ReferralProgramNudge } from "@/components/growth/referral-program-nudge";
 import { PostAuthGuideAutostart } from "@/components/onboarding/post-auth-guide-autostart";
 import { ProductTourAutostart } from "@/components/onboarding/product-tour-autostart";
+import { FluidCanvasBackdrop } from "@/components/layout/fluid-canvas-backdrop";
 import "./globals.css";
 
-const outfit = Outfit({
-  subsets: ["latin"],
-  display: "swap", // Prevent FOIT, show text immediately with fallback font
+/** UI sans — not a “reflex” training default; clear weights for hierarchy */
+const manrope = Manrope({
+  subsets: ["latin", "latin-ext"],
+  display: "swap",
+  variable: "--font-manrope",
+  weight: ["400", "500", "600", "700"],
+});
+
+/** Display serif for page titles / hero — editorial contrast vs. UI sans */
+const libreDisplay = Libre_Baskerville({
+  subsets: ["latin", "latin-ext"],
+  display: "swap",
+  variable: "--font-libre-display",
+  weight: ["400", "700"],
 });
 
 const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
@@ -83,7 +96,7 @@ export default async function RootLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale} className="dark">
+    <html lang={locale} className={`dark ${manrope.variable} ${libreDisplay.variable}`}>
       <head>
         <script
           type="application/ld+json"
@@ -103,25 +116,26 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={`${outfit.className} min-h-screen bg-background text-foreground antialiased`} >
+      <body
+        className={`${manrope.className} min-h-screen bg-background text-base text-foreground antialiased leading-[1.62]`}
+      >
         <Providers
           locale={locale}
           messages={messages as Record<string, unknown>}
           timeZone="UTC"
         >
-          <div className="flex min-h-screen flex-col">
-            <a
-              href="#main"
-              className="absolute left-4 top-4 z-[100] px-4 py-2 bg-primary text-primary-foreground rounded-xl -translate-y-[200%] focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-ring transition-transform duration-150"
-            >
-              Skip to main content
-            </a>
+          <FluidCanvasBackdrop />
+          <div className="relative z-10 flex min-h-screen w-full min-w-0 flex-col overflow-x-clip">
+            <SkipToMainLink />
             <Header />
             <Suspense fallback={null}>
               <ReferralProgramModal />
             </Suspense>
             <ReferralProgramNudge />
-            <main id="main" className="flex-1 pb-24 md:pb-0">
+            <main
+              id="main"
+              className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+            >
               <ErrorBoundary>{children}</ErrorBoundary>
             </main>
             <ConditionalFooter />

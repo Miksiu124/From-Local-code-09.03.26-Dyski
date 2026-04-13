@@ -108,7 +108,7 @@ export default function AdminSettingsPage() {
           type="button"
           onClick={() => updateSetting(setting.key, !enabled)}
           className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer ${
-            enabled ? "bg-green-500" : "bg-red-500/70"
+            enabled ? "bg-green-500" : "bg-muted"
           }`}
         >
           <span
@@ -439,11 +439,11 @@ export default function AdminSettingsPage() {
 
       {/* Referral Settings */}
       {(referralCreditsReferrer || referralBonusReferee || referralMaxPerUser || referralMinPurchase || referralCooldown) && (
-        <Card className="mb-6 border-2 border-violet-500/20">
+        <Card className="mb-6 border-2 border-primary/20">
           <CardContent className="p-6">
             <div className="flex items-center gap-4 mb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10">
-                <UserPlus className="h-6 w-6 text-violet-500" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                <UserPlus className="h-6 w-6 text-primary" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold">Referral</h3>

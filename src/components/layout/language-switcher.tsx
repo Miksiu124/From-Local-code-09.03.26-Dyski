@@ -28,10 +28,12 @@ export function LanguageSwitcher() {
 
   return (
     <button
+      type="button"
       onClick={switchLocale}
       disabled={isPending}
-      className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer disabled:opacity-50"
+      className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer disabled:opacity-50 touch-manipulation sm:min-h-0 sm:min-w-0 sm:justify-start sm:py-1.5"
       title={locale === "en" ? "Switch to Polish" : "Przełącz na angielski"}
+      aria-label={locale === "en" ? "Switch to Polish" : "Przełącz na angielski"}
     >
       <Globe className="h-4 w-4" />
       <span className="uppercase text-xs font-medium">{locale}</span>

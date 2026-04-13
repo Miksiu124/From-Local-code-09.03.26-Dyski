@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mockup B — tło zsynchronizowane ze scrollem</title>
+  <style>
+    :root {
+      --bg: oklch(0.09 0.018 255);
+      --fg: oklch(0.97 0.008 255);
+      --muted: oklch(0.7 0.035 255);
+      --border: oklch(0.34 0.03 255);
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, Segoe UI, sans-serif;
+      color: var(--fg);
+      background-color: var(--bg);
+    }
+
+    /* Bazowe tło — zawsze (Firefox / brak scroll-timeline) */
+    .bg-base {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 85% 50% at 50% -12%, oklch(0.58 0.17 251 / 0.1), transparent 55%),
+        radial-gradient(ellipse 45% 40% at 90% 35%, oklch(0.52 0.12 230 / 0.06), transparent 48%),
+        var(--bg);
+    }
+
+    /* Warstwa „żyje” przy scrollu — progressive enhancement */
+    .bg-scroll {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      transform: translateY(0) scale(1);
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 25%, oklch(0.58 0.17 251 / 0.22), transparent 58%),
+        radial-gradient(ellipse 55% 50% at 15% 75%, oklch(0.5 0.14 265 / 0.14), transparent 52%),
+        radial-gradient(ellipse 50% 45% at 88% 80%, oklch(0.48 0.11 240 / 0.1), transparent 50%);
+    }
+
+    @supports (animation-timeline: scroll()) {
+      @keyframes scroll-bg {
+        0% {
+          opacity: 0.25;
+          transform: translateY(8%) scale(1.08);
+        }
+        35% {
+          opacity: 0.95;
+          transform: translateY(0%) scale(1);
+        }
+        100% {
+          opacity: 0.45;
+          transform: translateY(-6%) scale(1.03);
+        }
+      }
+
+      .bg-scroll {
+        animation: scroll-bg linear forwards;
+        animation-timeline: scroll(root block);
+        /* Większość „reakcji” w pierwszej części przewijania dokumentu */
+        animation-range: 0% 42%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bg-scroll {
+        animation: none !important;
+        opacity: 0.55;
+        transform: none;
+      }
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 56rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem;
+      min-height: 220vh;
+    }
+
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+
+    .lead {
+      color: var(--muted);
+      max-width: 44ch;
+      line-height: 1.55;
+      margin: 0 0 2rem;
+    }
+
+    .hint {
+      margin-top: 3rem;
+      padding: 1rem 1.1rem;
+      border-radius: 0.65rem;
+      border: 1px dashed color-mix(in oklch, var(--border) 60%, transparent);
+      color: var(--muted);
+      font-size: 0.9rem;
+      max-width: 40ch;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .card {
+      aspect-ratio: 3 / 4;
+      border-radius: 0.65rem;
+      background: linear-gradient(145deg, oklch(0.22 0.03 255), oklch(0.12 0.02 255));
+      border: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-base" aria-hidden="true"></div>
+  <div class="bg-scroll" aria-hidden="true"></div>
+  <div class="wrap">
+    <span class="pill">Mockup B — scroll(root) · pierwsze ~120vh</span>
+    <h1>Przewiń w dół — warstwa reaguje</h1>
+    <p class="lead">
+      W Chrome / Edge / Safari (nowsze) intensywność i pozycja „plam” są powiązane z progresją scrolla.
+      W Firefoxie zobaczysz statyczniejszy środek — to zamierzony fallback.
+    </p>
+    <div class="grid" aria-hidden="true">
+      <div class="card"></div><div class="card"></div><div class="card"></div>
+      <div class="card"></div><div class="card"></div><div class="card"></div>
+    </div>
+    <p class="hint">
+      Jeśli nic się nie zmienia przy scrollu, przeglądarka może nie wspierać <code>animation-timeline: scroll()</code> — nadal masz spójne ciemne tło z plamami.
+    </p>
+    <div class="grid" style="margin-top: 2rem" aria-hidden="true">
+      <div class="card"></div><div class="card"></div><div class="card"></div>
+      <div class="card"></div><div class="card"></div><div class="card"></div>
+    </div>
+  </div>
+</body>
+</html>

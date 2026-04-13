@@ -118,7 +118,7 @@ export function ReferralProgramNudge() {
 
   return (
     <div className="border-b border-border bg-muted/40">
-      <div className="container mx-auto flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex min-w-0 items-start gap-3">
           <UserPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
           <div className="min-w-0">

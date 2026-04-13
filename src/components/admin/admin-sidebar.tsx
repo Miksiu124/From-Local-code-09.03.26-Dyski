@@ -93,7 +93,7 @@ export function AdminSidebar() {
       </aside>
 
       {/* ── Mobile bottom nav bar (below lg) ─────────────────────── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-[60] flex lg:hidden border-t border-white/[0.06] bg-card/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom,0px)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-[60] flex lg:hidden border-t border-white/[0.06] bg-card pb-[env(safe-area-inset-bottom,0px)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {mobileLinks.map((link) => {
           const Icon = link.icon;
           const isActive =

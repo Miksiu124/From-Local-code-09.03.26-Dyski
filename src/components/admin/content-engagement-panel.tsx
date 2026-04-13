@@ -180,7 +180,7 @@ export function ContentEngagementPanel() {
       <Icon
         className={cn(
           "h-3.5 w-3.5 shrink-0 transition-[opacity,transform] duration-200",
-          active ? "text-violet-400 opacity-100" : "text-muted-foreground/45 opacity-80 group-hover:text-muted-foreground group-hover:opacity-100",
+          active ? "text-primary opacity-100" : "text-muted-foreground/45 opacity-80 group-hover:text-muted-foreground group-hover:opacity-100",
         )}
         aria-hidden
       />
@@ -197,7 +197,7 @@ export function ContentEngagementPanel() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-violet-400" />
+            <Sparkles className="h-6 w-6 text-primary" />
             {t("contentInsightsTitle")}
           </h2>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{t("contentInsightsDesc")}</p>
@@ -238,7 +238,7 @@ export function ContentEngagementPanel() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 gap-1.5 border-dashed border-violet-500/35 text-violet-200/90 hover:bg-violet-500/10 hover:text-violet-100"
+              className="h-9 gap-1.5 border-dashed border-primary/35 text-primary/90 hover:bg-primary/10 hover:text-primary"
               onClick={() => {
                 setSortKey("combined");
                 setSortDir("desc");
@@ -265,7 +265,7 @@ export function ContentEngagementPanel() {
               size="sm"
               disabled={selected.size === 0 || zipping}
               onClick={() => void downloadZip()}
-              className="gap-1.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white border-0 shadow-lg shadow-violet-500/20"
+              className="gap-1.5 bg-primary text-primary-foreground border-0 shadow-lg shadow-primary/25 hover:bg-primary/90"
             >
               {zipping ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -315,7 +315,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("model")}
-                      className="group inline-flex w-full min-w-0 items-center justify-start gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-start gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "model" && "text-foreground")}>{t("contentInsightsColModel")}</span>
@@ -329,7 +329,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("type")}
-                      className="group inline-flex w-full min-w-0 items-center justify-start gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-start gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "type" && "text-foreground")}>{t("contentInsightsColType")}</span>
@@ -343,7 +343,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("thumb_opens")}
-                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "thumb_opens" && "text-foreground")}>{t("contentInsightsColOpens")}</span>
@@ -357,7 +357,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("detail_views")}
-                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "detail_views" && "text-foreground")}>{t("contentInsightsColDetailViews")}</span>
@@ -371,7 +371,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("first")}
-                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "first" && "text-foreground")}>{t("contentInsightsColFirst")}</span>
@@ -385,7 +385,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("watch")}
-                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "watch" && "text-foreground")}>{t("contentInsightsColWatch")}</span>
@@ -399,7 +399,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("avg")}
-                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "avg" && "text-foreground")}>{t("contentInsightsColAvg")}</span>
@@ -413,7 +413,7 @@ export function ContentEngagementPanel() {
                     <button
                       type="button"
                       onClick={() => handleSortColumn("source")}
-                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                      className="group inline-flex w-full min-w-0 items-center justify-end gap-1.5 rounded-lg px-1 py-0.5 -mx-1 text-right transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title={t("contentInsightsSortClickColumn")}
                     >
                       <span className={cn(sortKey === "source" && "text-foreground")}>{t("contentInsightsColSource")}</span>
@@ -431,7 +431,7 @@ export function ContentEngagementPanel() {
                     <td className="py-2.5 px-2 text-center">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-border accent-violet-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                        className="h-4 w-4 rounded border-border accent-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                         checked={selected.has(row.contentItemId)}
                         disabled={row.canExportZip !== true}
                         onChange={() => toggleSelect(row.contentItemId, row.canExportZip === true)}
@@ -458,7 +458,7 @@ export function ContentEngagementPanel() {
                       {row.hasSourceFile ? (
                         <a
                           href={`/api/admin/content/${row.contentItemId}/source-download`}
-                          className="inline-flex items-center gap-1 text-violet-400 hover:underline text-xs font-medium"
+                          className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-medium"
                         >
                           <Download className="h-3.5 w-3.5" />
                           {t("contentInsightsDownload")}

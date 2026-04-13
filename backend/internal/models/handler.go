@@ -30,7 +30,7 @@ const (
 	cacheTTLSettings    = 5 * time.Minute
 	cacheTTLStats       = time.Minute
 	cacheTTLModelSlug   = 5 * time.Minute
-	cacheTTLModelContent = 3 * time.Minute
+	cacheTTLModelContent = 8 * time.Minute
 	cacheTTLModelsList  = 3 * time.Minute
 )
 
@@ -229,7 +229,7 @@ func (h *Handler) List(c echo.Context) error {
 	return common.Success(c, resp)
 }
 
-// GetBySlug returns a single model with its content items
+// GetBySlug returns a single model (metadata). Paginated content: GET /models/:slug/content.
 func (h *Handler) GetBySlug(c echo.Context) error {
 	ctx := c.Request().Context()
 	slug := c.Param("slug")
@@ -251,18 +251,29 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 		Description *string `json:"description"`
 		CountryName *string `json:"countryName"`
 		CountryFlag *string `json:"countryFlag"`
+		VideoCount  int     `json:"videoCount"`
+		ImageCount  int     `json:"imageCount"`
 		AvatarURL   string  `json:"avatarUrl,omitempty"`
 		HeaderURL   string  `json:"headerUrl,omitempty"`
 	}
 
 	err := h.db.QueryRow(ctx, `
 		SELECT m.id, m.name, m.folder_name, m.description,
-			   c.name, c.flag_emoji
+			   c.name, c.flag_emoji,
+			   COALESCE(ms.video_count, 0), COALESCE(ms.image_count, 0)
 		FROM models m
 		LEFT JOIN countries c ON c.id = m.country_id
+		LEFT JOIN (
+			SELECT model_id,
+				COUNT(*) FILTER (WHERE content_type = 'VIDEO')::int AS video_count,
+				COUNT(*) FILTER (WHERE content_type = 'PHOTO')::int AS image_count
+			FROM content_items
+			WHERE is_active = true AND is_hidden = false
+			GROUP BY model_id
+		) ms ON ms.model_id = m.id
 		WHERE m.folder_name = $1 AND m.is_active = true
 	`, slug).Scan(&model.ID, &model.Name, &model.FolderName, &model.Description,
-		&model.CountryName, &model.CountryFlag)
+		&model.CountryName, &model.CountryFlag, &model.VideoCount, &model.ImageCount)
 
 	if err != nil {
 		return common.NotFound(c, "Model not found")
@@ -270,45 +281,10 @@ func (h *Handler) GetBySlug(c echo.Context) error {
 	model.AvatarURL = h.avatarURL(model.FolderName)
 	model.HeaderURL = h.headerURL(model.FolderName)
 
-	// Get content items (paths for CDN thumbnail URLs — same row, no extra queries)
-	rows, err := h.db.Query(ctx, `
-		SELECT id, content_type, duration, thumbnail_path, hls_folder_path
-		FROM content_items
-		WHERE model_id = $1 AND is_active = true AND is_hidden = false
-		ORDER BY created_at ASC
-	`, model.ID)
-	if err != nil {
-		return common.InternalError(c)
-	}
-	defer rows.Close()
-
-	type ContentItem struct {
-		ID           string `json:"id"`
-		ContentType  string `json:"contentType"`
-		Duration     *int   `json:"duration"`
-		ThumbnailURL string `json:"thumbnailUrl,omitempty"`
-	}
-
-	var contentItems []ContentItem
-	for rows.Next() {
-		var ci ContentItem
-		var duration *int
-		var thumbPath, hlsPath *string
-		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath); err != nil {
-			continue
-		}
-		ci.Duration = duration
-		ci.ThumbnailURL = h.contentThumbnailCDNUrl(thumbPath, hlsPath)
-		contentItems = append(contentItems, ci)
-	}
-
-	if contentItems == nil {
-		contentItems = []ContentItem{}
-	}
-
+	// Metadata only — full lists use GET /models/:slug/content (paginated). Omitting
+	// contentItems avoids loading thousands of rows and huge JSON on every folder page.
 	resp := map[string]interface{}{
-		"model":        model,
-		"contentItems": contentItems,
+		"model": model,
 	}
 	if h.redis != nil && slug != "" {
 		if b, err := json.Marshal(resp); err == nil {
@@ -361,9 +337,11 @@ func (h *Handler) ListContent(c echo.Context) error {
 		}
 	}
 
-	// 2. Build Query (thumbnail_path + hls_folder_path: one round-trip for CDN URLs)
+	// 2. Build Query (thumbnail_path + hls_folder_path: one round-trip for CDN URLs).
+	// COUNT(*) OVER() replaces a separate COUNT(*) query on the hot path (one DB round-trip).
 	query := `
-		SELECT id, content_type, duration, thumbnail_path, hls_folder_path
+		SELECT id, content_type, duration, thumbnail_path, hls_folder_path,
+		       COUNT(*) OVER()::int AS total_count
 		FROM content_items
 		WHERE model_id = $1 AND is_active = true AND is_hidden = false
 	`
@@ -419,12 +397,19 @@ func (h *Handler) ListContent(c echo.Context) error {
 	}
 
 	var items []ContentItem
+	var totalCount int
+	gotTotal := false
 	for rows.Next() {
 		var ci ContentItem
 		var duration *int
 		var thumbPath, hlsPath *string
-		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath); err != nil {
+		var rowTotal int
+		if err := rows.Scan(&ci.ID, &ci.ContentType, &duration, &thumbPath, &hlsPath, &rowTotal); err != nil {
 			continue
+		}
+		if !gotTotal {
+			totalCount = rowTotal
+			gotTotal = true
 		}
 		ci.Duration = duration
 		ci.ThumbnailURL = h.contentThumbnailCDNUrl(thumbPath, hlsPath)
@@ -444,16 +429,17 @@ func (h *Handler) ListContent(c echo.Context) error {
 	if hasNextPage && len(items) > 0 {
 		nextCursor = &items[len(items)-1].ID
 	}
-	
-	// Get total count (approximation or exact for small datasets)
-	var totalCount int
-	countQuery := `SELECT COUNT(*) FROM content_items WHERE model_id = $1 AND is_active = true AND is_hidden = false`
-	countArgs := []interface{}{modelID}
-	if contentType != "" && contentType != "ALL" {
-		countQuery += ` AND content_type = $2`
-		countArgs = append(countArgs, contentType)
+
+	// No rows: window aggregate not returned — run COUNT (empty folder, or cursor past end).
+	if !gotTotal {
+		countQuery := `SELECT COUNT(*) FROM content_items WHERE model_id = $1 AND is_active = true AND is_hidden = false`
+		countArgs := []interface{}{modelID}
+		if contentType != "" && contentType != "ALL" {
+			countQuery += ` AND content_type = $2`
+			countArgs = append(countArgs, contentType)
+		}
+		_ = h.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount)
 	}
-	_ = h.db.QueryRow(ctx, countQuery, countArgs...).Scan(&totalCount)
 
 	resp := map[string]interface{}{
 		"items":      items,

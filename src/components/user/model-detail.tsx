@@ -24,8 +24,11 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { VideoPlayer } from "@/components/user/video-player";
 import { RetryImage } from "@/components/ui/retry-image";
+import { NextImageWithFallback } from "@/components/ui/next-image-with-fallback";
+import { modelHeaderViewTransitionName } from "@/lib/model-view-transition";
 import { LazyRetryImage } from "@/components/ui/lazy-retry-image";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
+import { prefetchContentHero } from "@/lib/prefetch-content-thumbnails";
 import {
   trackFavoriteToggled,
   trackModelPageViewed,
@@ -68,6 +71,8 @@ interface ModelDetailProps {
     description: string | null;
     countryName: string | null;
     countryFlag: string | null;
+    videoCount?: number;
+    imageCount?: number;
   };
   initialContentItems: ContentItem[];
   initialCursor: string | null;
@@ -319,6 +324,38 @@ export function ModelDetail({
       folder_name: model.folderName,
     });
   }, [selectedItemId, selectedItem, model.id, model.folderName]);
+
+  // Prefetch hero thumbnails in background (same ?w= as overlay photo): prev/next + nearby strip.
+  // Small strip thumbs are a different URL; this warms cache so navigation rarely waits on network.
+  useEffect(() => {
+    if (!selectedItemId || !selectedItem) return;
+    const heroOpts = { cdnMaxWidth: 1600, quality: 80 } as const;
+    const prefetchPhotoIfNotVideo = (id: string | null) => {
+      if (!id) return;
+      const item = displayItems.find((i) => i.id === id);
+      if (item?.contentType === "VIDEO") return;
+      prefetchContentHero(id, item?.thumbnailUrl, heroOpts);
+    };
+    prefetchPhotoIfNotVideo(overlayPrevId);
+    prefetchPhotoIfNotVideo(overlayNextId);
+    const { items: stripItems, activeOffset } = filmstripSlice;
+    const from = Math.max(0, activeOffset - 2);
+    const to = Math.min(stripItems.length, activeOffset + 3);
+    for (let i = from; i < to; i++) {
+      if (i === activeOffset) continue;
+      const item = stripItems[i];
+      if (item.contentType !== "PHOTO") continue;
+      prefetchContentHero(item.id, item.thumbnailUrl, heroOpts);
+    }
+  }, [
+    selectedItemId,
+    selectedItem,
+    overlayPrevId,
+    overlayNextId,
+    displayItems,
+    filmstripSlice.items,
+    filmstripSlice.activeOffset,
+  ]);
 
   const overlayRef = useRef<HTMLDivElement>(null);
   /** Gate portal until client — avoids SSR/hydration mismatch; useLayoutEffect runs before paint. */
@@ -1280,49 +1317,75 @@ export function ModelDetail({
 
   return (
     <>
-      {/* Header */}
+      {/* Header — header strip + thumb share View Transition names with catalog (featured hero + grid) */}
       <div
         className={cn(
           "mb-6 slide-up transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           folderHeroScrolled && "opacity-[0.9] -translate-y-1",
         )}
       >
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
-          onClick={() => {
-            sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
-          }}
+        <div
+          className="relative w-full aspect-video max-h-[min(42vh,280px)] rounded-2xl overflow-hidden border border-white/[0.06] bg-card mb-6 shadow-lg shadow-black/20"
+          style={{ viewTransitionName: modelHeaderViewTransitionName(model.id) }}
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          {t("allModels")}
-        </Link>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold">{model.name}</h1>
-            {model.countryFlag && model.countryName && (
-              <p className="text-muted-foreground mt-1 text-sm">
-                {model.countryFlag} {model.countryName}
+          <NextImageWithFallback
+            src={`/api/models/${model.folderName}/header`}
+            alt=""
+            className="object-cover"
+            fill
+            sizes="(max-width: 768px) 100vw, 896px"
+            priority
+            loading="eager"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent pointer-events-none" aria-hidden />
+        </div>
+
+        <div className="w-full max-w-full">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+            onClick={() => {
+              sessionStorage.setItem(`scroll_model_${model.folderName}`, String(window.scrollY));
+            }}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {t("backToCatalog")}
+          </Link>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl sm:text-3xl font-bold">{model.name}</h1>
+              {model.countryFlag && model.countryName && (
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {model.countryFlag} {model.countryName}
+                </p>
+              )}
+              {model.description && (
+                <p className="text-muted-foreground mt-2 text-sm max-w-2xl">{model.description}</p>
+              )}
+              <p className="text-xs text-muted-foreground/80 mt-3 tabular-nums">
+                {model.videoCount != null &&
+                model.imageCount != null &&
+                (model.videoCount > 0 || model.imageCount > 0) ? (
+                  t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                ) : (
+                  <>
+                    {displayTotal} {t("items")}
+                  </>
+                )}
               </p>
+            </div>
+            {hasAccess && (
+              <Badge variant="success" className="text-xs px-3 py-1.5 shrink-0 self-start sm:mt-1">
+                {t("purchased")}
+              </Badge>
             )}
-            {model.description && (
-              <p className="text-muted-foreground mt-2 text-sm max-w-xl">{model.description}</p>
-            )}
-            <p className="text-xs text-muted-foreground/60 mt-2">
-              {displayTotal} {t("items")}
-            </p>
           </div>
-          {hasAccess && (
-            <Badge variant="success" className="text-xs px-3 py-1.5 shrink-0">
-              {t("purchased")}
-            </Badge>
-          )}
         </div>
       </div>
 
       {/* Pricing Card */}
       {!hasAccess && (
-        <div className="mb-8 rounded-2xl border border-primary/15 bg-gradient-to-r from-primary/5 via-purple-500/5 to-primary/5 p-5 sm:p-6 slide-up" style={{ animationDelay: "0.1s" }}>
+        <div className="mb-8 rounded-2xl border border-primary/15 bg-gradient-to-r from-primary/8 via-primary/4 to-warning/6 p-5 sm:p-6 slide-up" style={{ animationDelay: "0.1s" }}>
           <div className="flex items-center gap-2 mb-4">
             <div className="h-9 w-9 rounded-xl bg-primary/15 flex items-center justify-center">
               <ShoppingCart className="h-4 w-4 text-primary" />
@@ -1450,7 +1513,7 @@ export function ModelDetail({
           {sortMenuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setSortMenuOpen(false)} aria-hidden="true" />
-              <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-white/[0.08] bg-card/95 backdrop-blur-xl p-1 shadow-2xl">
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-xl border border-white/[0.08] bg-card p-1 shadow-2xl">
                 {([
                   { value: "newest", label: t("newest"), icon: <Clock className="h-3.5 w-3.5" /> },
                   { value: "oldest", label: t("oldest"), icon: <Clock className="h-3.5 w-3.5" /> },
@@ -1523,7 +1586,9 @@ export function ModelDetail({
                   {hasAccess ? (
                     <>
                       <LazyRetryImage
-                        src={contentThumbnailSrc(item.id, item.thumbnailUrl)}
+                        src={contentThumbnailSrc(item.id, item.thumbnailUrl, {
+                          cdnMaxWidth: 720,
+                        })}
                         fallbackSrc={contentThumbnailProxySrc(item.id)}
                         alt={item.contentType === "VIDEO" ? t("video") : t("photo")}
                         className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
@@ -1560,7 +1625,7 @@ export function ModelDetail({
                   )}
 
                   {!hasAccess && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-[2px]">
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/55">
                       <Lock className="h-7 w-7 text-white/40" />
                     </div>
                   )}
@@ -1568,7 +1633,7 @@ export function ModelDetail({
                   {/* Duration badge */}
                   {item.contentType === "VIDEO" && item.duration && item.duration > 0 && (
                     <div className="absolute bottom-2 right-2 z-10 pointer-events-none">
-                      <span className="bg-black/70 backdrop-blur-sm text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md">
+                      <span className="bg-black/75 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md">
                         {formatDuration(item.duration)}
                       </span>
                     </div>
@@ -1576,7 +1641,7 @@ export function ModelDetail({
 
                   {/* Type badge */}
                   <div className="absolute top-2 left-2 z-10 pointer-events-none">
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-black/50 backdrop-blur-md text-white border-0">
+                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-black/55 text-white border-0">
                       {item.contentType === "VIDEO" ? (
                         <><Play className="h-2.5 w-2.5 mr-0.5 fill-white" /> Video</>
                       ) : (
@@ -1590,7 +1655,7 @@ export function ModelDetail({
                     <div className="absolute top-2 right-2 z-20">
                       <button
                         type="button"
-                        className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all cursor-pointer"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/40 hover:bg-black/55 transition-all cursor-pointer"
                         onClick={(e) => toggleFavorite(e, item.id)}
                         disabled={togglingFav === item.id}
                         aria-label={favoritedIds.has(item.id) ? t("favorited") : t("favorite")}
@@ -1599,8 +1664,8 @@ export function ModelDetail({
                           className={cn(
                             "h-3.5 w-3.5 transition-colors",
                             favoritedIds.has(item.id)
-                              ? "fill-red-500 text-red-500"
-                              : "text-white hover:text-red-400"
+                              ? "fill-primary text-primary"
+                              : "text-white hover:text-primary"
                           )}
                         />
                       </button>
@@ -1631,7 +1696,7 @@ export function ModelDetail({
         createPortal(
         <div
           ref={overlayRef}
-          className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-sm flex flex-col"
+          className="fixed inset-0 z-[200] flex min-h-0 flex-col bg-black/95 overscroll-y-contain"
           // Fix #6: Mobile swipe support
           onTouchStart={(e) => {
             const touch = e.touches[0];
@@ -1659,7 +1724,7 @@ export function ModelDetail({
           }}
         >
           {/* Overlay top bar */}
-          <div className="flex items-center justify-between px-4 py-3 lg:px-6 shrink-0">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top,0px))] sm:px-4 sm:py-3 lg:px-6">
             <button
               onClick={closeOverlay}
               className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors cursor-pointer"
@@ -1669,7 +1734,7 @@ export function ModelDetail({
               <span className="sm:hidden">Back</span>
             </button>
 
-            <div className="flex items-center gap-1.5 lg:gap-2">
+            <div className="flex min-w-0 shrink-0 items-center gap-0.5 sm:gap-1.5 lg:gap-2">
               <Button
                 variant="ghost"
                 size="icon"
@@ -1724,7 +1789,7 @@ export function ModelDetail({
                       onClick={() => setOverlayFolderMenuOpen(false)}
                     />
                     <div
-                      className="absolute right-0 top-full mt-1.5 z-[210] w-[min(calc(100vw-1.5rem),17rem)] rounded-xl border border-white/[0.1] bg-zinc-950/95 backdrop-blur-md py-2 shadow-xl"
+                      className="absolute right-0 top-full mt-1.5 z-[210] w-[min(calc(100vw-1.5rem),17rem)] rounded-xl border border-white/[0.1] bg-zinc-950 py-2 shadow-xl"
                       role="dialog"
                       aria-label={t("overlayFolderView")}
                       onClick={(e) => e.stopPropagation()}
@@ -1786,7 +1851,7 @@ export function ModelDetail({
                             <Heart
                               className={cn(
                                 "h-3 w-3 shrink-0 opacity-80",
-                                activeFilter === "FAVORITES" && "fill-red-400 text-red-400",
+                                activeFilter === "FAVORITES" && "fill-primary text-primary",
                               )}
                             />
                             {t("favorite")}
@@ -1833,7 +1898,7 @@ export function ModelDetail({
                 <Heart
                   className={cn(
                     "h-4 w-4 lg:h-5 lg:w-5 transition-all",
-                    overlayFavorited ? "fill-red-500 text-red-500 scale-110" : ""
+                    overlayFavorited ? "fill-primary text-primary scale-110" : ""
                   )}
                 />
                 <span className="hidden sm:inline">
@@ -1863,7 +1928,7 @@ export function ModelDetail({
                     size="sm"
                     onClick={handleDeleteContent}
                     disabled={overlayDeleting}
-                    className="gap-1.5 text-red-400/80 hover:text-red-400 hover:bg-red-500/10 lg:h-10 lg:px-3"
+                    className="gap-1.5 text-primary/80 hover:text-primary hover:bg-primary/10 lg:h-10 lg:px-3"
                   >
                     {overlayDeleting ? (
                       <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
@@ -1890,7 +1955,7 @@ export function ModelDetail({
 
           {/* Content area — click on backdrop (outside media) closes overlay */}
           <div
-            className="flex-1 flex items-center justify-center overflow-y-auto overflow-x-hidden px-3 pb-3 sm:px-4 sm:pb-4 lg:px-6 lg:pb-5 cursor-pointer min-w-0 scrollbar-hide"
+            className="flex min-h-0 flex-1 cursor-pointer items-center justify-center overflow-y-auto overflow-x-hidden px-2 pb-2 sm:px-4 sm:pb-4 lg:px-6 lg:pb-5 min-w-0 scrollbar-hide"
             onClick={(e) => {
               const target = e.target as HTMLElement;
               if (target.closest("[data-video-player], img, button")) return;
@@ -1915,10 +1980,15 @@ export function ModelDetail({
                 </div>
               ) : (
                 <RetryImage
-                  src={contentThumbnailSrc(selectedItemId, selectedItem.thumbnailUrl)}
+                  src={contentThumbnailSrc(selectedItemId, selectedItem.thumbnailUrl, {
+                    cdnMaxWidth: 1600,
+                    quality: 80,
+                  })}
                   fallbackSrc={contentThumbnailProxySrc(selectedItemId)}
                   alt=""
-                  className="max-h-[85vh] max-w-full w-auto mx-auto object-contain lg:max-h-[min(90dvh,1020px)]"
+                  className="max-h-[min(82dvh,100%)] max-w-full w-auto mx-auto object-contain sm:max-h-[85vh] lg:max-h-[min(90dvh,1020px)]"
+                  holdPreviousUntilLoaded
+                  loading="eager"
                   onContextMenu={(e) => e.preventDefault()}
                   draggable={false}
                   fallback={
@@ -1934,7 +2004,7 @@ export function ModelDetail({
 
           {filmstripSlice.items.length > 0 && (
             <div
-              className="shrink-0 px-2 sm:px-4 lg:px-6 pb-2 lg:pb-3 border-t border-white/[0.06] pt-2 lg:pt-3"
+              className="shrink-0 border-t border-white/[0.06] px-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2 sm:px-4 lg:px-6 lg:pb-3 lg:pt-3"
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
               role="navigation"
@@ -1964,9 +2034,11 @@ export function ModelDetail({
                         item.contentType === "VIDEO" ? t("video") : t("photo")
                       }
                     >
-                      <div className="h-12 w-[2.6rem] sm:h-16 sm:w-12 lg:h-[5.25rem] lg:w-[4.15rem] xl:h-[5.75rem] xl:w-[4.5rem] bg-black/60">
+                      <div className="h-14 w-[3.15rem] bg-black/60 sm:h-16 sm:w-12 lg:h-[5.25rem] lg:w-[4.15rem] xl:h-[5.75rem] xl:w-[4.5rem]">
                         <LazyRetryImage
-                          src={contentThumbnailSrc(item.id, item.thumbnailUrl)}
+                          src={contentThumbnailSrc(item.id, item.thumbnailUrl, {
+                            cdnMaxWidth: 220,
+                          })}
                           fallbackSrc={contentThumbnailProxySrc(item.id)}
                           alt=""
                           className="h-full w-full object-cover"
@@ -1992,7 +2064,7 @@ export function ModelDetail({
             </div>
           )}
 
-          <p className="text-center text-xs text-white/30 pb-3">
+          <p className="pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] text-center text-xs text-white/30 sm:pb-3">
             <span className="hidden sm:inline">
               {selectedItem.contentType === "VIDEO"
                 ? t("shiftArrowsToNavigate")

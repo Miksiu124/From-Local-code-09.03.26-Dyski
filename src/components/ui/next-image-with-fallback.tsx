@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import Image from "next/image";
+import Image, { type ImageLoaderProps } from "next/image";
 import { RetryImage } from "./retry-image";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,20 @@ function isCdnUrl(src: string): boolean {
   }
 }
 
+/** Requests a downscaled width from the CDN Worker (?w=) — Image Resizing at the edge. */
+function cdnImageLoader({ src, width, quality }: ImageLoaderProps): string {
+  if (!width || width <= 0) return src;
+  try {
+    const u = new URL(src, "https://files.dyskiof.net");
+    u.searchParams.set("w", String(Math.min(width, 2048)));
+    const q = quality ?? 75;
+    if (q >= 1 && q <= 100) u.searchParams.set("q", String(q));
+    return u.href;
+  } catch {
+    return src;
+  }
+}
+
 interface NextImageWithFallbackProps {
   src: string;
   alt: string;
@@ -34,8 +48,8 @@ interface NextImageWithFallbackProps {
 }
 
 /**
- * Uses next/image for CDN URLs. For files.dyskiof.net we use unoptimized=true — images are
- * already WebP from R2, so bypassing _next/image avoids cache misses and 12s+ load times.
+ * Uses next/image for CDN URLs with unoptimized + cdnImageLoader: requests go straight to the CDN
+ * with ?w= so the Cloudflare Worker can serve Image Resizing (cf.image), not the Next.js optimizer.
  * For non-CDN URLs (e.g. /api/... proxy), uses RetryImage directly.
  */
 export function NextImageWithFallback({
@@ -79,6 +93,7 @@ export function NextImageWithFallback({
         fill
         className={className}
         sizes={sizes}
+        loader={cdnImageLoader}
         loading={priority ? undefined : loading}
         priority={priority}
         onError={handleError}
@@ -94,6 +109,7 @@ export function NextImageWithFallback({
       width={width ?? 400}
       height={height ?? 533}
       className={className}
+      loader={cdnImageLoader}
       loading={priority ? undefined : loading}
       priority={priority}
       onError={handleError}

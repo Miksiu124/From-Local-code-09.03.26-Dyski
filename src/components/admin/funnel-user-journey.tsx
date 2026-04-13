@@ -57,7 +57,7 @@ function TimeDistributionBar({
     <div className="space-y-1">
       <div className="relative h-6 rounded-md bg-white/[0.05] ring-1 ring-white/[0.06] overflow-hidden">
         <motion.div
-          className="absolute top-0 bottom-0 rounded-sm bg-violet-500/35"
+          className="absolute top-0 bottom-0 rounded-sm bg-primary/35"
           style={{ left: `${bandLeft}%`, width: `${bandW}%` }}
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -68,7 +68,7 @@ function TimeDistributionBar({
           }
         />
         <motion.div
-          className="absolute top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_10px_rgba(124,58,237,0.65)]"
+          className="absolute top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_10px_rgba(59,130,246,0.7)]"
           style={{ left: `calc(${q50}% - 1px)` }}
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -145,7 +145,7 @@ function JourneyEdge({
 
         <div className="mt-3 h-2.5 rounded-full bg-white/[0.07] overflow-hidden ring-1 ring-white/[0.05]">
           <motion.div
-            className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500/90 via-primary to-violet-500/85"
+            className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500/90 via-primary to-primary/85"
             initial={reduceMotion ? false : { scaleX: 0 }}
             animate={{ scaleX: pct / 100 }}
             transition={
@@ -171,7 +171,7 @@ function JourneyEdge({
         {hasTiming && (
           <div className="mt-4 pt-3 border-t border-white/[0.06] space-y-2">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Timer className="h-3.5 w-3.5 text-violet-400/90 shrink-0" aria-hidden />
+              <Timer className="h-3.5 w-3.5 text-primary/90 shrink-0" aria-hidden />
               <span>
                 {labels.medianTime}:{" "}
                 <span className="font-mono text-foreground">{fmtDurationSeconds(elapsed.p50!)}</span>
@@ -216,7 +216,7 @@ export function FunnelUserJourney({
 
   return (
     <div className="rounded-xl border border-white/[0.07] bg-muted/15 overflow-hidden">
-      <div className="border-b border-white/[0.06] px-4 py-3 bg-gradient-to-r from-violet-600/[0.12] via-transparent to-emerald-600/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-3 bg-gradient-to-r from-primary/[0.12] via-transparent to-emerald-600/[0.08]">
         <h3 className="text-sm font-semibold tracking-tight">{t("growthFunnelUserJourneyTitle")}</h3>
         <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed max-w-3xl">
           {t("growthFunnelUserJourneyFootnote")}

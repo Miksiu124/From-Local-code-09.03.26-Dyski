@@ -379,7 +379,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
       {/* BLIK Shop Toggle */}
       <Card
         className={`mb-8 border-2 transition-colors ${
-          blikEnabled ? "border-green-500/30" : "border-red-500/30"
+          blikEnabled ? "border-green-500/30" : "border-amber-500/35"
         }`}
       >
         <CardContent className="p-5">
@@ -390,8 +390,8 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                   <ShieldCheck className="h-6 w-6 text-green-500" />
                 </div>
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10">
-                  <ShieldAlert className="h-6 w-6 text-red-500" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10">
+                  <ShieldAlert className="h-6 w-6 text-amber-400" />
                 </div>
               )}
               <div>
@@ -410,7 +410,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
               onClick={toggleBlik}
               disabled={blikSaving}
               className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full px-1 transition-colors cursor-pointer disabled:opacity-50 ${
-                blikEnabled ? "bg-green-500" : "bg-red-500/70"
+                blikEnabled ? "bg-green-500" : "bg-amber-500/75"
               }`}
             >
               {blikSaving ? (
@@ -510,7 +510,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                             </span>
                           ) : p.fromUserReferral ? (
                             <PurchaseReferralSourceHover
-                              badgeClassName="bg-violet-500/12 text-violet-800 dark:text-violet-300 ring-violet-500/25"
+                              badgeClassName="bg-primary/12 text-primary ring-primary/25 dark:text-primary"
                               label={t("purchaseFromUserReferral")}
                               referrer={p.referralReferrer}
                               referrerHeading={t("referralReferrerHeading")}
@@ -672,7 +672,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                     <span className="space-y-2 block">
                       <span>{t("purchaseFromUserReferral")}</span>
                       {selectedPurchase.referralReferrer ? (
-                        <span className="block mt-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-sm">
+                        <span className="block mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
                           <span className="text-muted-foreground text-xs block mb-1">
                             {t("referralReferrerHeading")}
                           </span>

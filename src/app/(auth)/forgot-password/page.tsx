@@ -52,7 +52,7 @@ export default function ForgotPasswordPage() {
       >
         <Card className="border-white/[0.06] bg-card/80 backdrop-blur-xl">
           <CardHeader className="text-center pb-2">
-            <div className="mx-auto mb-4 h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-600/20 border border-primary/20 flex items-center justify-center">
+            <div className="mx-auto mb-4 h-12 w-12 rounded-2xl bg-primary/20 border border-primary/25 flex items-center justify-center">
               <Mail className="h-5 w-5 text-primary" />
             </div>
             <CardTitle className="text-2xl font-bold">{t("forgotPasswordTitle")}</CardTitle>

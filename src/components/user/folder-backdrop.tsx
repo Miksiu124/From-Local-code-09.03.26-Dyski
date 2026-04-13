@@ -22,12 +22,12 @@ export function FolderBackdrop({ children, folderName }: FolderBackdropProps) {
 
   return (
     <div
-      className="min-h-screen w-full cursor-pointer"
+      className="min-h-screen w-full min-w-0 cursor-pointer overflow-x-clip"
       onClick={handleBackdropClick}
       aria-label="Click outside content to go back"
     >
       <div
-        className="container mx-auto px-4 py-8 cursor-default"
+        className="mx-auto w-full min-w-0 max-w-7xl cursor-default py-8 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]"
         onClick={(e) => e.stopPropagation()}
       >
         {children}

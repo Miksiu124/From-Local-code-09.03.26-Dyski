@@ -7,6 +7,9 @@
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
   },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240117.0",
     "typescript": "^5.3.0",

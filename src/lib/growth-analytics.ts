@@ -34,6 +34,7 @@ export function trackSignupSubmitAttempt(extra: GrowthProps = {}): void {
   emitGrowthEvent(GROWTH.SIGNUP_STARTED, { surface: "register", phase: "submit", ...extra });
 }
 
+/** Prefer server-side signup_completed (email/password register); client emit lacks user_id for funnel joins. */
 export function trackSignupCompleted(extra: GrowthProps = {}): void {
   emitGrowthEvent(GROWTH.SIGNUP_COMPLETED, { surface: "register", ...extra });
 }

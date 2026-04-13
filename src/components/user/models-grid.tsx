@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, memo } from "react";
-import Link from "next/link";
+import { CatalogNavLink } from "@/components/user/catalog-nav-link";
 import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Unlock, Search, Crown, Sparkles, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Lock, Unlock, Search, Crown, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,7 @@ import {
 import { getGrowthTabSessionId } from "@/lib/growth-events";
 import { tryConsumeCatalogImpressionSlot } from "@/lib/catalog-impression-dedupe";
 import { tryConsumeCatalogEngagedSlot } from "@/lib/catalog-engaged-dedupe";
-import { RetryImage } from "@/components/ui/retry-image";
+import { modelHeaderViewTransitionName, modelThumbViewTransitionName } from "@/lib/model-view-transition";
 import { NextImageWithFallback } from "@/components/ui/next-image-with-fallback";
 
 interface ModelItem {
@@ -175,13 +174,16 @@ const ModelCard = memo(function ModelCard({
 }) {
   const thumbSrc = model.avatarUrl || `/api/models/${model.folderName}/thumbnail`;
   return (
-    <Link
+    <CatalogNavLink
       href={`/models/${model.folderName}`}
       onClick={(e) => onModelClick(model, e)}
       prefetch={false}
       className="group block h-full min-w-0"
     >
-        <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
+        <div
+          className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300"
+          style={{ viewTransitionName: modelThumbViewTransitionName(model.id) }}
+        >
           <NextImageWithFallback
             src={thumbSrc}
             alt={model.name}
@@ -201,12 +203,12 @@ const ModelCard = memo(function ModelCard({
           <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-all duration-500" />
           <div className="absolute top-2.5 right-2.5">
             {hasAccess(model.id) ? (
-              <div className="bg-green-500/20 backdrop-blur-md p-1.5 rounded-lg border border-green-500/20 text-green-400">
-                <Unlock className="h-3 w-3" />
+              <div className="bg-success/20 p-1.5 rounded-lg border border-success/30 text-success">
+                <Unlock className="h-3 w-3" aria-hidden />
               </div>
             ) : (
-              <div className="bg-black/30 backdrop-blur-md p-1.5 rounded-lg border border-white/[0.08] text-white/50">
-                <Lock className="h-3 w-3" />
+              <div className="bg-black/35 p-1.5 rounded-lg border border-white/[0.08] text-white/50">
+                <Lock className="h-3 w-3" aria-hidden />
               </div>
             )}
           </div>
@@ -215,24 +217,13 @@ const ModelCard = memo(function ModelCard({
               <span className="text-lg drop-shadow-md">{model.countryFlag}</span>
             </div>
           )}
-          <div className="absolute bottom-12 sm:bottom-14 right-2.5">
-            <RetryImage
-              src={thumbSrc}
-              alt=""
-              className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover border-2 border-white/20 shadow-lg bg-card"
-              loading="lazy"
-            />
-          </div>
           <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 transform translate-y-0.5 group-hover:translate-y-0 transition-transform duration-300">
             <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
-            <div className="flex items-center justify-between mt-1.5">
-              <span className="text-[10px] sm:text-xs font-medium text-white/50">
-                <span className="hidden sm:inline">
-                  {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
-                    ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
-                    : `${model.contentCount} ${t("items")}`}
-                </span>
-                <span className="sm:hidden">{model.contentCount} {t("items")}</span>
+            <div className="flex items-center justify-between mt-1.5 gap-1">
+              <span className="text-[9px] sm:text-xs font-medium text-white/50 leading-snug line-clamp-2 min-w-0">
+                {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                  ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                  : `${model.contentCount} ${t("items")}`}
               </span>
               {!hasAccess(model.id) && cost7d > 0 && (
                 <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">
@@ -242,7 +233,7 @@ const ModelCard = memo(function ModelCard({
             </div>
           </div>
         </div>
-    </Link>
+    </CatalogNavLink>
   );
 });
 
@@ -261,7 +252,6 @@ export function ModelsGrid({
   creditBalance,
 }: ModelsGridProps) {
   const t = useTranslations("models");
-  const router = useRouter();
 
   useEffect(() => {
     try {
@@ -606,25 +596,19 @@ export function ModelsGrid({
 
   return (
     <>
-      {/* Page Title */}
-      <div className="mb-8 slide-up">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{t("title")}</h1>
-      </div>
-
       {/* Featured Section */}
       {!filteredMode && heroModel && (
         <div className="mb-12 slide-up" style={{ animationDelay: "0.1s" }}>
           <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground">Featured</h2>
-            </div>
+            <h2 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground">
+              {t("featured")}
+            </h2>
             {displayFeatured.length > 1 && (
               <div className="flex items-center gap-1.5">
-                <button onClick={goPrev} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer" aria-label={t("carouselPrev")}>
+                <button type="button" onClick={goPrev} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer touch-manipulation" aria-label={t("carouselPrev")}>
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <button onClick={goNext} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer" aria-label={t("carouselNext")}>
+                <button type="button" onClick={goNext} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer touch-manipulation" aria-label={t("carouselNext")}>
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
@@ -645,7 +629,7 @@ export function ModelsGrid({
               className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card w-full aspect-video lg:aspect-auto lg:min-h-0 lg:h-full min-h-[200px]"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-muted/50 via-muted/30 to-card animate-pulse lg:animate-none" aria-hidden />
-              <Link
+              <CatalogNavLink
                 href={`/models/${heroModel.folderName}`}
                 onClick={(e) => handleModelClick(heroModel, e, "featured_hero", activeIndex)}
                 prefetch={false}
@@ -659,6 +643,7 @@ export function ModelsGrid({
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.35 }}
                     className="absolute inset-0"
+                    style={{ viewTransitionName: modelHeaderViewTransitionName(heroModel.id) }}
                   >
                     <NextImageWithFallback
                       src={heroModel.headerUrl || `/api/models/${heroModel.folderName}/header`}
@@ -671,16 +656,16 @@ export function ModelsGrid({
                     />
                   </motion.div>
                 </AnimatePresence>
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none z-[2]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none z-[2]" aria-hidden />
                 <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent pointer-events-none z-[2]" />
 
                 <div className="absolute bottom-0 left-0 p-6 sm:p-8 w-full z-[3]">
                   <div className="mb-3">
-                    <Badge className="bg-primary/80 backdrop-blur-sm text-white border-none rounded-lg px-2.5 py-1 text-[10px] tracking-widest uppercase font-semibold">
+                    <Badge className="bg-primary/85 text-white border-none rounded-lg px-2.5 py-1 text-[10px] tracking-widest uppercase font-semibold">
                       {t("featured")}
                     </Badge>
                   </div>
-                  <h3 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-2 tracking-tight leading-tight">
+                  <h3 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-2 tracking-tight leading-[1.12]">
                     {heroModel.name}
                   </h3>
                   <p className="text-white/60 line-clamp-2 max-w-lg text-sm sm:text-base mb-4">
@@ -699,27 +684,32 @@ export function ModelsGrid({
 
                 {/* Carousel indicators */}
                 {displayFeatured.length > 1 && (
-                  <div className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 z-[4] flex items-center gap-1.5 pointer-events-auto">
+                  <div className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 z-[4] flex items-center gap-0.5 pointer-events-auto">
                     {displayFeatured.map((_, i) => (
                       <button
                         key={i}
                         type="button"
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveIndex(i); }}
-                        className={cn(
-                          "min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full transition-all duration-300 cursor-pointer",
-                          i === activeIndex ? "w-6 h-1.5 bg-white" : "w-1.5 h-1.5 bg-white/30 hover:bg-white/50"
-                        )}
+                        className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 touch-manipulation"
                         aria-label={t("carouselSlide", { current: i + 1, total: displayFeatured.length })}
                         aria-current={i === activeIndex ? "true" : undefined}
-                      />
+                      >
+                        <span
+                          className={cn(
+                            "block rounded-full transition-all duration-300",
+                            i === activeIndex ? "h-1.5 w-6 bg-white" : "h-1.5 w-1.5 bg-white/30 hover:bg-white/50"
+                          )}
+                          aria-hidden
+                        />
+                      </button>
                     ))}
                   </div>
                 )}
-              </Link>
+              </CatalogNavLink>
             </CatalogModelSurfaceTracker>
 
             {/* Side List */}
-            <div className="flex flex-row lg:flex-col gap-3 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
+            <div className="flex flex-row lg:flex-col gap-3 overflow-x-auto overscroll-x-contain pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0 scrollbar-hide snap-x snap-mandatory lg:snap-none">
               {sideModels.map((model, idx) => (
                 <CatalogModelSurfaceTracker
                   key={model.id}
@@ -730,16 +720,19 @@ export function ModelsGrid({
                   queryLen={search.trim().length}
                   countryId={selectedCountry}
                   purchasedOnly={showPurchasedOnly}
-                  className="flex-shrink-0 w-[260px] lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
+                  className="flex-shrink-0 w-[260px] snap-start lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
                 >
-                <Link
+                <CatalogNavLink
                   href={`/models/${model.folderName}`}
                   onClick={(e) => handleModelClick(model, e, "featured_side", idx)}
                   prefetch={false}
                   className="group block h-full min-h-[100px]"
                 >
                   <div className="flex h-full min-h-[100px]">
-                    <div className="w-24 lg:w-1/3 relative shrink-0 min-h-[100px]">
+                    <div
+                      className="w-24 lg:w-1/3 relative shrink-0 min-h-[100px]"
+                      style={{ viewTransitionName: modelThumbViewTransitionName(model.id) }}
+                    >
                       <NextImageWithFallback
                         src={model.avatarUrl || `/api/models/${model.folderName}/thumbnail`}
                         alt={model.name}
@@ -756,17 +749,14 @@ export function ModelsGrid({
                     </div>
                     <div className="flex-1 p-4 flex flex-col justify-center">
                       <h4 className="text-sm lg:text-base font-bold text-white group-hover:text-primary transition-colors truncate">{model.name}</h4>
-                      <span className="text-xs text-muted-foreground mt-0.5">
-                        <span className="hidden sm:inline">
-                          {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
-                            ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
-                            : `${model.contentCount} ${t("items")}`}
-                        </span>
-                        <span className="sm:hidden">{model.contentCount} {t("items")}</span>
+                      <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-2">
+                        {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
+                          ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
+                          : `${model.contentCount} ${t("items")}`}
                       </span>
                     </div>
                   </div>
-                </Link>
+                </CatalogNavLink>
                 </CatalogModelSurfaceTracker>
               ))}
             </div>
@@ -780,26 +770,26 @@ export function ModelsGrid({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-8 rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/10 border border-primary/20 p-5 sm:p-6"
+          className="mb-8 rounded-2xl border border-white/[0.08] bg-card p-5 sm:p-6"
         >
           <div className="flex flex-col lg:flex-row items-center justify-between gap-5">
             <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+              <div className="h-12 w-12 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
                 <Crown className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h3 className="text-lg font-bold">{t("purchaseBundle")}</h3>
+                <h3 className="font-heading text-lg font-bold tracking-tight">{t("purchaseBundle")}</h3>
                 <p className="text-sm text-muted-foreground">
                   {t("bundleBannerDesc", { count: totalModelCount })}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 w-full lg:w-auto">
+            <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-3 w-full lg:w-auto">
               {bundleCost14d > 0 && (
                 <Button
                   variant="outline"
-                  className="bg-white/[0.02] hover:bg-primary/10 border-white/[0.08] hover:border-primary/30 flex flex-col items-center justify-center p-5 h-auto rounded-xl"
+                  className="bg-white/[0.02] hover:bg-primary/10 border-white/[0.08] hover:border-primary/30 flex min-h-[48px] flex-col items-center justify-center p-5 h-auto rounded-xl touch-manipulation sm:min-h-0"
                   onClick={openBundlePopup}
                 >
                   <span className="text-[10px] text-muted-foreground mb-1 uppercase tracking-widest">14 {t("days")}</span>
@@ -809,13 +799,12 @@ export function ModelsGrid({
               {bundleCost30d > 0 && (
                 <Button
                   variant="default"
-                  className="flex flex-col items-center justify-center p-5 h-auto relative overflow-hidden group rounded-xl"
+                  className="flex min-h-[48px] flex-col items-center justify-center p-5 h-auto rounded-xl touch-manipulation sm:min-h-0"
                   onClick={openBundlePopup}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary to-purple-600 group-hover:opacity-90 transition-opacity" />
-                  <span className="relative text-[10px] text-white/70 mb-1 uppercase tracking-widest">30 {t("days")}</span>
-                  <span className="relative text-base font-bold">{bundleCost30d} {t("credits")}</span>
-                  <div className="absolute -right-1 -top-1 bg-yellow-400 text-black text-[9px] font-black px-2 py-0.5 rotate-12 rounded-sm">{t("best")}</div>
+                  <span className="text-[10px] text-primary-foreground/80 mb-1 uppercase tracking-widest">30 {t("days")}</span>
+                  <span className="text-base font-bold">{bundleCost30d} {t("credits")}</span>
+                  <span className="mt-1 text-[9px] font-semibold uppercase tracking-wide text-primary-foreground/90">{t("best")}</span>
                 </Button>
               )}
             </div>
@@ -823,62 +812,77 @@ export function ModelsGrid({
         </motion.div>
       )}
 
-      {/* Search + Country Filters */}
+      {/* Search + country on one row (narrower search); filters beside */}
       <div className="flex flex-col gap-3 mb-6 slide-up" style={{ animationDelay: "0.15s" }}>
-        <div className="relative" data-tour="tour-guest-search">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
-          <Input
-            placeholder={t("allModels")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-11"
-          />
-        </div>
-        {countriesWithModels.length > 0 && (
-          <div className="flex gap-2 flex-wrap" data-tour="tour-guest-filters">
-            <button
-              onClick={() => { setSelectedCountry(null); setShowPurchasedOnly(false); }}
-              className={cn(
-                "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border",
-                !selectedCountry && !showPurchasedOnly
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20"
-                  : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground"
-              )}
-            >
-              {t("all")}
-            </button>
-            {isAuthenticated && (
-              <button
-                onClick={() => {
-                  setShowPurchasedOnly(!showPurchasedOnly);
-                  if (!showPurchasedOnly) setSelectedCountry(null);
-                }}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border",
-                  showPurchasedOnly
-                    ? "bg-green-500 text-white border-green-500 shadow-sm shadow-green-500/20"
-                    : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground"
-                )}
-              >
-                {t("purchasedTab")}
-              </button>
-            )}
-            {countriesWithModels.map((country) => (
-              <button
-                key={country.id}
-                onClick={() => { setSelectedCountry(country.id); setShowPurchasedOnly(false); }}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border",
-                  selectedCountry === country.id && !showPurchasedOnly
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm shadow-primary/20"
-                    : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground"
-                )}
-              >
-                {country.flagEmoji} {country.name}
-              </button>
-            ))}
+        <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center min-[480px]:gap-3">
+          <div className="relative min-w-0 flex-1 max-w-full min-[480px]:max-w-xl md:max-w-2xl" data-tour="tour-guest-search">
+            <label htmlFor="catalog-search" className="sr-only">
+              {t("searchLabel")}
+            </label>
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" aria-hidden />
+            <Input
+              id="catalog-search"
+              placeholder={t("searchPlaceholder")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-11 w-full"
+              autoComplete="off"
+            />
           </div>
-        )}
+          {(countriesWithModels.length > 0 || isAuthenticated) && (
+            <div
+              className="flex flex-col gap-2 min-[480px]:flex-row min-[480px]:flex-wrap min-[480px]:items-center min-[480px]:gap-2 min-[480px]:shrink-0"
+              data-tour="tour-guest-filters"
+            >
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPurchasedOnly(!showPurchasedOnly);
+                    if (!showPurchasedOnly) setSelectedCountry(null);
+                  }}
+                  className={cn(
+                    "min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border shrink-0 text-left min-[480px]:min-h-0 min-[480px]:text-center touch-manipulation",
+                    showPurchasedOnly
+                      ? "bg-success text-white border-success transition-colors duration-200 hover:bg-success/90"
+                      : "bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.08] text-muted-foreground transition-colors duration-200"
+                  )}
+                >
+                  {t("purchasedTab")}
+                </button>
+              )}
+              {countriesWithModels.length > 0 && (
+                <div className="flex w-full min-w-0 min-[480px]:w-auto min-[480px]:min-w-[200px] min-[480px]:max-w-[min(100%,280px)]">
+                  <label htmlFor="catalog-country" className="sr-only">
+                    {t("filterByCountry")}
+                  </label>
+                  <select
+                    id="catalog-country"
+                    disabled={showPurchasedOnly}
+                    value={selectedCountry ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSelectedCountry(v.length > 0 ? v : null);
+                      setShowPurchasedOnly(false);
+                    }}
+                    className={cn(
+                      "h-11 w-full min-w-0 rounded-xl border border-white/[0.08] bg-card px-3 text-base text-foreground transition-colors duration-200 md:h-10 md:text-sm",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:border-primary/50 focus-visible:bg-white/[0.05] touch-manipulation",
+                      showPurchasedOnly && "cursor-not-allowed opacity-50"
+                    )}
+                  >
+                    <option value="">{t("allCountries")}</option>
+                    {countriesWithModels.map((country) => (
+                      <option key={country.id} value={country.id}>
+                        {country.flagEmoji} {country.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Models Grid */}

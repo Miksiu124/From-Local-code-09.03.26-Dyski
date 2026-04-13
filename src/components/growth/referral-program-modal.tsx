@@ -192,8 +192,8 @@ export function ReferralProgramModal() {
       <div className="pr-6 pt-1">
         <div className="flex flex-col gap-4 text-left">
           <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
-              <Gift className="h-5 w-5 text-violet-400" aria-hidden />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15">
+              <Gift className="h-5 w-5 text-primary" aria-hidden />
             </div>
             <DialogHeader className="space-y-2 text-left sm:text-left">
               <DialogTitle className="text-lg font-semibold leading-snug pr-2">
@@ -223,7 +223,7 @@ export function ReferralProgramModal() {
               >
                 {copied ? (
                   <>
-                    <Check className="h-4 w-4 text-green-500" aria-hidden />
+                    <Check className="h-4 w-4 text-success" aria-hidden />
                     {t("modalCopied")}
                   </>
                 ) : (

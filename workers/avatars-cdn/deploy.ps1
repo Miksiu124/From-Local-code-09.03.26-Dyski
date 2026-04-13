@@ -24,5 +24,5 @@ npx wrangler deploy
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "Gotowe. Worker dostępny pod: https://files.dyskiof.net" -ForegroundColor Green
-    Write-Host "Tylko ścieżki avatars/* są dozwolone — reszta zwraca 403." -ForegroundColor Gray
+    Write-Host "Sprawdź nagłówek X-CV-Gatekeeper i CORS (README)." -ForegroundColor Gray
 }

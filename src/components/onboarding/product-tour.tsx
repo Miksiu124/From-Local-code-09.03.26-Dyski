@@ -37,15 +37,59 @@ function resolveStepIds(step: TourStepTarget): readonly string[] {
   return typeof step === "string" ? [step] : [...step];
 }
 
+/** Prefer stable #id anchors — data-tour on wrappers can resolve to wrong rects during layout/animation. */
+const TOUR_ANCHOR_ID: Partial<Record<string, string>> = {
+  "tour-guest-search": "catalog-search",
+  "tour-guest-filters": "catalog-country",
+};
+
+function rectFromElement(el: Element): Rect | null {
+  const r = el.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return null;
+  return { top: r.top, left: r.left, width: r.width, height: r.height };
+}
+
+/** Highlight the whole search row (icon + field), not a phantom box elsewhere. */
+function rectForSearchTour(inputEl: HTMLElement): Rect | null {
+  const row = inputEl.parentElement;
+  if (row) {
+    const r = row.getBoundingClientRect();
+    if (r.width >= 2 && r.height >= 2) {
+      return { top: r.top, left: r.left, width: r.width, height: r.height };
+    }
+  }
+  return rectFromElement(inputEl);
+}
+
+/** Catalog steps must live in <main> — never match a stray node outside content. */
+function tourNodeAllowedForId(el: Element, tourId: string): boolean {
+  if (tourId === "tour-guest-search" || tourId === "tour-guest-filters") {
+    return Boolean(el.closest("main"));
+  }
+  return true;
+}
+
 function measureTargets(ids: readonly string[]): Rect | null {
   if (typeof document === "undefined") return null;
   for (const id of ids) {
+    const anchorId = TOUR_ANCHOR_ID[id];
+    if (anchorId) {
+      const el = document.getElementById(anchorId);
+      if (el) {
+        if (id === "tour-guest-search" && el instanceof HTMLElement) {
+          const r = rectForSearchTour(el);
+          if (r) return r;
+        } else {
+          const r = rectFromElement(el);
+          if (r) return r;
+        }
+      }
+    }
     const nodes = document.querySelectorAll(`[data-tour="${id}"]`);
     for (const el of nodes) {
-      const r = el.getBoundingClientRect();
-      if (r.width >= 2 && r.height >= 2) {
-        return { top: r.top, left: r.left, width: r.width, height: r.height };
-      }
+      if (!tourNodeAllowedForId(el, id)) continue;
+      const r = rectFromElement(el);
+      if (r) return r;
     }
   }
   return null;
@@ -54,13 +98,47 @@ function measureTargets(ids: readonly string[]): Rect | null {
 function firstVisibleTargetEl(ids: readonly string[]): Element | null {
   if (typeof document === "undefined") return null;
   for (const id of ids) {
+    const anchorId = TOUR_ANCHOR_ID[id];
+    if (anchorId) {
+      const el = document.getElementById(anchorId);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (r.width >= 2 && r.height >= 2) return el;
+      }
+    }
     const nodes = document.querySelectorAll(`[data-tour="${id}"]`);
     for (const el of nodes) {
+      if (!tourNodeAllowedForId(el, id)) continue;
       const r = el.getBoundingClientRect();
       if (r.width >= 2 && r.height >= 2) return el;
     }
   }
   return null;
+}
+
+/** Avoid full-page “snap” when switching between header targets and main content (steps 2↔3). */
+function isTargetMostlyVisible(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  const pad = 48;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (r.width < 2 || r.height < 2) return false;
+  return (
+    r.top >= -pad &&
+    r.left >= -pad &&
+    r.bottom <= vh + pad &&
+    r.right <= vw + pad
+  );
+}
+
+function scrollTargetIntoViewIfNeeded(el: Element) {
+  // Search field: always bring into clear view (avoids “hole” over cookie / bottom chrome).
+  if (el instanceof HTMLElement && el.id === "catalog-search") {
+    el.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+    return;
+  }
+  if (isTargetMostlyVisible(el)) return;
+  el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
 }
 
 function TourCardBody({
@@ -170,6 +248,14 @@ export function ProductTour({
         : { type: "spring" as const, stiffness: 380, damping: 34, mass: 0.88 },
     [reduceMotion],
   );
+  /** Spotlight/card: short ease on step change — spring between far-apart targets (e.g. krok 2→3) felt like a “bounce” jump. */
+  const positionTransition = useMemo(
+    () =>
+      reduceMotion
+        ? { duration: 0.18, ease: "easeOut" as const }
+        : { type: "tween" as const, duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
+    [reduceMotion],
+  );
 
   const [rect, setRect] = useState<Rect | null>(null);
   const [narrowSheet, setNarrowSheet] = useState(false);
@@ -198,7 +284,7 @@ export function ProductTour({
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  /** Scroll target into view, then measure (fixes off-screen highlights on mobile). */
+  /** Scroll target into view only when needed, then measure (avoids jarring center-scroll between header ↔ content). */
   useLayoutEffect(() => {
     if (!open || step < 0 || step >= stepCount) {
       setRect(null);
@@ -207,18 +293,22 @@ export function ProductTour({
     const ids = resolveStepIds(targets[step]);
     const el = firstVisibleTargetEl(ids);
     if (el) {
-      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+      scrollTargetIntoViewIfNeeded(el);
     }
     let raf1 = 0;
     let raf2 = 0;
+    let raf3 = 0;
     raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        setRect(measureTargets(ids));
+        raf3 = requestAnimationFrame(() => {
+          setRect(measureTargets(ids));
+        });
       });
     });
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
+      cancelAnimationFrame(raf3);
     };
   }, [open, step, stepCount, targets]);
 
@@ -285,7 +375,7 @@ export function ProductTour({
                 style={{ height: Math.max(0, top) }}
                 initial={false}
                 animate={{ opacity: 1 }}
-                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                transition={positionTransition}
                 onClick={onSkip}
               />
               <motion.div
@@ -294,7 +384,7 @@ export function ProductTour({
                 style={{ top: top + h }}
                 initial={false}
                 animate={{ opacity: 1 }}
-                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                transition={positionTransition}
                 onClick={onSkip}
               />
               <motion.div
@@ -303,7 +393,7 @@ export function ProductTour({
                 style={{ top, width: Math.max(0, left), height: h }}
                 initial={false}
                 animate={{ opacity: 1 }}
-                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                transition={positionTransition}
                 onClick={onSkip}
               />
               <motion.div
@@ -312,7 +402,7 @@ export function ProductTour({
                 style={{ top, left: left + w, height: h }}
                 initial={false}
                 animate={{ opacity: 1 }}
-                transition={{ duration: reduceMotion ? 0.15 : 0.28, ease: "easeOut" }}
+                transition={positionTransition}
                 onClick={onSkip}
               />
             </>
@@ -330,6 +420,7 @@ export function ProductTour({
       )}
       {rect && (
         <motion.div
+          key={`spotlight-${step}`}
           className={cn(
             "fixed z-[200] rounded-xl pointer-events-none border-2 border-primary/80 tour-spotlight-pulse",
           )}
@@ -340,12 +431,13 @@ export function ProductTour({
             width: rect.width + SPOTLIGHT_PAD * 2,
             height: rect.height + SPOTLIGHT_PAD * 2,
           }}
-          transition={transition}
+          transition={positionTransition}
           style={{ willChange: reduceMotion ? undefined : "transform, width, height, top, left" }}
         />
       )}
       {narrowSheet ? (
         <motion.div
+          key={`tour-sheet-${step}`}
           className={cn(
             "fixed z-[200] left-3 right-3 max-h-[min(42vh,300px)] overflow-y-auto rounded-2xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl p-4 text-sm",
             "bottom-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
@@ -370,12 +462,13 @@ export function ProductTour({
         </motion.div>
       ) : (
         <motion.div
+          key={`tour-card-${step}`}
           className={cn(
             "fixed z-[200] w-[min(92vw,22rem)] rounded-2xl border border-white/[0.08] bg-card/95 backdrop-blur-xl shadow-2xl p-4 text-sm",
           )}
           initial={false}
           animate={cardAnimateDesktop}
-          transition={transition}
+          transition={positionTransition}
           style={{ willChange: reduceMotion ? undefined : "transform, top, left" }}
         >
           <TourCardBody

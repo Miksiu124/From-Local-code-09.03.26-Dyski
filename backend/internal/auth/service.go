@@ -62,10 +62,11 @@ func (s *Service) StoreSessionIP(ctx context.Context, userID, ip string, ttlSecs
 
 // Register creates a new user with hashed password and optionally saves referral and custom link attribution.
 // refereeIP is used for anti-gaming: if referrer and referee share the same IP, referral is rejected.
-func (s *Service) Register(ctx context.Context, name, email, password, refCode, customLinkID, refereeIP string) error {
+// Returns the new user's id on success (for first-party funnel events with user_id).
+func (s *Service) Register(ctx context.Context, name, email, password, refCode, customLinkID, refereeIP string) (string, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return "", fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	var namePtr *string
@@ -90,14 +91,14 @@ func (s *Service) Register(ctx context.Context, name, email, password, refCode, 
 	`, email, string(hashedPassword), namePtr, customLinkIDArg).Scan(&userID)
 
 	if err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
 	if err := referral.EnsureReferralCodeForUser(ctx, s.db, userID); err != nil {
 		log.Printf("[Referral] EnsureReferralCodeForUser failed user=%s: %v", userID, err)
 	}
 	s.applyReferralAfterUserCreate(ctx, userID, refCode, refereeIP)
-	return nil
+	return userID, nil
 }
 
 // applyReferralAfterUserCreate links a new account to a referrer when refCode is valid and anti-gaming passes.

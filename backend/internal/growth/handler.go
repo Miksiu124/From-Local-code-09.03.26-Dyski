@@ -188,7 +188,7 @@ func (h *Handler) FunnelSummary(c echo.Context) error {
 			"byDay":            []map[string]interface{}{},
 			"rates":            map[string]float64{},
 			"stepTransitions":  []map[string]interface{}{},
-			"funnelStepEvents": []string{"session_start", "signup_completed", "checkout_started", "purchase_completed"},
+			"funnelStepEvents": []string{"signup_completed", "email_verified", "checkout_started", "purchase_completed"},
 		})
 	}
 
@@ -280,6 +280,7 @@ func (h *Handler) FunnelSummary(c echo.Context) error {
 		rates["purchase_per_session"] = float64(g("purchase_completed")) / float64(s)
 	}
 	if su := g("signup_completed"); su > 0 {
+		rates["verify_per_signup"] = float64(g("email_verified")) / float64(su)
 		rates["checkout_per_signup"] = float64(g("checkout_started")) / float64(su)
 	}
 	if ch := g("checkout_started"); ch > 0 {
@@ -297,14 +298,15 @@ func (h *Handler) FunnelSummary(c echo.Context) error {
 		"byDay":            byDay,
 		"rates":            rates,
 		"stepTransitions":  stepTransitions,
-		"funnelStepEvents": []string{"session_start", "signup_completed", "checkout_started", "purchase_completed"},
+				"funnelStepEvents": []string{"signup_completed", "email_verified", "checkout_started", "purchase_completed"},
 	})
 }
 
 // funnelUserStepPairs defines ordered funnel edges (from → to) for per-user conversion in the time window.
+// All steps require user_id on events. signup→session is not used: anonymous session_start cannot pair with signup_completed.
 var funnelUserStepPairs = []struct{ From, To string }{
-	{From: "session_start", To: "signup_completed"},
-	{From: "signup_completed", To: "checkout_started"},
+	{From: "signup_completed", To: "email_verified"},
+	{From: "email_verified", To: "checkout_started"},
 	{From: "checkout_started", To: "purchase_completed"},
 }
 

@@ -4,6 +4,21 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { useTranslations } from "next-intl";
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selector =
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  return Array.from(container.querySelectorAll<HTMLElement>(selector)).filter(
+    (el) => !el.hasAttribute("disabled") && el.getAttribute("aria-hidden") !== "true"
+  );
+}
+
+const DialogContext = React.createContext<{
+  titleId: string;
+  descriptionId: string;
+  setDescriptionVisible: (v: boolean) => void;
+} | null>(null);
 
 interface DialogProps {
   open: boolean;
@@ -15,46 +30,142 @@ interface DialogProps {
 
 function Dialog({ open, onOpenChange, children, overlayClassName }: DialogProps) {
   const reduceMotion = useReducedMotion();
+  const t = useTranslations("common");
+  const titleId = React.useId();
+  const descriptionId = React.useId();
+  const [descriptionVisible, setDescriptionVisible] = React.useState(false);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const previousFocusRef = React.useRef<HTMLElement | null>(null);
+
+  const contextValue = React.useMemo(
+    () => ({
+      titleId,
+      descriptionId,
+      setDescriptionVisible,
+    }),
+    [titleId, descriptionId]
+  );
+
+  React.useEffect(() => {
+    if (!open) {
+      setDescriptionVisible(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+
+    const id = requestAnimationFrame(() => {
+      panel.focus();
+    });
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onOpenChange(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      const focusables = getFocusableElements(panel);
+      if (focusables.length === 0) return;
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (!active || !panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+
+      if (e.shiftKey) {
+        if (active === panel || active === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onOpenChange]);
+
+  React.useEffect(() => {
+    if (open) return;
+    const el = previousFocusRef.current;
+    if (el && typeof el.focus === "function") {
+      requestAnimationFrame(() => {
+        try {
+          el.focus();
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+  }, [open]);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reduceMotion ? 0 : 0.2 }}
-            className={cn(
-              "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm",
-              overlayClassName,
-            )}
-            onClick={() => onOpenChange(false)}
-          />
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <DialogContext.Provider value={contextValue}>
+      <AnimatePresence>
+        {open && (
+          <>
             <motion.div
-              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40, scale: 0.97 }}
-              animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.97 }}
-              transition={
-                reduceMotion ? { duration: 0.15 } : { type: "spring", damping: 25, stiffness: 300 }
-              }
-              className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-white/[0.08] bg-card p-6 shadow-2xl shadow-black/40 max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-white/10 sm:hidden" />
-              <button
-                onClick={() => onOpenChange(false)}
-                className="absolute right-4 top-4 rounded-lg p-1 opacity-50 hover:opacity-100 hover:bg-white/5 transition-all cursor-pointer"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.2 }}
+              className={cn(
+                "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm",
+                overlayClassName,
+              )}
+              aria-hidden
+              onClick={() => onOpenChange(false)}
+            />
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none">
+              <motion.div
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                aria-describedby={descriptionVisible ? descriptionId : undefined}
+                tabIndex={-1}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40, scale: 0.97 }}
+                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.97 }}
+                transition={
+                  reduceMotion ? { duration: 0.15 } : { type: "spring", damping: 25, stiffness: 300 }
+                }
+                className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-white/[0.08] bg-card p-6 shadow-2xl shadow-black/40 max-h-[90vh] overflow-y-auto pointer-events-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                onClick={(e) => e.stopPropagation()}
               >
-                <X className="h-4 w-4" />
-              </button>
-              {children}
-            </motion.div>
-          </div>
-        </>
-      )}
-    </AnimatePresence>
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-white/10 sm:hidden" aria-hidden />
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="absolute right-4 top-4 rounded-lg p-1 opacity-50 hover:opacity-100 hover:bg-white/5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  aria-label={t("closeDialog")}
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+                {children}
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+    </DialogContext.Provider>
   );
 }
 
@@ -63,11 +174,28 @@ function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 }
 
 function DialogTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />;
+  const ctx = React.useContext(DialogContext);
+  return (
+    <h2 id={ctx?.titleId} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+  );
 }
 
 function DialogDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("text-sm text-muted-foreground", className)} {...props} />;
+  const ctx = React.useContext(DialogContext);
+
+  React.useEffect(() => {
+    if (!ctx) return;
+    ctx.setDescriptionVisible(true);
+    return () => ctx.setDescriptionVisible(false);
+  }, [ctx]);
+
+  return (
+    <p
+      id={ctx?.descriptionId}
+      className={cn("text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  );
 }
 
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

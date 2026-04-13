@@ -225,12 +225,19 @@ func (h *Handler) Register(c echo.Context) error {
 	}
 
 	refereeIP := c.RealIP()
-	if err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password, refCode, customLinkID, refereeIP); err != nil {
+	newUserID, err := h.service.Register(c.Request().Context(), req.Name, req.Email, req.Password, refCode, customLinkID, refereeIP)
+	if err != nil {
 		log.Printf("[Register] Service error: %v", err)
 		return common.JSONError(c, http.StatusInternalServerError, "registration_failed", "Registration failed. Please try again later.")
 	}
 
 	log.Printf("[Register] SUCCESS: User created")
+	signupProps := map[string]interface{}{
+		"surface": "register",
+		"source":  "server",
+		"has_ref": refCode != "",
+	}
+	h.service.EmitGrowthEvent(c.Request().Context(), "signup_completed", &newUserID, signupProps)
 
 	go func() {
 		defer func() {

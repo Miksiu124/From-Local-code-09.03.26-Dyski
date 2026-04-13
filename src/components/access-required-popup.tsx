@@ -130,7 +130,7 @@ export function AccessRequiredPopup({
     return (
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogHeader>
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-purple-600/15 border border-primary/15">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
             <Lock className="h-6 w-6 text-primary" />
           </div>
           <DialogTitle className="text-center text-xl">{t("accessRequired")}</DialogTitle>
@@ -173,7 +173,7 @@ export function AccessRequiredPopup({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogHeader>
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-purple-600/15 border border-primary/15">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 border border-primary/20">
           <Lock className="h-6 w-6 text-primary" />
         </div>
         <DialogTitle className="text-center text-xl">{title}</DialogTitle>

@@ -9,6 +9,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { contentThumbnailSrc, contentThumbnailProxySrc } from "@/lib/content-thumbnail";
+import { prefetchContentHero } from "@/lib/prefetch-content-thumbnails";
 import { RetryImage } from "@/components/ui/retry-image";
 import { trackContentDetailView, trackPhotoViewFirst } from "@/lib/growth-analytics";
 
@@ -164,6 +165,13 @@ export function ContentViewer({
       trackPhotoViewFirst(effectiveItemId, { model_slug: modelSlug });
     }
   }, [effectiveContentType, effectiveItemId, modelSlug]);
+
+  useEffect(() => {
+    if (effectiveContentType !== "PHOTO") return;
+    const opts = { cdnMaxWidth: 1280, quality: 80 } as const;
+    if (effectivePrevId) prefetchContentHero(effectivePrevId, null, opts);
+    if (effectiveNextId) prefetchContentHero(effectiveNextId, null, opts);
+  }, [effectiveContentType, effectivePrevId, effectiveNextId]);
 
   useEffect(() => {
     if (displayedState) setDisplayedState(null);
@@ -401,7 +409,7 @@ export function ContentViewer({
             <Heart
               className={cn(
                 "h-4 w-4 transition-all",
-                isFavorited ? "fill-red-500 text-red-500 scale-110" : "text-muted-foreground"
+                isFavorited ? "fill-primary text-primary scale-110" : "text-muted-foreground"
               )}
             />
             <span className="hidden sm:inline">{isFavorited ? t("favorited") : t("favorite")}</span>
@@ -425,10 +433,15 @@ export function ContentViewer({
           </div>
         ) : (
           <RetryImage
-            src={contentThumbnailSrc(effectiveItemId, effectiveThumbUrl)}
+            src={contentThumbnailSrc(effectiveItemId, effectiveThumbUrl, {
+              cdnMaxWidth: 1280,
+              quality: 80,
+            })}
             fallbackSrc={contentThumbnailProxySrc(effectiveItemId)}
             alt={effectiveContentType === "VIDEO" ? t("video") : t("photo")}
-            className="max-h-[85vh] max-w-full w-auto mx-auto object-contain"
+            className="max-h-[85vh] max-w-full w-auto object-contain"
+            holdPreviousUntilLoaded
+            loading="eager"
             onContextMenu={(e) => e.preventDefault()}
             draggable={false}
           />

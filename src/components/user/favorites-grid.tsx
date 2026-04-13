@@ -238,7 +238,9 @@ export function FavoritesGrid() {
               >
                 <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300">
                   <LazyRetryImage
-                    src={contentThumbnailSrc(item.contentItemId, item.thumbnailUrl)}
+                    src={contentThumbnailSrc(item.contentItemId, item.thumbnailUrl, {
+                      cdnMaxWidth: 560,
+                    })}
                     fallbackSrc={contentThumbnailProxySrc(item.contentItemId)}
                     alt=""
                     className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06]"
@@ -257,14 +259,14 @@ export function FavoritesGrid() {
                   {/* Remove favorite button */}
                   <button
                     type="button"
-                    className="absolute top-2 right-2 min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/30 backdrop-blur-sm hover:bg-black/50 transition-all z-10 cursor-pointer"
+                    className="absolute top-2 right-2 min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg bg-black/40 hover:bg-black/55 transition-all z-10 cursor-pointer"
                     onClick={(e) => handleRemoveFavorite(e, item.contentItemId)}
                     disabled={removingId === item.contentItemId}
                     aria-label={t("removeFromFavorites")}
                   >
                     <Heart
                       className={cn(
-                        "h-3.5 w-3.5 fill-red-500 text-red-500 transition-transform",
+                        "h-3.5 w-3.5 fill-primary text-primary transition-transform",
                         removingId === item.contentItemId && "animate-pulse"
                       )}
                     />
@@ -273,7 +275,7 @@ export function FavoritesGrid() {
                   {/* Duration badge */}
                   {item.contentType === "VIDEO" && item.duration && item.duration > 0 && (
                     <div className="absolute bottom-2 right-2 z-10 pointer-events-none">
-                      <span className="bg-black/70 backdrop-blur-sm text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md">
+                      <span className="bg-black/75 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md">
                         {formatDuration(item.duration)}
                       </span>
                     </div>
@@ -286,7 +288,7 @@ export function FavoritesGrid() {
 
                   {/* Type badge */}
                   <div className="absolute top-2 left-2">
-                    <Badge variant="secondary" className="text-[10px] bg-black/50 backdrop-blur-sm text-white border-0 px-1.5 py-0.5">
+                    <Badge variant="secondary" className="text-[10px] bg-black/55 text-white border-0 px-1.5 py-0.5">
                       {item.contentType === "VIDEO" ? (
                         <><Play className="h-2.5 w-2.5 mr-0.5" /> Video</>
                       ) : (

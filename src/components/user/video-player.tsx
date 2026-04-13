@@ -908,7 +908,7 @@ export function VideoPlayer({
       className={cn(
         "relative bg-black rounded-xl sm:rounded-2xl overflow-hidden group select-none min-w-0 w-full",
         galleryOverlay
-          ? "aspect-video max-h-[min(70vh,560px)] lg:aspect-auto lg:max-h-none lg:h-[min(88dvh,980px)] lg:flex lg:items-center lg:justify-center"
+          ? "aspect-video max-h-[min(72dvh,560px)] sm:max-h-[min(70vh,560px)] lg:aspect-auto lg:max-h-none lg:h-[min(88dvh,980px)] lg:flex lg:items-center lg:justify-center"
           : "aspect-video",
       )}
       style={{ touchAction: "manipulation" } as React.CSSProperties}
@@ -956,7 +956,7 @@ export function VideoPlayer({
       {/* Error overlay */}
       {hlsError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10 px-6 text-center gap-4">
-          <AlertTriangle className="h-12 w-12 text-red-400" />
+          <AlertTriangle className="h-12 w-12 text-amber-400" />
           <p className="text-white text-sm max-w-sm">{hlsError}</p>
           <button
             onClick={(e) => { e.stopPropagation(); handleRetry(); }}
@@ -1021,11 +1021,11 @@ export function VideoPlayer({
         >
           {/* Progress fill only — buffered removed to avoid double-bar appearance */}
           <div
-            className="absolute top-0 left-0 h-full bg-red-500 rounded-full pointer-events-none"
+            className="absolute top-0 left-0 h-full bg-primary rounded-full pointer-events-none"
             style={{ width: `${progressPct}%` }}
           >
             {/* Scrub handle */}
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-red-500 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity shadow-md -mr-2" />
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity shadow-md -mr-2" />
           </div>
 
           {/* Hover timestamp tooltip */}
@@ -1127,7 +1127,7 @@ export function VideoPlayer({
                 >
                   <button
                     onClick={() => handleQualityChange(-1)}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === -1 ? "text-red-500 font-medium" : "text-white"}`}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === -1 ? "text-primary font-medium" : "text-white"}`}
                   >
                     Auto
                   </button>
@@ -1137,7 +1137,7 @@ export function VideoPlayer({
                       <button
                         key={level.index}
                         onClick={() => handleQualityChange(level.index)}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === level.index ? "text-red-500 font-medium" : "text-white"}`}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-white/10 transition-colors ${currentQuality === level.index ? "text-primary font-medium" : "text-white"}`}
                       >
                         {level.label}
                       </button>

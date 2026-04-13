@@ -73,7 +73,7 @@ function StatCard({
 const STATUS_COLORS: Record<string, string> = {
   PENDING: "bg-yellow-500/10 text-yellow-500",
   APPROVED: "bg-green-500/10 text-green-500",
-  REJECTED: "bg-red-500/10 text-red-500",
+  REJECTED: "bg-orange-500/10 text-orange-400",
   EXPIRED: "bg-gray-500/10 text-gray-400",
 };
 

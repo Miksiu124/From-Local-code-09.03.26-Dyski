@@ -52,7 +52,7 @@ function StatusMessage({ type, message }: { type: "success" | "error"; message: 
       className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
         type === "success"
           ? "bg-green-500/10 text-green-400 border border-green-500/20"
-          : "bg-red-500/10 text-red-400 border border-red-500/20"
+          : "bg-orange-500/10 text-orange-300 border border-orange-500/25"
       }`}
     >
       {type === "success" ? <Check className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
@@ -331,9 +331,9 @@ export default function DashboardPage() {
               {verifyResendStatus.type === "success" ? (
                 <Check className="h-4 w-4 text-green-400 shrink-0" />
               ) : (
-                <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+                <AlertCircle className="h-4 w-4 text-orange-300 shrink-0" />
               )}
-              <span className={verifyResendStatus.type === "success" ? "text-green-400" : "text-red-400"}>
+              <span className={verifyResendStatus.type === "success" ? "text-green-400" : "text-orange-300"}>
                 {verifyResendStatus.message}
               </span>
             </div>
