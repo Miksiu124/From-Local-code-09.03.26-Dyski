@@ -32,7 +32,8 @@
     "closeMenu": "Close menu",
     "userMenu": "User menu",
     "referral": "Referral program",
-    "settings": "Settings"
+    "settings": "Settings",
+    "discordServer": "Join our Discord server"
   },
   "auth": {
     "loginTitle": "Sign In",

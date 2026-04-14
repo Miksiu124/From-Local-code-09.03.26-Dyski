@@ -908,7 +908,7 @@ export function VideoPlayer({
       className={cn(
         "relative bg-black rounded-xl sm:rounded-2xl overflow-hidden group select-none min-w-0 w-full",
         galleryOverlay
-          ? "aspect-video max-h-[min(72dvh,560px)] sm:max-h-[min(70vh,560px)] lg:aspect-auto lg:max-h-none lg:h-[min(88dvh,980px)] lg:flex lg:items-center lg:justify-center"
+          ? "aspect-video max-h-[min(72dvh,560px)] sm:max-h-[min(70vh,560px)] lg:aspect-auto lg:max-h-none lg:h-[min(88dvh,980px)] lg:flex lg:min-h-0 lg:min-w-0"
           : "aspect-video",
       )}
       style={{ touchAction: "manipulation" } as React.CSSProperties}
@@ -924,7 +924,7 @@ export function VideoPlayer({
         className={cn(
           "object-contain",
           galleryOverlay
-            ? "h-full w-full max-lg:max-h-full lg:h-auto lg:w-auto lg:max-h-full lg:max-w-full"
+            ? "h-full w-full max-lg:max-h-full lg:flex-1 lg:min-h-0 lg:min-w-0 lg:max-h-full lg:max-w-full"
             : "h-full w-full",
         )}
         playsInline
