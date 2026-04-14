@@ -16,7 +16,7 @@ import {
   ShoppingCart,
   UserPlus,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
@@ -325,9 +325,15 @@ export function Header() {
               className="flex shrink-0 flex-col items-end gap-0.5 text-right"
               data-tour="tour-guest-auth"
             >
-              <Button asChild size="sm" className="min-h-[44px] md:min-h-9 touch-manipulation">
-                <Link href="/login">{t("auth.loginTitle")}</Link>
-              </Button>
+              <Link
+                href="/login"
+                className={cn(
+                  buttonVariants({ size: "sm", variant: "default" }),
+                  "min-h-[44px] md:min-h-9 touch-manipulation"
+                )}
+              >
+                {t("auth.loginTitle")}
+              </Link>
               <div className="max-w-[11.5rem] text-[10px] leading-tight text-muted-foreground sm:text-[11px] md:max-w-none md:text-xs">
                 <span className="whitespace-nowrap">{t("auth.noAccount")}</span>{" "}
                 <Link
