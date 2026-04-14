@@ -321,10 +321,7 @@ export function Header() {
                 </AnimatePresence>
               </div>
           ) : (
-            <div
-              className="flex shrink-0 flex-col items-end gap-0.5 text-right"
-              data-tour="tour-guest-auth"
-            >
+            <div className="flex shrink-0 items-center" data-tour="tour-guest-auth">
               <Link
                 href="/login"
                 className={cn(
@@ -334,15 +331,6 @@ export function Header() {
               >
                 {t("auth.loginTitle")}
               </Link>
-              <div className="max-w-[11.5rem] text-[10px] leading-tight text-muted-foreground sm:text-[11px] md:max-w-none md:text-xs">
-                <span className="whitespace-nowrap">{t("auth.noAccount")}</span>{" "}
-                <Link
-                  href="/register"
-                  className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/85 hover:underline"
-                >
-                  {t("nav.register")}
-                </Link>
-              </div>
             </div>
           )}
 

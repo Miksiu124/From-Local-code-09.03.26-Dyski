@@ -37,9 +37,11 @@ export function CatalogNavLink({ href, onClick, children, ...rest }: CatalogNavL
       if (!target.startsWith("/models/")) return;
 
       e.preventDefault();
-      doc.startViewTransition(() => {
+      const vt = doc.startViewTransition(() => {
         router.push(target);
       });
+      // Duplicate view-transition-name or invalid state rejects this promise → avoid unhandledrejection in Sentry
+      void vt.finished.catch(() => {});
     },
     [href, onClick, router],
   );

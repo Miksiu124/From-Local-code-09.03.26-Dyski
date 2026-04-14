@@ -267,31 +267,12 @@ export function ModelsGrid({
     }
   }, []);
 
-  const [models, setModels] = useState<ModelItem[]>(() => {
-    if (typeof window === "undefined") return initialModels;
-    if (sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country")) {
-      return [];
-    }
-    return initialModels;
-  });
-  const [cursor, setCursor] = useState<string | null>(() => {
-    if (typeof window === "undefined") return initialCursor;
-    if (sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country")) {
-      return null;
-    }
-    return initialCursor;
-  });
+  /** SSR-safe defaults; session restore runs in useLayoutEffect before paint to avoid hydration mismatch + wiping storage. */
+  const [models, setModels] = useState<ModelItem[]>(initialModels);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState(() => {
-    if (typeof window === "undefined") return "";
-    const v = sessionStorage.getItem("models_search");
-    return v != null ? String(v).slice(0, 500) : "";
-  });
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const v = sessionStorage.getItem("models_country");
-    return v && v.length <= 64 ? v : null;
-  });
+  const [search, setSearch] = useState("");
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupModelId, setPopupModelId] = useState<string | undefined>();
   const [popupModelName, setPopupModelName] = useState<string | undefined>();
@@ -301,28 +282,48 @@ export function ModelsGrid({
 
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const [filteredMode, setFilteredMode] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !!(sessionStorage.getItem("models_search") || sessionStorage.getItem("models_country"));
-  });
-  const [showPurchasedOnly, setShowPurchasedOnly] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return sessionStorage.getItem("models_purchased_only") === "1";
-  });
+  const [filteredMode, setFilteredMode] = useState(false);
+  const [showPurchasedOnly, setShowPurchasedOnly] = useState(false);
+  const [catalogHydrated, setCatalogHydrated] = useState(false);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const rawSearch = sessionStorage.getItem("models_search");
+      const searchVal = rawSearch != null ? String(rawSearch).slice(0, 500) : "";
+      const rawCountry = sessionStorage.getItem("models_country");
+      const countryVal = rawCountry && rawCountry.length <= 64 ? rawCountry : null;
+      if (sessionStorage.getItem("models_purchased_only") === "1") {
+        setShowPurchasedOnly(true);
+      }
+      if (searchVal || countryVal) {
+        setSearch(searchVal);
+        setSelectedCountry(countryVal);
+        setModels([]);
+        setCursor(null);
+        setFilteredMode(true);
+      }
+    } catch {
+      // storage blocked
+    } finally {
+      setCatalogHydrated(true);
+    }
+  }, []);
 
   // Persist folder search state (same logic as filter/sort in model folders)
   useEffect(() => {
-    if (typeof window !== "undefined") sessionStorage.setItem("models_search", search.slice(0, 500));
-  }, [search]);
+    if (typeof window === "undefined" || !catalogHydrated) return;
+    sessionStorage.setItem("models_search", search.slice(0, 500));
+  }, [search, catalogHydrated]);
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (selectedCountry) sessionStorage.setItem("models_country", selectedCountry);
-      else sessionStorage.removeItem("models_country");
-    }
-  }, [selectedCountry]);
+    if (typeof window === "undefined" || !catalogHydrated) return;
+    if (selectedCountry) sessionStorage.setItem("models_country", selectedCountry);
+    else sessionStorage.removeItem("models_country");
+  }, [selectedCountry, catalogHydrated]);
   useEffect(() => {
-    if (typeof window !== "undefined") sessionStorage.setItem("models_purchased_only", showPurchasedOnly ? "1" : "0");
-  }, [showPurchasedOnly]);
+    if (typeof window === "undefined" || !catalogHydrated) return;
+    sessionStorage.setItem("models_purchased_only", showPurchasedOnly ? "1" : "0");
+  }, [showPurchasedOnly, catalogHydrated]);
 
   // Fix #1: Scroll Restoration — restore scroll before first paint (useLayoutEffect)
   // Same as folder exit: instant, no visible jump from top
@@ -434,6 +435,7 @@ export function ModelsGrid({
   const abortControllerRef = useRef<AbortController | null>(null);
   const hasFetchedFilteredRef = useRef(false);
   useEffect(() => {
+    if (!catalogHydrated) return;
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     abortControllerRef.current?.abort();
 
@@ -469,14 +471,15 @@ export function ModelsGrid({
       controller.abort();
       abortControllerRef.current = null;
     };
-  }, [search, selectedCountry, fetchModels, initialModels, initialCursor]);
+  }, [catalogHydrated, search, selectedCountry, fetchModels, initialModels, initialCursor]);
 
   useEffect(() => {
+    if (!catalogHydrated) return;
     if (initialLoaded || initialModels.length > 0) return;
     if (search || selectedCountry) return;
     setInitialLoaded(true);
     fetchModels({ reset: true });
-  }, [initialLoaded, initialModels.length, fetchModels, search, selectedCountry]);
+  }, [catalogHydrated, initialLoaded, initialModels.length, fetchModels, search, selectedCountry]);
 
   const loadMoreRef = useRef<() => void>(() => { });
   loadMoreRef.current = () => {
@@ -734,10 +737,8 @@ export function ModelsGrid({
                   className="group block h-full min-h-[100px]"
                 >
                   <div className="flex h-full min-h-[100px]">
-                    <div
-                      className="w-24 lg:w-1/3 relative shrink-0 min-h-[100px]"
-                      style={{ viewTransitionName: modelThumbViewTransitionName(model.id) }}
-                    >
+                    {/* No viewTransitionName here: same model also appears in the grid below → duplicate name breaks View Transitions API */}
+                    <div className="w-24 lg:w-1/3 relative shrink-0 min-h-[100px]">
                       <NextImageWithFallback
                         src={model.avatarUrl || `/api/models/${model.folderName}/thumbnail`}
                         alt={model.name}

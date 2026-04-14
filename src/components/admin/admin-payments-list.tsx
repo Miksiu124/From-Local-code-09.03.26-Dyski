@@ -144,7 +144,8 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
   const [actionError, setActionError] = useState<string | null>(null);
   const [blikEnabled, setBlikEnabled] = useState(initialBlikEnabled);
   const [blikSaving, setBlikSaving] = useState(false);
-  const [now, setNow] = useState(Date.now());
+  /** null until mount — avoids SSR/client mismatch from Date.now() in relative times */
+  const [now, setNow] = useState<number | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const highlightHandled = useRef(false);
 
@@ -180,8 +181,9 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
     })();
   }, [highlightId, items]);
 
-  // Tick every second so time displays stay accurate
+  // Tick every second so time displays stay accurate (starts after mount for hydration safety)
   useEffect(() => {
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
@@ -468,11 +470,11 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
                       </div>
                       <div className="text-right shrink-0 ml-2">
                         <p className="text-xs text-muted-foreground tabular-nums">
-                          {timeAgo(p.createdAt, now)}
+                          {now == null ? "—" : timeAgo(p.createdAt, now)}
                         </p>
                         <p className="text-xs text-warning font-medium tabular-nums">
                           <Clock className="h-3 w-3 inline mr-0.5" />
-                          {timeLeft(p.expirationTime, now)}
+                          {now == null ? "—" : timeLeft(p.expirationTime, now)}
                         </p>
                       </div>
                     </div>

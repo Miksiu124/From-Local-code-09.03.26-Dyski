@@ -22,6 +22,11 @@ import { logger } from "@/lib/logger";
 import { trackFirstPlay, trackVideoPlayRepeat, trackVideoEngagement } from "@/lib/growth-analytics";
 import { getEffectiveAppOrigin, resolveApiPathForBrowser } from "@/lib/public-app-origin";
 
+/** play() rejects when interrupted (new load, pause(), detach) — do not leave a floating rejection */
+function consumePlayPromise(p: Promise<void> | undefined) {
+  if (p) void p.catch(() => {});
+}
+
 interface QualityLevel {
   index: number;
   height: number;
@@ -594,7 +599,8 @@ export function VideoPlayer({
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    v.paused ? v.play() : v.pause();
+    if (v.paused) consumePlayPromise(v.play());
+    else v.pause();
   }, []);
 
   const toggleMute = useCallback(() => {
