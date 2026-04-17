@@ -210,6 +210,7 @@
     "uploadProof": "Upload Payment Proof",
     "proofUploaded": "Proof uploaded",
     "pending": "Pending Verification",
+    "pendingManualVerification": "We verify payments manually — thank you for your patience.",
     "approved": "Approved",
     "rejected": "Rejected",
     "perCredit": "per credit",

@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2, UserPlus, Check } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaymentCountdown } from "@/components/payments/payment-countdown";
 import { cn, formatCredits, formatPrice } from "@/lib/utils";
@@ -1097,11 +1097,14 @@ export function CreditPurchaseFlow({
             {/* Pending / Waiting */}
             {(!paymentStatus || paymentStatus === "PENDING" || paymentStatus === "EXPIRED") && (
               <Card>
-                <CardHeader className="px-4 pb-2 pt-4 text-center sm:px-6 sm:pb-4 sm:pt-6">
+                <CardHeader className="space-y-2 px-4 pb-2 pt-4 text-center sm:space-y-2.5 sm:px-6 sm:pb-4 sm:pt-6">
                   <CardTitle className="flex items-center justify-center gap-2 text-base sm:text-lg">
                     <Clock className="h-4 w-4 shrink-0 text-primary sm:h-5 sm:w-5" />
                     {t("pending")}
                   </CardTitle>
+                  <CardDescription className="mx-auto max-w-md text-pretty leading-relaxed">
+                    {t("pendingManualVerification")}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 px-4 pb-4 sm:space-y-6 sm:px-6 sm:pb-6">
                   {/* Transaction code */}
