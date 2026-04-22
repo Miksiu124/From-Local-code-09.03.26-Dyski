@@ -48,13 +48,9 @@ func main() {
 
 	ctx := context.Background()
 
-	otlpShutdown, errOtel := observability.InitOTLPLogs(ctx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
+	otlpShutdown, errOtel := observability.InitOpenTelemetry(ctx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
 	if errOtel != nil {
-		log.Fatalf("OTLP logs: %v", errOtel)
-	}
-	traceShutdown, errTrace := observability.InitOTLPTraces(ctx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
-	if errTrace != nil {
-		log.Fatalf("OTLP traces: %v", errTrace)
+		log.Fatalf("OpenTelemetry: %v", errOtel)
 	}
 
 	// ── Database connections ─────────────────────────────────────────────
@@ -82,12 +78,12 @@ func main() {
 	// SECURITY PATTERN: Ufamy tylko zweryfikowanemu przez Nginx nagłówkowi X-Real-IP, zapobiegając fałszowaniu IP przez hakera w X-Forwarded-For
 	e.IPExtractor = echo.ExtractIPFromRealIPHeader()
 
-	// Global middleware
+	// Global middleware (RequestID przed OTel HTTP, żeby req_id i span szły razem w logach)
 	e.Use(echomw.Recover())
-	if strings.TrimSpace(cfg.OTLPLogEndpoint) != "" {
+	e.Use(echomw.RequestID())
+	if observability.OtelExportEnabled {
 		e.Use(observability.EchoOTelTrace(cfg.OTELServiceName))
 	}
-	e.Use(echomw.RequestID())
 	e.Use(observability.EchoSlogOTLP())
 	e.Use(echomw.Logger())
 	e.Use(middleware.CORSMiddleware(cfg))
@@ -352,11 +348,8 @@ func main() {
 	}
 	otelCtx, otelCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer otelCancel()
-	if err := traceShutdown(otelCtx); err != nil {
-		log.Printf("OTLP trace shutdown: %v", err)
-	}
 	if err := otlpShutdown(otelCtx); err != nil {
-		log.Printf("OTLP log shutdown: %v", err)
+		log.Printf("OpenTelemetry shutdown: %v", err)
 	}
 	log.Println("Server exited cleanly")
 }

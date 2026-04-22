@@ -15,7 +15,9 @@ RUN go mod tidy && go mod download
 
 COPY . .
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
+# Pełne źródło (otel_init.go itd.) — uzupełnij go.sum przed buildem
+RUN go mod tidy && go mod download && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -ldflags="-w -s" -o /app/server ./cmd/server && \
     go build -ldflags="-w -s" -o /app/seed ./cmd/seed
 
