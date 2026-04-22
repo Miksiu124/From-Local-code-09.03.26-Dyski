@@ -216,6 +216,25 @@ services:
     networks:
       - internal
 
+  # Eksport stub_status → Prometheus (via OTel collector w docker-compose.lgtm.yml)
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.1
+    container_name: content-nginx-exporter
+    restart: unless-stopped
+    command:
+      - -nginx.scrape-uri=http://nginx:80/internal/nginx_status
+    expose:
+      - "9113"
+    depends_on:
+      - nginx
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: "0.1"
+    networks:
+      - internal
+
 volumes:
   postgres_data:
   redis_data:
