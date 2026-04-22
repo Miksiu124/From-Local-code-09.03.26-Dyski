@@ -66,12 +66,12 @@ export default async function HomePage() {
   ] = await Promise.all([
     withTimeout(
       fetchApi<ModelsResponse>("/models?limit=20", { revalidate: 60 }).catch(() => ({ models: [], nextCursor: null })),
-      5000,
+      15_000,
       { models: [], nextCursor: null }
     ),
     withTimeout(
       fetchApi<ModelsResponse>("/models?featured=true&limit=10", { revalidate: 60 }).catch(() => ({ models: [], nextCursor: null })),
-      5000,
+      15_000,
       { models: [], nextCursor: null }
     ),
     withTimeout(fetchApi<Country[]>("/countries", { revalidate: 60 }).catch(() => []), 5000, []),

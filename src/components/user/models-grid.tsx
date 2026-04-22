@@ -392,7 +392,18 @@ export function ModelsGrid({
         if (opts.search) params.set("search", opts.search);
         if (opts.country) params.set("country", opts.country);
 
-        const res = await fetch(`/api/models?${params.toString()}`, { signal: opts.signal });
+        const ac = new AbortController();
+        const timeoutId = setTimeout(() => ac.abort(), 25_000);
+        if (opts.signal) {
+          if (opts.signal.aborted) ac.abort();
+          else opts.signal.addEventListener("abort", () => ac.abort(), { once: true });
+        }
+        let res: Response;
+        try {
+          res = await fetch(`/api/models?${params.toString()}`, { signal: ac.signal });
+        } finally {
+          clearTimeout(timeoutId);
+        }
         if (!res.ok) return;
 
         const data = await res.json();
