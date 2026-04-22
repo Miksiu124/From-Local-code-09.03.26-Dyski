@@ -100,6 +100,8 @@ services:
       POSTGRES_DB: content_platform
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      # Domyślne PG 18: /var/lib/postgresql/18/docker — omija postgres_data. Trzymaj klaster na named volume.
+      PGDATA: /var/lib/postgresql/data
     command:
       - postgres
       - -c
