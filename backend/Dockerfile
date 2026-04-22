@@ -3,19 +3,15 @@
 # ═══════════════════════════════════════════════════════════════
 
 # ── Build Stage ───────────────────────────────────────────────
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-# Uzupełnij sumy (np. po dodaniu OTel trace) — potem warto zcommitować zaktualizowany go.sum lokalnie: go mod tidy
-RUN go mod tidy && go mod download
-
+# Pełne źródło od razu — go mod tidy uzupełnia go.sum w obrazie (repo może nie commitować świeżych sum).
 COPY . .
 ARG TARGETARCH
-# Pełne źródło (otel_init.go itd.) — uzupełnij go.sum przed buildem
 RUN go mod tidy && go mod download && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -ldflags="-w -s" -o /app/server ./cmd/server && \
