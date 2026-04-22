@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 	otlptracehttp "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -23,10 +24,12 @@ import (
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
+	"sync"
+	"sync/atomic"
 )
 
 // OtelExportEnabled is true after successful InitOpenTelemetry with a non-empty OTLP endpoint.
-var OtelExportEnabled bool
+var OtelExportEnabled atomic.Bool
 
 // InitOpenTelemetry configures OTLP log, trace, and metric export when rawEndpoint is non-empty.
 // Uses OTEL_EXPORTER_OTLP_* from the environment (same as Grafana Cloud / otel-lgtm).
@@ -56,10 +59,10 @@ func InitOpenTelemetry(ctx context.Context, rawEndpoint, serviceName string) (sh
 	if err != nil {
 		return nil, fmt.Errorf("otlp log exporter: %w", err)
 	}
-	logProcessor := log.NewSimpleProcessor(logExporter)
-	logProvider := log.NewLoggerProvider(
-		log.WithResource(res),
-		log.WithProcessor(logProcessor),
+	logProcessor := sdklog.NewSimpleProcessor(logExporter)
+	logProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(logProcessor),
 	)
 	global.SetLoggerProvider(logProvider)
 
@@ -103,8 +106,8 @@ func InitOpenTelemetry(ctx context.Context, rawEndpoint, serviceName string) (sh
 
 	h := otelslog.NewHandler("content-platform-backend", otelslog.WithLoggerProvider(logProvider))
 	slog.SetDefault(slog.New(h))
-	otlpLogsOn = true
-	OtelExportEnabled = true
+	otlpLogsOn.Store(true)
+	OtelExportEnabled.Store(true)
 	slog.Info("otel export on", "otlp_endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "service", serviceName)
 
 	return func(sctx context.Context) error {
@@ -137,4 +140,39 @@ func traceSampler() trace.Sampler {
 		return trace.ParentBased(trace.NeverSample())
 	}
 	return trace.ParentBased(trace.TraceIDRatioBased(r))
+}
+
+// LaunchOpenTelemetryAsync uruchamia InitOpenTelemetry w tle, żeby Listen :8080 nie czekał na
+// gotowość kolektora OTLP (wcześniej blokowało start API i „pustą” stronę).
+// Zwraca funkcję shutdown (thread-safe) do użycia w graceful stop.
+func LaunchOpenTelemetryAsync(rawEndpoint, serviceName string) func(context.Context) error {
+	if s := strings.TrimSpace(os.Getenv("OTEL_SDK_DISABLED")); s == "1" || strings.EqualFold(s, "true") {
+		return func(context.Context) error { return nil }
+	}
+	if strings.TrimSpace(rawEndpoint) == "" {
+		return func(context.Context) error { return nil }
+	}
+
+	var mu sync.Mutex
+	var inner func(context.Context) error = func(context.Context) error { return nil }
+
+	go func() {
+		initCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		sh, err := InitOpenTelemetry(initCtx, rawEndpoint, serviceName)
+		if err != nil {
+			log.Printf("OpenTelemetry background init: %v", err)
+			return
+		}
+		mu.Lock()
+		inner = sh
+		mu.Unlock()
+	}()
+
+	return func(ctx context.Context) error {
+		mu.Lock()
+		fn := inner
+		mu.Unlock()
+		return fn(ctx)
+	}
 }

@@ -66,14 +66,8 @@ func main() {
 	defer redisClient.Close()
 	log.Println("✓ Connected to Redis")
 
-	// OpenTelemetry: optional; timeout + soft-fail so a broken/slow collector cannot take the API down
-	otelCtx, otelCancel := context.WithTimeout(ctx, 25*time.Second)
-	otlpShutdown, errOtel := observability.InitOpenTelemetry(otelCtx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
-	otelCancel()
-	if errOtel != nil {
-		log.Printf("OpenTelemetry init failed (continuing without OTLP export): %v", errOtel)
-		otlpShutdown = func(context.Context) error { return nil }
-	}
+	// OpenTelemetry w tle — HTTP musi nasłuchiwać od razu; Loki/Tempo/metryki włączą się po połączeniu z kolektorem
+	otlpShutdown := observability.LaunchOpenTelemetryAsync(cfg.OTLPLogEndpoint, cfg.OTELServiceName)
 
 	// ── Echo server ──────────────────────────────────────────────────────
 	e := echo.New()
@@ -85,9 +79,7 @@ func main() {
 	// Global middleware (RequestID przed OTel HTTP, żeby req_id i span szły razem w logach)
 	e.Use(echomw.Recover())
 	e.Use(echomw.RequestID())
-	if observability.OtelExportEnabled {
-		e.Use(observability.EchoOTelTrace(cfg.OTELServiceName))
-	}
+	e.Use(observability.EchoOTelTrace(cfg.OTELServiceName))
 	e.Use(observability.EchoSlogOTLP())
 	e.Use(echomw.Logger())
 	e.Use(middleware.CORSMiddleware(cfg))

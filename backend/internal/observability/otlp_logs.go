@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -12,7 +13,7 @@ import (
 )
 
 // otlpLogsOn jest true po udanym InitOpenTelemetry z niepustym endpointem.
-var otlpLogsOn bool
+var otlpLogsOn atomic.Bool
 
 // EchoSlogOTLP opcjonalnie: jedna linia slog na żądanie (→ Loki), tylko gdy InitOpenTelemetry włączył logi.
 // Ustaw po RequestID i po otelecho, żeby w logu były request_id i trace_id.
@@ -21,7 +22,7 @@ func EchoSlogOTLP() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			start := time.Now()
 			err := next(c)
-			if !otlpLogsOn {
+			if !otlpLogsOn.Load() {
 				return err
 			}
 			rid := c.Response().Header().Get(echo.HeaderXRequestID)

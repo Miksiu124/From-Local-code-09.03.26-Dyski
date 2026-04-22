@@ -120,10 +120,20 @@ services:
     networks:
       - internal
 
-  # NIE wstrzykuj tutaj OTEL_* do usługi `api`: inicjalizacja SDK OTLP w procesie Go potrafi
-  # zablokować start serwera HTTP (brak nasłuchu :8080, pusty katalog). Stack LGTM (Loki/Tempo)
-  # działa nadal; metryki kontenerów idą przez cAdvisor. Eksport logów/traces z API: osobno
-  # (np. stdout → agent) albo gdy zbadamy nieblokujący init.
+  # Logi/traces/metryki API → kolektor OTLP w `otel-lgtm` (Loki/Tempo/Prom). Init SDK w Go jest
+  # asynchroniczny (LaunchOpenTelemetryAsync) — nie blokuje :8080.
+  api:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: content-api
+      OTEL_TRACES_SAMPLE_RATIO: "1"
+    depends_on:
+      otel-lgtm:
+        condition: service_started
 
 volumes:
   lgtm_data:
