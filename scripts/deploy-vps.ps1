@@ -9,7 +9,9 @@
 #   -Billionmail = uzyj docker-compose.billionmail.yml
 #   -Lgtm         = grafana/otel-lgtm (+ docker-compose.lgtm.yml); na pierwszym runie tworzy .env.lgtm z example, jesli brak
 # Wymaga: rsync (z Git Bash lub WSL) albo uzyj scp
-# VPS_USE_POSTGRES_CLUSTER=1 w .env.deploy → dodaje docker-compose.use3566349.yml (wolumen contentvault_postgres_cluster zamiast postgres_data)
+# Wolumen produkcyjny: docker-compose.use3566349.yml (contentvault_postgres_cluster).
+#   Źródła (kolejność): .env.deploy → lokalne .env.vps → $VPS_PATH/.env.vps na serwerze → zmienna procesu (CI) → 0
+#   Na VPS skopiuj .env.vps.example → /opt/contentvault/.env.vps, aby git pull/CI nigdy nie traciły flagi.
 
 param([switch]$Pull, [switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$PgUpgrade, [switch]$PgResume, [switch]$Billionmail, [switch]$Lgtm)
 
@@ -33,8 +35,38 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot  # ContentManager/
 
 $GIT_BRANCH = if ($env:GIT_BRANCH) { $env:GIT_BRANCH } else { "main" }
 
-$pgc = [string]$env:VPS_USE_POSTGRES_CLUSTER
-$usePostgresCluster = ($pgc -eq "1" -or $pgc -ieq "true" -or $pgc -ieq "yes")
+function Get-DotenvKey {
+  param([string]$Path, [string]$Key)
+  if (-not (Test-Path -LiteralPath $Path)) { return $null }
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    if ($line -match '^\s*([^#=]+)=(.*)$' -and $matches[1].Trim()) {
+      if ($matches[1].Trim() -eq $Key) { return ($matches[2].Trim() -replace "`r`$", '') }
+    }
+  }
+  return $null
+}
+
+$pgcResolved = Get-DotenvKey $deployEnv "VPS_USE_POSTGRES_CLUSTER"
+if ($null -eq $pgcResolved) {
+  $pgcResolved = Get-DotenvKey (Join-Path $RepoRoot ".env.vps") "VPS_USE_POSTGRES_CLUSTER"
+}
+if ($null -eq $pgcResolved -and $VPS_HOST) {
+  $rf = "$VPS_PATH/.env.vps"
+  try {
+    $remoteLine = & ssh -o BatchMode=yes -o ConnectTimeout=8 "${VPS_USER}@${VPS_HOST}" "test -f `"$rf`" && grep -E '^[[:space:]]*VPS_USE_POSTGRES_CLUSTER[[:space:]]*=' `"$rf`" 2>/dev/null | head -1" 2>$null
+    if ($remoteLine -match '^\s*VPS_USE_POSTGRES_CLUSTER\s*=\s*(.*)$') {
+      $pgcResolved = $matches[1].Trim() -replace "`r`$", ''
+    }
+  } catch { }
+}
+if ($null -eq $pgcResolved) {
+  $x = [string]$env:VPS_USE_POSTGRES_CLUSTER
+  if (-not [string]::IsNullOrWhiteSpace($x)) { $pgcResolved = $x }
+}
+if ($null -eq $pgcResolved) { $pgcResolved = "0" }
+
+$usePostgresCluster = ($pgcResolved -eq "1" -or $pgcResolved -ieq "true" -or $pgcResolved -ieq "yes")
+[Environment]::SetEnvironmentVariable("VPS_USE_POSTGRES_CLUSTER", $pgcResolved, "Process")
 
 Write-Host "=== Dyskiof deploy ==="
 Write-Host "Host: $VPS_USER@$VPS_HOST`:$VPS_PATH"
@@ -143,6 +175,21 @@ if ($RebuildFresh) {
   $preLgtm = if ($Lgtm) { "([ -f .env.lgtm ] || cp .env.lgtm.example .env.lgtm) && " } else { "" }
   $postNginx = "docker compose $composeFiles up -d --no-deps --force-recreate nginx 2>/dev/null || true"
   ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && $preLgtm docker compose $composeFiles up -d && $postNginx"
+}
+
+# Weryfikacja wolumenu Postgres (tylko po zwykłym compose up; skrypty rebuild/upgrade same pilnują danych)
+$runPgVerify = (-not $Rebuild) -and (-not $RebuildFresh) -and (-not $PgUpgrade)
+if ($runPgVerify -and $LASTEXITCODE -eq 0) {
+  if ($usePostgresCluster) {
+    $mounts = ssh -o BatchMode=yes -o ConnectTimeout=8 "${VPS_USER}@${VPS_HOST}" "docker inspect -f '{{range .Mounts}}{{.Name}};{{end}}' content-postgres 2>/dev/null" 2>$null
+    if ($mounts -notmatch 'contentvault_postgres_cluster') {
+      Write-Error "Postgres: oczekiwano wolumenu contentvault_postgres_cluster; montaż: '$mounts'. Ustaw lokalnie VPS_USE_POSTGRES_CLUSTER=1 w .env.deploy albo skopiuj .env.vps.example na serwer do $VPS_PATH/.env.vps i wdróż ponownie."
+      exit 1
+    }
+    Write-Host "Postgres: OK (wolumen klastra)." -ForegroundColor Green
+  } elseif ($VPS_PATH -eq '/opt/contentvault') {
+    Write-Warning "Postgres: tryb domyślny (postgres_data), nie wolumen klastra. Jeśli na produkcji brak sesji/ użytkowników, ustaw VPS_USE_POSTGRES_CLUSTER=1 albo $VPS_PATH/.env.vps — patrz .env.vps.example"
+  }
 }
 
 Write-Host ""
