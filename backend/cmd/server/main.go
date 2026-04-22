@@ -19,8 +19,9 @@ import (
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
-	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/geo"
+	"content-platform-backend/internal/growth"
+	"content-platform-backend/internal/jobs"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/links"
@@ -47,6 +48,15 @@ func main() {
 
 	ctx := context.Background()
 
+	otlpShutdown, errOtel := observability.InitOTLPLogs(ctx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
+	if errOtel != nil {
+		log.Fatalf("OTLP logs: %v", errOtel)
+	}
+	traceShutdown, errTrace := observability.InitOTLPTraces(ctx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
+	if errTrace != nil {
+		log.Fatalf("OTLP traces: %v", errTrace)
+	}
+
 	// ── Database connections ─────────────────────────────────────────────
 	pgPool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -54,6 +64,9 @@ func main() {
 	}
 	defer pgPool.Close()
 	log.Println("✓ Connected to PostgreSQL")
+
+	jobSched := jobs.NewScheduler()
+	defer jobSched.Stop()
 
 	redisClient, err := database.NewRedisClient(ctx, cfg.RedisURL)
 	if err != nil {
@@ -71,7 +84,11 @@ func main() {
 
 	// Global middleware
 	e.Use(echomw.Recover())
+	if strings.TrimSpace(cfg.OTLPLogEndpoint) != "" {
+		e.Use(observability.EchoOTelTrace(cfg.OTELServiceName))
+	}
 	e.Use(echomw.RequestID())
+	e.Use(observability.EchoSlogOTLP())
 	e.Use(echomw.Logger())
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
@@ -132,6 +149,15 @@ func main() {
 
 	// Mailer
 	mailService := mailer.New(cfg)
+
+	if _, err := jobSched.AddJob("*/15 * * * *", func() {
+		jctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		jobs.RunCheckoutAbandonmentReminders(jctx, pgPool, mailService, cfg)
+		cancel()
+	}); err != nil {
+		log.Fatalf("checkout reminder cron: %v", err)
+	}
+	jobSched.Start()
 
 	// Auth routes (public)
 	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient)
@@ -323,6 +349,14 @@ func main() {
 	defer cancel()
 	if err := e.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	otelCtx, otelCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer otelCancel()
+	if err := traceShutdown(otelCtx); err != nil {
+		log.Printf("OTLP trace shutdown: %v", err)
+	}
+	if err := otlpShutdown(otelCtx); err != nil {
+		log.Printf("OTLP log shutdown: %v", err)
 	}
 	log.Println("Server exited cleanly")
 }

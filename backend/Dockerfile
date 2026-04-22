@@ -10,7 +10,8 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download
+# Uzupełnij sumy (np. po dodaniu OTel trace) — potem warto zcommitować zaktualizowany go.sum lokalnie: go mod tidy
+RUN go mod tidy && go mod download
 
 COPY . .
 ARG TARGETARCH
