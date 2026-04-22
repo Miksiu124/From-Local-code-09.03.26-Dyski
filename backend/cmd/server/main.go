@@ -350,9 +350,9 @@ func main() {
 	if err := e.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
-	otelCtx, otelCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer otelCancel()
-	if err := otlpShutdown(otelCtx); err != nil {
+	otelShutdownCtx, otelShutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer otelShutdownCancel()
+	if err := otlpShutdown(otelShutdownCtx); err != nil {
 		log.Printf("OpenTelemetry shutdown: %v", err)
 	}
 	log.Println("Server exited cleanly")
