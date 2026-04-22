@@ -100,8 +100,9 @@ services:
       POSTGRES_DB: content_platform
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
-      # Domyślne PG 18: /var/lib/postgresql/18/docker — omija postgres_data. Trzymaj klaster na named volume.
-      PGDATA: /var/lib/postgresql/data
+      # Named volume jest montowany na /var/lib/postgresql/data; starszy układ ma klaster w podkatalogu data/.
+      # (root volume miał też 18/ — wtedy initdb na samym .../data się wywala). Używamy istniejącego klastra:
+      PGDATA: /var/lib/postgresql/data/data
     command:
       - postgres
       - -c
