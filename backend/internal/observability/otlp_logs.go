@@ -22,7 +22,7 @@ func EchoSlogOTLP() echo.MiddlewareFunc {
 			}
 			rid := c.Response().Header().Get(echo.HeaderXRequestID)
 			if rid == "" {
-				rid = c.Request().Header().Get(echo.HeaderXRequestID)
+				rid = c.Request().Header.Get(echo.HeaderXRequestID)
 			}
 			var traceID, spanID string
 			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {

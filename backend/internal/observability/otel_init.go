@@ -53,7 +53,7 @@ func InitOpenTelemetry(ctx context.Context, rawEndpoint, serviceName string) (sh
 	if err != nil {
 		return nil, fmt.Errorf("otlp log exporter: %w", err)
 	}
-	logProcessor := log.NewSimpleLogRecordProcessor(logExporter)
+	logProcessor := log.NewSimpleProcessor(logExporter)
 	logProvider := log.NewLoggerProvider(
 		log.WithResource(res),
 		log.WithProcessor(logProcessor),
