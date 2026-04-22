@@ -9,6 +9,7 @@
 #   -Billionmail = uzyj docker-compose.billionmail.yml
 #   -Lgtm         = grafana/otel-lgtm (+ docker-compose.lgtm.yml); na pierwszym runie tworzy .env.lgtm z example, jesli brak
 # Wymaga: rsync (z Git Bash lub WSL) albo uzyj scp
+# VPS_USE_POSTGRES_CLUSTER=1 w .env.deploy → dodaje docker-compose.use3566349.yml (wolumen contentvault_postgres_cluster zamiast postgres_data)
 
 param([switch]$Pull, [switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$PgUpgrade, [switch]$PgResume, [switch]$Billionmail, [switch]$Lgtm)
 
@@ -32,12 +33,16 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot  # ContentManager/
 
 $GIT_BRANCH = if ($env:GIT_BRANCH) { $env:GIT_BRANCH } else { "main" }
 
+$pgc = [string]$env:VPS_USE_POSTGRES_CLUSTER
+$usePostgresCluster = ($pgc -eq "1" -or $pgc -ieq "true" -or $pgc -ieq "yes")
+
 Write-Host "=== Dyskiof deploy ==="
 Write-Host "Host: $VPS_USER@$VPS_HOST`:$VPS_PATH"
 if ($Pull) { Write-Host "Tryb: git pull na VPS (branch: $GIT_BRANCH, bez rsync/tar)" }
 if ($PgUpgrade) { Write-Host "Tryb: UPGRADE PostgreSQL 16→18 (backup-first, zero utraty danych)" }
 if ($PgResume) { Write-Host "Tryb: UPGRADE --resume (kontynuuj od restore)" }
 if ($Lgtm) { Write-Host "LGTM: docker-compose.lgtm.yml (Grafana + OTel + Loki + Tempo)" }
+if ($usePostgresCluster) { Write-Host "Postgres: docker-compose.use3566349.yml (wolumen klastra)" }
 Write-Host ""
 
 function Sync-WithTarScp {
@@ -116,6 +121,7 @@ Write-Host "Starting on VPS..."
 
 $composeFiles = "-f docker-compose.yml -f docker-compose.vps.yml"
 if ($Billionmail) { $composeFiles = "-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml" }
+if ($usePostgresCluster) { $composeFiles = "$composeFiles -f docker-compose.use3566349.yml" }
 if ($Lgtm) { $composeFiles = "$composeFiles -f docker-compose.lgtm.yml" }
 
 if ($RebuildFresh) {

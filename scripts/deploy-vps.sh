@@ -11,6 +11,7 @@
 #   --lgtm         = grafana/otel-lgtm; brak .env.lgtm → kopia z .env.lgtm.example
 # Wymaga: rsync, ssh
 # Polaczenie: domyslnie z ContentManager/.env.deploy (VPS_HOST, VPS_USER, VPS_PATH). Mozesz nadpisac zmienne srodowiskowe.
+# VPS_USE_POSTGRES_CLUSTER=1 w .env.deploy → dodaje docker-compose.use3566349.yml (wolumen contentvault_postgres_cluster).
 
 set -e
 
@@ -58,6 +59,10 @@ echo "Host: $VPS_USER@$VPS_HOST:$VPS_PATH"
 [[ "$PG_UPGRADE" == true ]] && echo "Tryb: UPGRADE PostgreSQL 16→18 (backup-first, zero utraty danych)"
 [[ "$PG_RESUME" == true ]] && echo "Tryb: UPGRADE --resume (kontynuuj od restore)"
 [[ "$LGTM" == true ]] && echo "LGTM: docker-compose.lgtm.yml (Grafana + OTel + Loki + Tempo)"
+USE_PG="${VPS_USE_POSTGRES_CLUSTER:-}"
+if [[ "$USE_PG" == "1" || "$USE_PG" == "true" || "$USE_PG" == "yes" ]]; then
+  echo "Postgres: docker-compose.use3566349.yml (wolumen klastra)"
+fi
 echo ""
 
 if [[ "$GIT_PULL" == true ]]; then
@@ -84,6 +89,9 @@ echo "Starting on VPS..."
 # VPS: zawsze docker-compose.vps.yml → nginx.conf.production (bez polegania na NGINX_CONFIG w .env)
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
 [[ -n "$BILLIONMAIL" ]] && COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
+if [[ "$USE_PG" == "1" || "$USE_PG" == "true" || "$USE_PG" == "yes" ]]; then
+  COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.use3566349.yml"
+fi
 [[ "$LGTM" == true ]] && COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lgtm.yml"
 
 PRE_LGTM=""
