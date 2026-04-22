@@ -1,5 +1,5 @@
 #!/bin/bash
-# ContentVault - Pelna fresh instalacja z repo (nukuje kod i baze)
+# Dyskiof - Pelna fresh instalacja z repo (nukuje kod i baze)
 # ZACHOWUJE: .env (klucze), dane uzytkownika dominikql.smurf@gmail.com
 #
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-fresh-install.sh
@@ -25,7 +25,7 @@ cd "$REPO_ROOT"
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
 
 echo "=========================================="
-echo "ContentVault - FRESH INSTALL"
+echo "Dyskiof - FRESH INSTALL"
 echo "=========================================="
 echo "Chroniony uzytkownik: $PROTECTED_EMAIL"
 echo "Repo: $REPO_URL ($REPO_BRANCH)"

@@ -21,7 +21,7 @@ Typowe błędy:
 
 ## Konfiguracja (boky/postfix + Resend)
 
-ContentVault używa kontenera `content-smtp` (boky/postfix), który przekazuje maile przez Resend. **Wymagane zmienne w `.env` na VPS:**
+Dyskiof używa kontenera `content-smtp` (boky/postfix), który przekazuje maile przez Resend. **Wymagane zmienne w `.env` na VPS:**
 
 ```env
 # Nadawca – musi być z Twojej domeny

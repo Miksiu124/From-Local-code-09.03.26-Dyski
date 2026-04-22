@@ -54,7 +54,7 @@ check_table() {
 }
 
 echo "=========================================="
-echo "ContentVault - Pending Migrations"
+echo "Dyskiof - Pending Migrations"
 echo "=========================================="
 
 # Check custom_links (required for admin custom links feature)

@@ -45,6 +45,21 @@ http {
     real_ip_header CF-Connecting-IP;
     real_ip_recursive on;
 
+    # Metryki stub_status tylko dla hosta `nginx` w sieci Docker (nginx-prometheus-exporter: http://nginx:80/...).
+    # Główne vhosty na :80 robią 301→HTTPS, więc bez tego bloku exporter widzi pustą odpowiedź (nginx_up=0).
+    server {
+        listen 80;
+        server_name nginx;
+        location /internal/nginx_status {
+            stub_status on;
+            access_log off;
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            allow 192.168.0.0/16;
+            deny all;
+        }
+    }
+
     # --- DEFAULT SERVER (Ghost Mode / No SSL Leak) ---
     server {
         listen 80 default_server;

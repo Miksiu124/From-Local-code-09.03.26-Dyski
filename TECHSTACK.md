@@ -1,6 +1,6 @@
-# Tech Stack — ContentVault
+# Tech Stack — Dyskiof
 
-Kompletne zestawienie technologii wykorzystanych w projekcie ContentVault.
+Kompletne zestawienie technologii wykorzystanych w projekcie Dyskiof.
 
 ---
 

@@ -1,7 +1,7 @@
 # Security Audit Report
 
 **Date**: 2026-03-13  
-**Scope**: ContentManager / ContentVault — Next.js proxy, Go backend, NGINX, Docker  
+**Scope**: ContentManager / Dyskiof — Next.js proxy, Go backend, NGINX, Docker  
 **Auditor**: Security Engineer (application security assessment)
 
 ---

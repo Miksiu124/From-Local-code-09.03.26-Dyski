@@ -196,6 +196,9 @@ type PurchaseInfo struct {
 	UserCountry     string
 	PaymentAttempts int
 	UserAgent       string
+
+	// ApprovedByDisplay is set only for NotifyPurchaseApproved (admin name or email).
+	ApprovedByDisplay string
 }
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
@@ -235,7 +238,7 @@ func (n *Notifier) NotifyNewPurchase(ctx context.Context, info PurchaseInfo) {
 	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
-		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Author:    &Author{Name: "Dyskiof · płatności", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
 		Title:     fmt.Sprintf("\U0001F4B0 New Payment: %s", info.PackageName),
 		URL:       n.paymentURL(info.PurchaseID),
 		Color:     color,
@@ -267,10 +270,20 @@ func (n *Notifier) NotifyPurchaseApproved(ctx context.Context, info PurchaseInfo
 		{Name: "\U0001F4B3 Method", Value: formatMethodEmoji(info), Inline: true},
 	}
 
+	approvedVal := "_Unknown_"
+	if s := strings.TrimSpace(info.ApprovedByDisplay); s != "" {
+		approvedVal = fmt.Sprintf("`%s`", strings.ReplaceAll(s, "`", "'"))
+	}
+	fields = append(fields, Field{
+		Name:   "Approved by",
+		Value:  approvedVal,
+		Inline: false,
+	})
+
 	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
-		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Author:    &Author{Name: "Dyskiof · płatności", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
 		Title:     fmt.Sprintf("\u2705 Payment Approved: %s", info.PackageName),
 		URL:       n.paymentURL(info.PurchaseID),
 		Color:     ColorGreen,
@@ -311,7 +324,7 @@ func (n *Notifier) NotifyPurchaseRejected(ctx context.Context, info PurchaseInfo
 	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
-		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Author:    &Author{Name: "Dyskiof · płatności", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
 		Title:     fmt.Sprintf("\u274C Payment Rejected: %s", info.PackageName),
 		URL:       n.paymentURL(info.PurchaseID),
 		Color:     ColorRed,
@@ -352,7 +365,7 @@ func (n *Notifier) NotifyBlikCodeUpdated(ctx context.Context, info PurchaseInfo)
 	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
-		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Author:    &Author{Name: "Dyskiof · płatności", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
 		Title:     fmt.Sprintf("\U0001F504 BLIK Code Updated: %s", info.PackageName),
 		URL:       n.paymentURL(info.PurchaseID),
 		Color:     color,
@@ -389,7 +402,7 @@ func (n *Notifier) NotifyPurchaseExpired(ctx context.Context, info PurchaseInfo)
 	fields = append(fields, insightFields(info, riskEmail)...)
 
 	embed := Embed{
-		Author:    &Author{Name: "ContentVault Payments", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Author:    &Author{Name: "Dyskiof · płatności", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
 		Title:     fmt.Sprintf("\u23F0 Purchase Expired: %s", info.PackageName),
 		URL:       n.paymentURL(info.PurchaseID),
 		Color:     ColorGray,

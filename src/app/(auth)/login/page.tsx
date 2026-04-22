@@ -31,7 +31,8 @@ export default function LoginPage() {
 
   const registered = searchParams.get("registered") === "1";
   const verified = searchParams.get("verified") === "1";
-  const redirectParam = searchParams.get("redirect");
+  /** `redirect` is canonical; `callbackUrl` kept for older links (e.g. server redirects). */
+  const redirectParam = searchParams.get("redirect") ?? searchParams.get("callbackUrl");
 
   const safeRedirect = (() => {
     if (!redirectParam || typeof redirectParam !== "string") return null;

@@ -1,5 +1,5 @@
 #!/bin/bash
-# ContentVault — bezpieczny upgrade PostgreSQL 16 → 18
+# Dyskiof — bezpieczny upgrade PostgreSQL 16 → 18
 #
 # KLUCZOWE: Przed usunięciem volume robimy pełny backup. Zero utraty danych.
 #

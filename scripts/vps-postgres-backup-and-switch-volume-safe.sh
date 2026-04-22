@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ContentVault — bezpieczny backup PostgreSQL i opcjonalne skopiowanie danych z INNEGO volume
+# Dyskiof — bezpieczny backup PostgreSQL i opcjonalne skopiowanie danych z INNEGO volume
 # (bez usuwania żadnych volume — stare dane zostają na dysku).
 #
 # Na VPS: cd /opt/contentvault
@@ -35,7 +35,7 @@ done
 mkdir -p "$RUN_DIR"
 
 echo "=============================================="
-echo "ContentVault — bezpieczny backup / restore"
+echo "Dyskiof — bezpieczny backup / restore"
 echo "Katalog run: $RUN_DIR"
 echo "=============================================="
 

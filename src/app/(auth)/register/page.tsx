@@ -36,11 +36,18 @@ export default function RegisterPage() {
     trackSignupPageViewed({ has_ref: refCode ? true : false });
   }, [refCode]);
 
-  const redirectParam = searchParams.get("redirect");
+  /** `redirect` is canonical; `callbackUrl` kept for older links. */
+  const redirectParam = searchParams.get("redirect") ?? searchParams.get("callbackUrl");
   const safeRedirect = useMemo(() => {
     if (!redirectParam || typeof redirectParam !== "string") return null;
-    if (!redirectParam.startsWith("/") || redirectParam.includes("//") || redirectParam.length > 500) return null;
-    return redirectParam;
+    let decoded = redirectParam;
+    try {
+      decoded = decodeURIComponent(redirectParam);
+    } catch {
+      return null;
+    }
+    if (!decoded.startsWith("/") || decoded.includes("//") || decoded.length > 500) return null;
+    return decoded;
   }, [redirectParam]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

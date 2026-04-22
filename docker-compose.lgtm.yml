@@ -11,6 +11,10 @@
 # API (Go): włącz wysyłkę logów (slog → OTel) — sekcja api: niżej.
 # W Grafanie: Explore → Loki, wyszukaj np. {service_name="content-api"}
 # lub etykiety z mapowania w collector (job, log.file, itd.).
+# Klik w trace_id w wierszu logu (Loki) → otwórz pełny trace w Tempo: konfig w
+# lgtm/grafana/provisioning/datasources/grafana-datasources.yaml (po zmianach:
+#   docker compose -f ... up -d otel-lgtm
+# ).
 #
 # Metryki VPS/kontenerów (cAdvisor + node_exporter) → ten sam Prometheus:
 #   Explore → Prometheus: container_cpu_usage_seconds_total, node_cpu_seconds_total
@@ -37,8 +41,10 @@ services:
       - lgtm_data:/data
       # Host + kontenery: scrape w OTel Collector (patrz lgtm/otelcol-config.yaml)
       - ./lgtm/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
-      # Dashboardy — ścieżki jak w obrazie grafana/otel-lgtm (Grafana: /otel-lgtm/grafana)
-      - ./lgtm/grafana/provisioning/dyskiof:/otel-lgtm/grafana/conf/provisioning/dyskiof:ro
+      # Loki → Tempo: derived fields (klik w trace_id w logu). Nadpisuje plik z obrazu.
+      - ./lgtm/grafana/provisioning/datasources/grafana-datasources.yaml:/otel-lgtm/grafana/conf/provisioning/datasources/grafana-datasources.yaml:ro
+      # Dashboardy: provider MUSI być w conf/provisioning/dashboards/*.yaml (nie w podkatalogu typu dyskiof).
+      - ./lgtm/grafana/provisioning/dashboards/dyskiof.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/dyskiof.yaml:ro
       - ./lgtm/grafana/dashboards:/otel-lgtm/grafana-dashboards-dyskiof:ro
     # Grafana — opcjonalnie tylko localhost (odkomentuj, jeśli nie używasz samego Docker network)
     ports:
@@ -65,8 +71,10 @@ services:
       - internal
 
   # Metryki kontenerów Docker (CPU/RAM per container) — tylko sieć wewnętrzna.
+  # v0.49.x: Docker factory często pada na Docker 29+ (client API 1.41 < 1.44) — brak etykiet compose.
+  # Używaj aktualnej wersji z gcr; pin digest w produkcji opcjonalnie.
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:latest
     container_name: content-cadvisor
     restart: unless-stopped
     privileged: true
@@ -115,9 +123,19 @@ services:
   # Logi backendu → `otel-lgtm` (collector → Loki) — tylko gdy ładujesz ten plik compose.
   api:
     environment:
+      # Ten sam host dla wszystkich sygnałów: SDK daje pierwszeństwo
+      # OTEL_EXPORTER_OTLP_TRACES_* / _LOGS_* / _METRICS_* nad samym OTEL_EXPORTER_OTLP_*.
+      # W .env mógł zostać inny URL (np. tylko logi) — wtedy trace’y nie lądowały w Tempo mimo działających logów.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-lgtm:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: content-api
+      # Domyślnie w kodzie API: sample 25% trace'ów — logi Loki mają trace_id przy każdym HTTP,
+      # więc klik „Trace” w Grafanie dawałby Not Found w Tempo dla ~75% żądań. Przy LGTM (dev)
+      # włączamy 100%, żeby link z logów zgadzał się z backendem trace'ów.
+      OTEL_TRACES_SAMPLE_RATIO: "1"
     depends_on:
       otel-lgtm:
         condition: service_started

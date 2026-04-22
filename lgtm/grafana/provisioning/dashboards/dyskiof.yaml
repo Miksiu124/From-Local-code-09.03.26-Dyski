@@ -1,0 +1,13 @@
+# Musi leżeć w conf/provisioning/dashboards/ — Grafana skanuje TYLKO ten podkatalog (nie np. provisioning/dyskiof).
+# JSON-y: lgtm/grafana/dashboards/ → w kontenerze /otel-lgtm/grafana-dashboards-dyskiof (docker-compose.lgtm.yml).
+apiVersion: 1
+providers:
+  - name: dyskiof
+    orgId: 1
+    folder: Dyskiof
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 60
+    allowUiUpdates: false
+    options:
+      path: /otel-lgtm/grafana-dashboards-dyskiof

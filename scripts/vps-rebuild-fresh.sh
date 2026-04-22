@@ -1,5 +1,5 @@
 #!/bin/bash
-# ContentVault — pełna przebudowa od zera z zachowaniem wybranych użytkowników
+# Dyskiof — pełna przebudowa od zera z zachowaniem wybranych użytkowników
 # Używa ZSYNCHRONIZOWANEGO KODU (nie git fetch). Zachowuje .env.
 #
 # Uruchom NA VPS po deploy: cd /opt/contentvault && bash scripts/vps-rebuild-fresh.sh
@@ -26,7 +26,7 @@ DUMP_FILE="$BACKUP_DIR/pre_rebuild.dump"
 cd "$REPO_ROOT"
 
 echo "=========================================="
-echo "ContentVault — REBUILD OD ZERA (fresh DB)"
+echo "Dyskiof — REBUILD OD ZERA (fresh DB)"
 echo "=========================================="
 echo "Zachowuję użytkowników: $PROTECTED_EMAILS"
 echo ""

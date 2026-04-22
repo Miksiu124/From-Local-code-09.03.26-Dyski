@@ -6,7 +6,7 @@ export default async function FavoritesPage() {
   const user = await getServerUser();
 
   if (!user) {
-    redirect("/login?callbackUrl=/favorites");
+    redirect("/login?redirect=" + encodeURIComponent("/favorites"));
   }
 
   return (

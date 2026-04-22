@@ -29,7 +29,14 @@ export default async function FavoritesContentViewPage({ params, searchParams }:
   const { filter = "ALL", sort = "newest" } = await searchParams;
   const sessionUser = await getServerUser();
 
-  if (!sessionUser) redirect("/login?callbackUrl=/favorites");
+  if (!sessionUser) {
+    const query = new URLSearchParams();
+    if (filter !== "ALL") query.set("filter", filter);
+    if (sort !== "newest") query.set("sort", sort);
+    const queryStr = query.toString();
+    const back = `/favorites/${contentItemId}${queryStr ? `?${queryStr}` : ""}`;
+    redirect("/login?redirect=" + encodeURIComponent(back));
+  }
 
   const query = new URLSearchParams();
   if (filter !== "ALL") query.set("filter", filter);

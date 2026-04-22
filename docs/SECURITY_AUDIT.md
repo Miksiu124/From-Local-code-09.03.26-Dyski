@@ -1,4 +1,4 @@
-# Audyt bezpieczeństwa – ContentVault VPS
+# Audyt bezpieczeństwa – Dyskiof VPS
 
 Ostatni przegląd: 2025-02-27
 

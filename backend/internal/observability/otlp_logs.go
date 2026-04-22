@@ -3,6 +3,9 @@ package observability
 
 import (
 	"log/slog"
+	"net"
+	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/otel/trace"
@@ -16,6 +19,7 @@ var otlpLogsOn bool
 func EchoSlogOTLP() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			start := time.Now()
 			err := next(c)
 			if !otlpLogsOn {
 				return err
@@ -29,10 +33,21 @@ func EchoSlogOTLP() echo.MiddlewareFunc {
 				traceID = sc.TraceID().String()
 				spanID = sc.SpanID().String()
 			}
+			clientIP := c.RealIP()
+			if clientIP == "" {
+				if h, _, err := net.SplitHostPort(strings.TrimSpace(c.Request().RemoteAddr)); err == nil {
+					clientIP = h
+				} else {
+					clientIP = c.Request().RemoteAddr
+				}
+			}
 			slog.Info("http",
 				"method", c.Request().Method,
 				"path", c.Path(),
 				"status", c.Response().Status,
+				"latency_ms", time.Since(start).Milliseconds(),
+				"log_category", HTTPLogCategory(c.Path()),
+				"client_ip", clientIP,
 				"req_id", rid,
 				"trace_id", traceID,
 				"span_id", spanID,

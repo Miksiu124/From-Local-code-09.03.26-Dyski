@@ -1,11 +1,11 @@
-# Konfiguracja BillionMail z ContentVault
+# Konfiguracja BillionMail z Dyskiof
 
-ContentVault wysyła maile przez SMTP. Możesz użyć **BillionMail** zamiast boky/postfix jako serwera pocztowego. BillionMail to open-source (AGPL), self-hosted, bez miesięcznych opłat.
+Dyskiof wysyła maile przez SMTP. Możesz użyć **BillionMail** zamiast boky/postfix jako serwera pocztowego. BillionMail to open-source (AGPL), self-hosted, bez miesięcznych opłat.
 
 ## Architektura
 
 ```
-ContentVault API → BillionMail Postfix (port 587) → [opcjonalnie relay] → Internet
+Dyskiof API → BillionMail Postfix (port 587) → [opcjonalnie relay] → Internet
 ```
 
 BillionMail może:
@@ -75,9 +75,9 @@ Jeśli nie działa – **GCP Firewall** może blokować porty 8880 i 8443. Dodaj
 
 ---
 
-## Krok 3: Połączenie ContentVault z BillionMail
+## Krok 3: Połączenie Dyskiof z BillionMail
 
-### 3a. Ustaw zmienne w `.env` ContentVault
+### 3a. Ustaw zmienne w `.env` Dyskiof
 
 ```env
 # SMTP — wskazanie na BillionMail Postfix
@@ -90,9 +90,9 @@ SMTP_HOSTNAME=mail.twojadomena.pl
 SMTP_ALLOWED_DOMAINS=twojadomena.pl
 ```
 
-Gdy używasz BillionMail, **nie** ustawiaj `RESEND_API_KEY` – ContentVault korzysta wyłącznie z SMTP.
+Gdy używasz BillionMail, **nie** ustawiaj `RESEND_API_KEY` – Dyskiof korzysta wyłącznie z SMTP.
 
-### 3b. Uruchom ContentVault z override BillionMail
+### 3b. Uruchom Dyskiof z override BillionMail
 
 ```bash
 cd /opt/contentvault   # lub Twoja ścieżka do ContentManager
@@ -111,11 +111,11 @@ docker network ls | grep billion
 
 Edytuj `docker-compose.billionmail.yml` i zmień `name:` w sekcji `networks.billionmail`.
 
-### 3d. Konfiguracja BillionMail dla ContentVault (wymagana)
+### 3d. Konfiguracja BillionMail dla Dyskiof (wymagana)
 
-ContentVault API łączy się z Postfixem przez sieć Docker. Potrzebne są dwie zmiany na serwerze BillionMail:
+Dyskiof API łączy się z Postfixem przez sieć Docker. Potrzebne są dwie zmiany na serwerze BillionMail:
 
-**1. Postfix – dodaj sieć ContentVault do mynetworks** (w przeciwnym razie: „Client host rejected”)
+**1. Postfix – dodaj sieć Dyskiof do mynetworks** (w przeciwnym razie: „Client host rejected”)
 
 ```bash
 # Na VPS, w /opt/BillionMail/conf/postfix/main.cf znajdź:
@@ -131,7 +131,7 @@ Potem: `cd /opt/BillionMail && docker compose restart postfix-billionmail`
 Utwórz plik `/opt/BillionMail/conf/rspamd/local.d/settings.conf`:
 
 ```conf
-# Bypass greylist for ContentVault API (internal relay from Docker network)
+# Bypass greylist for Dyskiof API (internal relay from Docker network)
 internal_relay {
   ip = "172.66.1.0/24";
   apply {
@@ -146,7 +146,7 @@ Potem: `cd /opt/BillionMail && docker compose restart rspamd-billionmail`
 
 ## Szablony kampanii email
 
-W folderze `docs/email-templates/` znajdziesz gotowe szablony w stylu ContentVault:
+W folderze `docs/email-templates/` znajdziesz gotowe szablony w stylu Dyskiof:
 - **Newsletter welcome** – powitanie subskrybentów
 - **Nowe treści** – informacja o nowych modelach/zdjęciach
 - **Promocja** – oferty, zniżki, kody rabatowe

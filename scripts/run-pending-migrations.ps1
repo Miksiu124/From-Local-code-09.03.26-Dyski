@@ -34,7 +34,7 @@ if (-not $dbPass) { Write-Error "POSTGRES_PASSWORD or DATABASE_URL required"; ex
 $migrationFile = Join-Path $ContentDir "backend\migrations\20260313120000_add_referral_link_tracking.up.sql"
 
 Write-Host "=========================================="
-Write-Host "ContentVault - Pending Migrations"
+Write-Host "Dyskiof - Pending Migrations"
 Write-Host "=========================================="
 
 $env:PGPASSWORD = $dbPass

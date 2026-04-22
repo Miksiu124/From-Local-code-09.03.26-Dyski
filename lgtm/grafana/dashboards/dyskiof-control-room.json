@@ -6,14 +6,14 @@
   "graphTooltip": 1,
   "id": null,
   "links": [],
-  "liveNow": true,
+  "liveNow": false,
   "panels": [
     {
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 1,
       "options": {
         "code": { "language": "markdown", "showLineNumbers": false, "showMiniMap": false },
-        "content": "| **Jak czytać** | Góra: *host* (CPU, RAM, dysk) i szybki *API*. Środek: *Docker* (użycie per serwis z compose), *Postgres* i *Redis* (z metryk kontenerów), *Nginx*. Dół: *logi* z Loki. Pełne statystyki SQL (zapytania, locki) wymagają opcjonalnego `postgres_exporter` w Prometheus — poniżej widać zasoby i kondycję kontenerów bazy. |\n|:---|:---|",
+        "content": "| **Jak czytać** | *Host* (node_exporter) i *API* (OTel). *Docker* = cAdvisor. *Nginx* = stub. *Loki* = logi HTTP z polami `log_category` (user / server / misc) i `client_ip` (IP za Nginx `X-Real-IP`). **Drilldown:** zawęż przedział (zoom na wykresie albo wybór czasu), kliknij w **punkt** na wykresie (albo w liczbę na stat) → w menu: *Explore: Loki* / *Explore: Tempo* — otworzy **ten sam** widoczny przedział. Długi horyzont przy krótkiej historii metryk wygląda „pusto” – skróć przedział czasu w prawym górnym rogu. |\n|:---|:---|\n| **Po restarcie kontenera `otel-lgtm`** | Pulpit używa głównie `rate(…[5m])` — z **zimnego startu** (pusty Prometheus) wykresy/staty mogą pokazywać *No data* nawet **~5 min**, dopóki nie nazbiera się okno. Jeśli *No data* wszędzie: sprawdź, czy w tym samym `docker compose` działają też **cadvisor** i **node-exporter** (są potrzebne do skraplania; sam restart `content-otel-lgtm` ich nie wstawi). |",
         "mode": "markdown"
       },
       "title": "ℹ️ Start",
@@ -46,7 +46,11 @@
               { "color": "red", "value": 90 }
             ]
           },
-          "unit": "percent"
+          "unit": "percent",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 3 },
@@ -57,11 +61,12 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
           "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
+          "legendFormat": "użycie",
           "refId": "A"
         }
       ],
@@ -96,11 +101,12 @@
         "colorMode": "value",
         "graphMode": "area",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
           "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
+          "legendFormat": "użycie",
           "refId": "A"
         }
       ],
@@ -114,7 +120,11 @@
         "defaults": {
           "color": { "color": "green", "mode": "fixed" },
           "mappings": [],
-          "unit": "reqps"
+          "unit": "reqps",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 3 },
@@ -123,11 +133,12 @@
         "colorMode": "value",
         "graphMode": "area",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
           "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m]))",
+          "legendFormat": "req/s",
           "refId": "A"
         }
       ],
@@ -149,7 +160,12 @@
               { "color": "red", "value": 1.5 }
             ]
           },
-          "unit": "s"
+          "unit": "s",
+          "decimals": 3,
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 3 },
@@ -158,11 +174,12 @@
         "colorMode": "value",
         "graphMode": "area",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[5m])) by (le))",
+          "legendFormat": "p95",
           "refId": "A"
         }
       ],
@@ -193,7 +210,11 @@
             "spanNulls": true,
             "stacking": { "group": "A", "mode": "none" }
           },
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 8 },
@@ -265,7 +286,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1 },
-          "unit": "reqps"
+          "unit": "reqps",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
@@ -287,7 +312,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 1 },
-          "unit": "s"
+          "unit": "s",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
@@ -310,12 +339,17 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Wymaga etykiety statusu z OTel. Jeśli wykres jest pusty, w Explore sprawdź `http_server_request_duration_seconds_count` i dostępne etykiety.",
+      "description": "Gdy 0 błędów 5xx, Prometheus zwykle nie trzyma osobnej serii — wykres pokazuje linię 0 (skalowaną do ruchu). Alternatywne etykiety: `http_status_code`. Pełne metryki statusów: Explore → `http_server_request_duration_seconds_count`.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1 },
-          "unit": "reqps"
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 1 },
+          "unit": "reqps",
+          "noValue": "0",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 23 },
@@ -323,8 +357,11 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_response_status_code=~\"5..\"}[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_response_status_code=~\"5..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_status_code=~\"5..\"}[5m]))) or (0 * sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m])))",
           "legendFormat": "5xx / s",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -337,7 +374,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1 },
-          "unit": "reqps"
+          "unit": "reqps",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 23 },
@@ -345,8 +386,11 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_response_status_code=~\"4..\"}[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_response_status_code=~\"4..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_status_code=~\"4..\"}[5m]))) or (0 * sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m])))",
           "legendFormat": "4xx / s",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -368,7 +412,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 1 },
-          "unit": "none"
+          "unit": "none",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
@@ -390,7 +438,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 25, "lineWidth": 1, "stacking": { "mode": "none", "group": "A" } },
-          "unit": "bytes"
+          "unit": "bytes",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 38 },
@@ -421,7 +473,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 },
-          "unit": "none"
+          "unit": "none",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 47 },
@@ -448,7 +504,11 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "drawStyle": "line", "fillOpacity": 22, "lineWidth": 1 },
-          "unit": "bytes"
+          "unit": "bytes",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
         }
       },
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 47 },
@@ -552,7 +612,8 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 66 },
+      "description": "**User** = ruch aplikacji (`/api/*` poza adminem): content, zakupy, auth, modele. **client_ip** = źródło (Nginx → `X-Real-IP`). Filtr: `| json | log_category=\"user\"` — jeśli 0 wyników, w Explore spróbuj `| logfmt` lub pokaż surową linię.",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 66 },
       "id": 27,
       "options": {
         "dedupStrategy": "none",
@@ -566,16 +627,64 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"content-api\"}",
+          "expr": "{service_name=\"content-api\"} | json | log_category=\"user\"",
           "refId": "A"
         }
       ],
-      "title": "Wszystkie logi content-api (ostatnie)",
+      "title": "Loki — user (app, z client_ip)",
       "type": "logs"
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 76 },
+      "description": "**Server** = panel admina / operacje: sync R2, import, moderacja, akceptacja proofów (`/api/admin/*`).",
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 66 },
+      "id": 33,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | log_category=\"server\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — server (admin / ops)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "**Misc** = `/health`, nietypiczne ścieżki, telemetria (`/api/public/client-errors`), itp. Cron [Jobs] idzie w standardowy log, nie w wierszu `http` — szukaj po tekście w *Wszystkie* w Explore albo w logu kontenera.",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 66 },
+      "id": 34,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | log_category=\"misc\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — misc",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 75 },
       "id": 28,
       "options": {
         "dedupStrategy": "none",
@@ -591,6 +700,87 @@
         }
       ],
       "title": "Podejrzane: error / fatal / panic / kody 5xx w tekście (heurystyka na logach)",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 84 },
+      "id": 29,
+      "panels": [],
+      "title": "Po incydencie (np. lag w nocy) — odtwarzanie",
+      "type": "row"
+    },
+    {
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 85 },
+      "id": 30,
+      "options": {
+        "code": { "language": "markdown", "showLineNumbers": false, "showMiniMap": false },
+        "content": "| **Cel** | Wstajesz, user pisze: „o 3:00 wszystko lagowało”. Chcesz zobaczyć, czy to był serwer i co to było. |\n|:---|:---|\n| **Czas w Grafanie** | Prawy górny róg → **Time range** → **Absolute** → wybierz *dzień* i przedział, np. **02:15–04:00** (albo wokół wskazanej godziny). Upewnij się, że strefa czasowa w ustawieniach (lub w selektorze) jest taka sama jak w relacji usera. |\n| **Metryki poniżej (okno 1 min)** | Krócej wygładzają niż wykresy z sekcji *API — HTTP* (`[5m]`), więc łatwiej zobaczyć wąskie skoki (np. backup, burst RPS, GC). Gdy nic nie widać — problem mógł być tylko po stronie sieci/klienta. |\n| **Loki** | Panel *Wolne żądania API* używa pola `latency_ms` z logu. Jeśli brak wyników, dopracuj w **Explore → Loki** (parsowanie `json` zależy od wersji pipeline’u Loki). |\n| **Ślady** | W logu jest `trace_id` → **Explore → Tempo** — wyszukaj po ID i zobacz, które spanu/y trwały. |\n| **Host** | Równolegle: sekcja *Host (VPS) — w czasie* i *Docker* — czy w tym samym oknie nie poszło CPU, RAM, dysk. |\n",
+        "mode": "markdown"
+      },
+      "title": "ℹ️ Odtwarzanie incydentu",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "p50 / p95 / p99 z oknem rate 1m — czułe na krótkie skoki; użyteczne w wąskim przedziale czasu (np. jedna „nocna” godzina).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 },
+          "unit": "s",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 90 },
+      "id": 31,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[1m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[1m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[1m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "API — opóźnienia p50 / p95 / p99 (okno 1 min — do post mortem)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Wymaga pola `latency_ms` w logu API (slog/OTLP). Gdy 0 wyników, w Explore spróbuj: `{service_name=\"content-api\"} |= \"http\"` i filtr po polu latency_ms, albo użyj wariantu | json zgodnie z formatem w Loki.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 97 },
+      "id": 32,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | latency_ms > 1000",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — żądania wolniejsze niż ~1 s (latency_ms > 1000)",
       "type": "logs"
     }
   ],
@@ -616,11 +806,11 @@
       }
     ]
   },
-  "time": { "from": "now-6h", "to": "now" },
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": { "hidden": false, "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "1h", "1d"] },
   "timezone": "browser",
   "title": "Dyskiof — pulpit operacyjny",
   "uid": "dyskiof-control-room",
-  "version": 1,
+  "version": 4,
   "weekStart": ""
 }

@@ -37,6 +37,7 @@ yarn-error.log*
 !**/.env.example
 !**/.env.production.example
 !**/.env.deploy.example
+!**/.env.lgtm.example
 cloudflare.env
 
 # IDE
