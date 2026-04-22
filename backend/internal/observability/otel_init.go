@@ -156,6 +156,8 @@ func LaunchOpenTelemetryAsync(rawEndpoint, serviceName string) func(context.Cont
 	var mu sync.Mutex
 	var inner func(context.Context) error = func(context.Context) error { return nil }
 
+	log.Printf("OpenTelemetry: starting background init → %s", strings.TrimSpace(rawEndpoint))
+
 	go func() {
 		initCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -167,6 +169,7 @@ func LaunchOpenTelemetryAsync(rawEndpoint, serviceName string) func(context.Cont
 		mu.Lock()
 		inner = sh
 		mu.Unlock()
+		log.Printf("OpenTelemetry: export ready (logs → Loki, traces → Tempo, metrics → collector)")
 	}()
 
 	return func(ctx context.Context) error {
