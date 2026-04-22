@@ -1,0 +1,816 @@
+{
+  "annotations": { "list": [] },
+  "description": "Pulpit operacyjny: host, API (OTel), kontenery, Postgres/Redis, Nginx, logi. Przydatny przy uruchomionym stacku docker-compose + docker-compose.lgtm.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "code": { "language": "markdown", "showLineNumbers": false, "showMiniMap": false },
+        "content": "| **Jak czytać** | *Host* (node_exporter) i *API* (OTel). *Docker* = cAdvisor. *Nginx* = stub. *Loki* = logi HTTP z polami `log_category` (user / server / misc) i `client_ip` (IP za Nginx `X-Real-IP`). **Drilldown:** zawęż przedział (zoom na wykresie albo wybór czasu), kliknij w **punkt** na wykresie (albo w liczbę na stat) → w menu: *Explore: Loki* / *Explore: Tempo* — otworzy **ten sam** widoczny przedział. Długi horyzont przy krótkiej historii metryk wygląda „pusto” – skróć przedział czasu w prawym górnym rogu. |\n|:---|:---|\n| **Po restarcie kontenera `otel-lgtm`** | Pulpit używa głównie `rate(…[5m])` — z **zimnego startu** (pusty Prometheus) wykresy/staty mogą pokazywać *No data* nawet **~5 min**, dopóki nie nazbiera się okno. Jeśli *No data* wszędzie: sprawdź, czy w tym samym `docker compose` działają też **cadvisor** i **node-exporter** (są potrzebne do skraplania; sam restart `content-otel-lgtm` ich nie wstawi). |",
+        "mode": "markdown"
+      },
+      "title": "ℹ️ Start",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 2 },
+      "id": 2,
+      "panels": [],
+      "title": "Szybki przegląd",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Średni % czasu CPU poza trybem `idle` na hoście (node_exporter).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "unit": "percent",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 3 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
+          "legendFormat": "użycie",
+          "refId": "A"
+        }
+      ],
+      "title": "Host — CPU",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Pamięć „dostępna” względem całkowitej (MemAvailable / MemTotal).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 92 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 3 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
+          "legendFormat": "użycie",
+          "refId": "A"
+        }
+      ],
+      "title": "Host — RAM użyte",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Liczba żądań HTTP na sekundę (histogram OTel + Echo).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "color": "green", "mode": "fixed" },
+          "mappings": [],
+          "unit": "reqps",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 3 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m]))",
+          "legendFormat": "req/s",
+          "refId": "A"
+        }
+      ],
+      "title": "API — żądania / s",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "95. percentyl czasu odpowiedzi HTTP (5 min).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 1.5 }
+            ]
+          },
+          "unit": "s",
+          "decimals": 3,
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 3 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ],
+      "title": "API — p95 opóźnienie",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 7,
+      "panels": [],
+      "title": "Host (VPS) — w czasie",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Użycie CPU per tryb (user, system, iowait…). Suma daje obciążenie maszyny.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "drawStyle": "line",
+            "fillOpacity": 18,
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "unit": "percentunit",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 8 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "targets": [
+        {
+          "expr": "sum by (mode)(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU (udział ~rdzeni)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1, "spanNulls": true },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 8 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes", "legendFormat": "całkowita", "refId": "A" },
+        { "expr": "node_memory_MemAvailable_bytes", "legendFormat": "dostępna", "refId": "B" }
+      ],
+      "title": "Pamięć RAM",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "super-light-blue" },
+          "custom": { "drawStyle": "line", "fillOpacity": 8, "lineWidth": 1 },
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 8 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "100 * (node_filesystem_avail_bytes{fstype!~\"tmpfs|fuse.lxc|fuse.sshfs\",mountpoint!~\"/run.*|/var/lib/docker/overlay2.*\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|fuse.lxc|fuse.sshfs\",mountpoint!~\"/run.*|/var/lib/docker/overlay2.*\"})",
+          "legendFormat": "{{mountpoint}} — wolne %",
+          "refId": "A"
+        }
+      ],
+      "title": "Dysk — wolne miejsce % (mounty inne niż tmpfs)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 11,
+      "panels": [],
+      "title": "API — HTTP (OpenTelemetry)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1 },
+          "unit": "reqps",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m]))",
+          "legendFormat": "żądania / s",
+          "refId": "A"
+        }
+      ],
+      "title": "Liczba żądań HTTP w czasie",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 1 },
+          "unit": "s",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
+      "id": 13,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "title": "Opóźnienia odpowiedzi (p50 / p95)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Gdy 0 błędów 5xx, Prometheus zwykle nie trzyma osobnej serii — wykres pokazuje linię 0 (skalowaną do ruchu). Alternatywne etykiety: `http_status_code`. Pełne metryki statusów: Explore → `http_server_request_duration_seconds_count`.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 1 },
+          "unit": "reqps",
+          "noValue": "0",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 23 },
+      "id": 14,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_response_status_code=~\"5..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_status_code=~\"5..\"}[5m]))) or (0 * sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m])))",
+          "legendFormat": "5xx / s",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Błędy serwera — 5xx (z metryk HTTP, jeśli włączone)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1 },
+          "unit": "reqps",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 23 },
+      "id": 15,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_response_status_code=~\"4..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\",http_status_code=~\"4..\"}[5m]))) or (0 * sum(rate(http_server_request_duration_seconds_count{service_name=\"content-api\"}[5m])))",
+          "legendFormat": "4xx / s",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Kody klienta — 4xx (jeśli etykieta jest w metrykach)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "id": 16,
+      "panels": [],
+      "title": "Docker — użycie per serwis (cAdvisor)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Filtrowanie: zmienna u góry. Wartości ~liczba rdzeni używanych średnio w 5 min.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 18, "lineWidth": 1 },
+          "unit": "none",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "id": 17,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=~\"$compose_service\",container_label_com_docker_compose_service!=\"\"}[5m]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU kontenerów (rdzenie) — w czasie",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 25, "lineWidth": 1, "stacking": { "mode": "none", "group": "A" } },
+          "unit": "bytes",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 38 },
+      "id": 18,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "calcs": ["lastNotNull", "max"] } },
+      "targets": [
+        {
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_service=~\"$compose_service\",container_label_com_docker_compose_service!=\"\"})",
+          "legendFormat": "{{container_label_com_docker_compose_service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pamięć robocza kontenerów (working set) — w czasie",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "id": 19,
+      "panels": [],
+      "title": "Bazy: Postgres i Redis (zasoby + „status” z metryk)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Bez dedykowanego eksportera: obserwuj skoki CPU/RAM (np. długie zapytania, backup).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 },
+          "unit": "none",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 47 },
+      "id": 20,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=\"postgres\"}[5m]))",
+          "legendFormat": "postgres — CPU (rdzenie)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=\"redis\"}[5m]))",
+          "legendFormat": "redis — CPU (rdzenie)",
+          "refId": "B"
+        }
+      ],
+      "title": "Postgres vs Redis — użycie CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 22, "lineWidth": 1 },
+          "unit": "bytes",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 47 },
+      "id": 21,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{container_label_com_docker_compose_service=\"postgres\"}",
+          "legendFormat": "postgres",
+          "refId": "A"
+        },
+        {
+          "expr": "container_memory_working_set_bytes{container_label_com_docker_compose_service=\"redis\"}",
+          "legendFormat": "redis",
+          "refId": "B"
+        }
+      ],
+      "title": "Postgres i Redis — pamięć robocza",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "`container_last_seen` to znacznik czasu ostatniej obserwacji. Różnica `time() - last_seen` powinna być mała (kilkadziesiąt sekund). Duże skoki mogą oznaczać problem z cAdvisorem lub zatrzymany kontener.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1, "spanNulls": false },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 53 },
+      "id": 22,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "max by (container_label_com_docker_compose_service) (time() - container_last_seen{container_label_com_docker_compose_service!=\"\"})",
+          "legendFormat": "{{container_label_com_docker_compose_service}} — s od ostatniej obserwacji",
+          "refId": "A"
+        }
+      ],
+      "title": "Kontenery — opóźnienie ostatniej obserwacji cAdvisor (per serwis)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
+      "id": 23,
+      "panels": [],
+      "title": "Nginx (eksport z stub_status)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 1 }
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 59 },
+      "id": 24,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "nginx_connections_active", "legendFormat": "aktywne", "refId": "A" },
+        { "expr": "nginx_connections_reading", "legendFormat": "czytanie", "refId": "B" },
+        { "expr": "nginx_connections_writing", "legendFormat": "pisanie", "refId": "C" },
+        { "expr": "nginx_connections_waiting", "legendFormat": "oczekiwanie", "refId": "D" }
+      ],
+      "title": "Połączenia Nginx",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "color": "orange", "mode": "fixed" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 59 },
+      "id": 25,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "rate(nginx_http_requests_total[5m])",
+          "legendFormat": "żądania / s (nginx)",
+          "refId": "A"
+        }
+      ],
+      "title": "Przepustowość Nginx (req/s)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 },
+      "id": 26,
+      "panels": [],
+      "title": "Logi i sygnały błędów (Loki)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "**User** = ruch aplikacji (`/api/*` poza adminem): content, zakupy, auth, modele. **client_ip** = źródło (Nginx → `X-Real-IP`). Filtr: `| json | log_category=\"user\"` — jeśli 0 wyników, w Explore spróbuj `| logfmt` lub pokaż surową linię.",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 66 },
+      "id": 27,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | log_category=\"user\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — user (app, z client_ip)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "**Server** = panel admina / operacje: sync R2, import, moderacja, akceptacja proofów (`/api/admin/*`).",
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 66 },
+      "id": 33,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | log_category=\"server\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — server (admin / ops)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "**Misc** = `/health`, nietypiczne ścieżki, telemetria (`/api/public/client-errors`), itp. Cron [Jobs] idzie w standardowy log, nie w wierszu `http` — szukaj po tekście w *Wszystkie* w Explore albo w logu kontenera.",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 66 },
+      "id": 34,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | log_category=\"misc\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — misc",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 75 },
+      "id": 28,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} |~ \"(?i)(error|fatal|panic)\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Podejrzane: error / fatal / panic / kody 5xx w tekście (heurystyka na logach)",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 84 },
+      "id": 29,
+      "panels": [],
+      "title": "Po incydencie (np. lag w nocy) — odtwarzanie",
+      "type": "row"
+    },
+    {
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 85 },
+      "id": 30,
+      "options": {
+        "code": { "language": "markdown", "showLineNumbers": false, "showMiniMap": false },
+        "content": "| **Cel** | Wstajesz, user pisze: „o 3:00 wszystko lagowało”. Chcesz zobaczyć, czy to był serwer i co to było. |\n|:---|:---|\n| **Czas w Grafanie** | Prawy górny róg → **Time range** → **Absolute** → wybierz *dzień* i przedział, np. **02:15–04:00** (albo wokół wskazanej godziny). Upewnij się, że strefa czasowa w ustawieniach (lub w selektorze) jest taka sama jak w relacji usera. |\n| **Metryki poniżej (okno 1 min)** | Krócej wygładzają niż wykresy z sekcji *API — HTTP* (`[5m]`), więc łatwiej zobaczyć wąskie skoki (np. backup, burst RPS, GC). Gdy nic nie widać — problem mógł być tylko po stronie sieci/klienta. |\n| **Loki** | Panel *Wolne żądania API* używa pola `latency_ms` z logu. Jeśli brak wyników, dopracuj w **Explore → Loki** (parsowanie `json` zależy od wersji pipeline’u Loki). |\n| **Ślady** | W logu jest `trace_id` → **Explore → Tempo** — wyszukaj po ID i zobacz, które spanu/y trwały. |\n| **Host** | Równolegle: sekcja *Host (VPS) — w czasie* i *Docker* — czy w tym samym oknie nie poszło CPU, RAM, dysk. |\n",
+        "mode": "markdown"
+      },
+      "title": "ℹ️ Odtwarzanie incydentu",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "p50 / p95 / p99 z oknem rate 1m — czułe na krótkie skoki; użyteczne w wąskim przedziale czasu (np. jedna „nocna” godzina).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 },
+          "unit": "s",
+          "links": [
+            { "title": "Explore: Loki (logi HTTP, ten przedział)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22content-api%5C%22%7D%20%7C%20json%22%2C%22queryType%22%3A%22range%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22loki%22%7D%2C%22editorMode%22%3A%22code%22%7D%5D%7D%7D", "targetBlank": true },
+            { "title": "Explore: Tempo (ślady, TraceQL content-api)", "type": "link", "url": "/explore?from=${__from}&to=${__to}&schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22query%22%3A%22%7B%20resource.service.name%20%3D%20%5C%22content-api%5C%22%20%7D%22%2C%22queryType%22%3A%22traceql%22%7D%5D%7D%7D", "targetBlank": true }
+          ]
+        }
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 90 },
+      "id": 31,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[1m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[1m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{service_name=\"content-api\"}[1m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "API — opóźnienia p50 / p95 / p99 (okno 1 min — do post mortem)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Wymaga pola `latency_ms` w logu API (slog/OTLP). Gdy 0 wyników, w Explore spróbuj: `{service_name=\"content-api\"} |= \"http\"` i filtr po polu latency_ms, albo użyj wariantu | json zgodnie z formatem w Loki.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 97 },
+      "id": 32,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"content-api\"} | json | latency_ms > 1000",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki — żądania wolniejsze niż ~1 s (latency_ms > 1000)",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["dyskiof", "lgtm", "content-platform", "beginner"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "includeAll": true,
+        "label": "Serwis Docker (compose)",
+        "multi": true,
+        "name": "compose_service",
+        "options": [],
+        "query": "label_values(container_label_com_docker_compose_service)",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": { "hidden": false, "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "1h", "1d"] },
+  "timezone": "browser",
+  "title": "Dyskiof — pulpit operacyjny",
+  "uid": "dyskiof-control-room",
+  "version": 4,
+  "weekStart": ""
+}

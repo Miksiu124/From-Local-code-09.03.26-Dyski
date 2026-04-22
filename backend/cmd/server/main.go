@@ -19,8 +19,9 @@ import (
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
-	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/geo"
+	"content-platform-backend/internal/growth"
+	"content-platform-backend/internal/jobs"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/links"
@@ -33,6 +34,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/otel"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -47,13 +50,16 @@ func main() {
 
 	ctx := context.Background()
 
-	// ── Database connections ─────────────────────────────────────────────
+	// ── Database & Redis first — must not sit behind OTLP init (collector hang = no HTTP, empty site)
 	pgPool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
 	defer pgPool.Close()
 	log.Println("✓ Connected to PostgreSQL")
+
+	jobSched := jobs.NewScheduler()
+	defer jobSched.Stop()
 
 	redisClient, err := database.NewRedisClient(ctx, cfg.RedisURL)
 	if err != nil {
@@ -62,6 +68,12 @@ func main() {
 	defer redisClient.Close()
 	log.Println("✓ Connected to Redis")
 
+	// Globalny noop tracer zanim ukończy się async InitOpenTelemetry; inaczej otelecho może zablokować start (provider jeszcze pusty).
+	otel.SetTracerProvider(oteltrace.NewNoopTracerProvider())
+
+	// OpenTelemetry w tle — HTTP musi nasłuchiwać od razu; Loki/Tempo/metryki włączą się po połączeniu z kolektorem
+	otlpShutdown := observability.LaunchOpenTelemetryAsync(cfg.OTLPLogEndpoint, cfg.OTELServiceName)
+
 	// ── Echo server ──────────────────────────────────────────────────────
 	e := echo.New()
 	e.HideBanner = true
@@ -69,9 +81,11 @@ func main() {
 	// SECURITY PATTERN: Ufamy tylko zweryfikowanemu przez Nginx nagłówkowi X-Real-IP, zapobiegając fałszowaniu IP przez hakera w X-Forwarded-For
 	e.IPExtractor = echo.ExtractIPFromRealIPHeader()
 
-	// Global middleware
+	// Global middleware (RequestID przed OTel HTTP, żeby req_id i span szły razem w logach)
 	e.Use(echomw.Recover())
 	e.Use(echomw.RequestID())
+	e.Use(observability.EchoOTelTrace(cfg.OTELServiceName))
+	e.Use(observability.EchoSlogOTLP())
 	e.Use(echomw.Logger())
 	e.Use(middleware.CORSMiddleware(cfg))
 	e.Use(echomw.Secure())
@@ -132,6 +146,15 @@ func main() {
 
 	// Mailer
 	mailService := mailer.New(cfg)
+
+	if _, err := jobSched.AddJob("*/15 * * * *", func() {
+		jctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		jobs.RunCheckoutAbandonmentReminders(jctx, pgPool, mailService, cfg)
+		cancel()
+	}); err != nil {
+		log.Fatalf("checkout reminder cron: %v", err)
+	}
+	jobSched.Start()
 
 	// Auth routes (public)
 	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient)
@@ -323,6 +346,11 @@ func main() {
 	defer cancel()
 	if err := e.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	otelShutdownCtx, otelShutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer otelShutdownCancel()
+	if err := otlpShutdown(otelShutdownCtx); err != nil {
+		log.Printf("OpenTelemetry shutdown: %v", err)
 	}
 	log.Println("Server exited cleanly")
 }

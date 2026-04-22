@@ -8,11 +8,12 @@ import { motion } from "framer-motion";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trackLoginPageViewed, trackLoginSuccess, trackLoginFailed } from "@/lib/growth-analytics";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
+  const tNav = useTranslations("nav");
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -30,7 +31,8 @@ export default function LoginPage() {
 
   const registered = searchParams.get("registered") === "1";
   const verified = searchParams.get("verified") === "1";
-  const redirectParam = searchParams.get("redirect");
+  /** `redirect` is canonical; `callbackUrl` kept for older links (e.g. server redirects). */
+  const redirectParam = searchParams.get("redirect") ?? searchParams.get("callbackUrl");
 
   const safeRedirect = (() => {
     if (!redirectParam || typeof redirectParam !== "string") return null;
@@ -172,15 +174,6 @@ export default function LoginPage() {
               <Lock className="h-5 w-5 text-primary" />
             </div>
             <CardTitle className="text-2xl font-bold">{t("loginTitle")}</CardTitle>
-            <CardDescription className="mt-2">
-              {t("noAccount")}{" "}
-              <Link
-                href={safeRedirect ? `/register?redirect=${encodeURIComponent(safeRedirect)}` : "/register"}
-                className="text-primary hover:text-primary/80 transition-colors font-medium"
-              >
-                {t("registerTitle")}
-              </Link>
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -320,6 +313,16 @@ export default function LoginPage() {
                 </svg>
                 {t("discord")}
               </Button>
+
+              <p className="text-center text-sm text-muted-foreground pt-2 border-t border-white/[0.06] mt-1">
+                {t("noAccount")}{" "}
+                <Link
+                  href={safeRedirect ? `/register?redirect=${encodeURIComponent(safeRedirect)}` : "/register"}
+                  className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/85 hover:underline"
+                >
+                  {tNav("register")}
+                </Link>
+              </p>
             </form>
           </CardContent>
         </Card>

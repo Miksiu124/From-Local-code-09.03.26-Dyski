@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { getTimeRemaining } from "@/lib/utils";
 
@@ -11,7 +11,8 @@ interface PaymentCountdownProps {
 }
 
 export function PaymentCountdown({ expirationTime, isBlik, onBlikExpired }: PaymentCountdownProps) {
-  const [time, setTime] = useState(getTimeRemaining(new Date(expirationTime)));
+  /** null until layout — getTimeRemaining uses Date.now() and must not run during SSR/first client pass */
+  const [time, setTime] = useState<ReturnType<typeof getTimeRemaining> | null>(null);
   const initialTotalRef = useRef<number | null>(null);
   const firedRef = useRef(false);
 
@@ -19,7 +20,7 @@ export function PaymentCountdown({ expirationTime, isBlik, onBlikExpired }: Paym
     onBlikExpired?.(expired);
   }, [onBlikExpired]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     initialTotalRef.current = new Date(expirationTime).getTime() - Date.now();
     const newTime = getTimeRemaining(new Date(expirationTime));
     setTime(newTime);
@@ -42,6 +43,20 @@ export function PaymentCountdown({ expirationTime, isBlik, onBlikExpired }: Paym
 
     return () => clearInterval(interval);
   }, [expirationTime, isBlik, notifyExpired]);
+
+  if (!time) {
+    return (
+      <div className="space-y-3" aria-busy="true">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground mb-1">Expires in</p>
+          <div className="flex items-center justify-center gap-2 text-2xl font-mono font-bold text-muted-foreground/40">
+            <span className="inline-block w-[4.5ch] tabular-nums animate-pulse">--:--</span>
+          </div>
+        </div>
+        <div className="h-2 rounded-full bg-muted overflow-hidden" />
+      </div>
+    );
+  }
 
   const initialTotal = initialTotalRef.current || 1;
   const progress = Math.max(0, Math.min(1, time.total / Math.max(initialTotal, 1)));

@@ -1,12 +1,12 @@
 #!/bin/bash
-# ContentVault - Pełna konfiguracja nowego VPS od zera (Privacy First)
+# Dyskiof - Pełna konfiguracja nowego VPS od zera (Privacy First)
 # Uruchom: ssh root@138.249.138.60 'bash -s' < scripts/vps-new-migration-setup.sh
 # LUB: scp scripts/vps-new-migration-setup.sh root@138.249.138.60:/tmp/ && ssh root@138.249.138.60 'bash /tmp/vps-new-migration-setup.sh'
 
 set -e
 
 echo "=========================================="
-echo "ContentVault - VPS Migration Setup"
+echo "Dyskiof - VPS Migration Setup"
 echo "=========================================="
 
 # 1. Utworzenie użytkownika deploy
@@ -26,7 +26,7 @@ echo "[2/6] Aktualizuję system i instaluję pakiety..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get upgrade -y -qq
-apt-get install -y -qq ca-certificates curl gnupg git ufw fail2ban iptables-persistent netfilter-persistent
+apt-get install -y -qq ca-certificates curl gnupg git rsync tar ufw fail2ban iptables-persistent netfilter-persistent
 
 # 3. Docker
 echo "[3/6] Instaluję Docker..."

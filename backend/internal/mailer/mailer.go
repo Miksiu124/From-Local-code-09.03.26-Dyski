@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"mime"
 	"net"
 	"net/smtp"
 	"strings"
@@ -173,7 +174,7 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 	headers := map[string]string{
 		"From":         m.from,
 		"To":           to,
-		"Subject":      subject,
+		"Subject":      encodeSubjectMIME(subject),
 		"Message-ID":   "<" + m.generateMessageID() + ">",
 		"Date":         time.Now().Format(time.RFC1123Z),
 		"MIME-Version": "1.0",
@@ -213,49 +214,122 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 	return lastErr
 }
 
-// humanTTLLine formats seconds into a short English phrase for email copy (e.g. "1 hour", "24 hours").
-func humanTTLLine(ttlSecs int) string {
+// encodeSubjectMIME encodes non-ASCII subjects for RFC 2047 (Polish diacritics in Subject).
+func encodeSubjectMIME(s string) string {
+	for _, r := range s {
+		if r > 127 {
+			return mime.QEncoding.Encode("utf-8", s)
+		}
+	}
+	return s
+}
+
+func polishMinutesAccusative(n int) string {
+	if n == 1 {
+		return "1 minutę"
+	}
+	if n <= 0 {
+		return "1 minutę"
+	}
+	if n%100 >= 12 && n%100 <= 14 {
+		return fmt.Sprintf("%d minut", n)
+	}
+	switch n % 10 {
+	case 2, 3, 4:
+		return fmt.Sprintf("%d minuty", n)
+	default:
+		return fmt.Sprintf("%d minut", n)
+	}
+}
+
+func polishHoursAccusative(n int) string {
+	if n == 1 {
+		return "1 godzinę"
+	}
+	if n <= 0 {
+		return "1 godzinę"
+	}
+	if n%100 >= 12 && n%100 <= 14 {
+		return fmt.Sprintf("%d godzin", n)
+	}
+	switch n % 10 {
+	case 2, 3, 4:
+		return fmt.Sprintf("%d godziny", n)
+	default:
+		return fmt.Sprintf("%d godzin", n)
+	}
+}
+
+func polishDaysAccusative(n int) string {
+	if n == 1 {
+		return "1 dzień"
+	}
+	if n <= 0 {
+		return "1 dzień"
+	}
+	if n%100 >= 12 && n%100 <= 14 {
+		return fmt.Sprintf("%d dni", n)
+	}
+	switch n % 10 {
+	case 2, 3, 4:
+		return fmt.Sprintf("%d dni", n)
+	default:
+		return fmt.Sprintf("%d dni", n)
+	}
+}
+
+// humanTTLLinePL formats seconds into a short Polish phrase for email copy (e.g. "24 godziny").
+func humanTTLLinePL(ttlSecs int) string {
 	if ttlSecs <= 0 {
-		return "1 hour"
+		return "1 godzinę"
 	}
 	if ttlSecs < 3600 {
 		m := (ttlSecs + 59) / 60
-		if m <= 1 {
-			return "1 minute"
-		}
-		return fmt.Sprintf("%d minutes", m)
+		return polishMinutesAccusative(m)
 	}
 	if ttlSecs < 86400 {
 		h := (ttlSecs + 3599) / 3600
-		if h == 1 {
-			return "1 hour"
-		}
-		return fmt.Sprintf("%d hours", h)
+		return polishHoursAccusative(h)
 	}
 	d := (ttlSecs + 86399) / 86400
-	if d == 1 {
-		return "24 hours"
+	return polishDaysAccusative(d)
+}
+
+func polishCreditsPhrase(n int) string {
+	if n == 1 {
+		return "1 kredyt"
 	}
-	return fmt.Sprintf("%d days", d)
+	if n <= 0 {
+		return "0 kredytów"
+	}
+	if n%100 >= 12 && n%100 <= 14 {
+		return fmt.Sprintf("%d kredytów", n)
+	}
+	switch n % 10 {
+	case 2, 3, 4:
+		return fmt.Sprintf("%d kredyty", n)
+	default:
+		return fmt.Sprintf("%d kredytów", n)
+	}
 }
 
 func (m *Mailer) SendPasswordReset(to, resetURL string, ttlSecs int) error {
-	subject := "Reset Your Password - ContentVault"
-	expires := humanTTLLine(ttlSecs)
+	subject := "Resetowanie hasła — Dyskiof"
+	expires := humanTTLLinePL(ttlSecs)
 	body := fmt.Sprintf(`<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Reset Your Password</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Reset hasła</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      You requested a password reset for your ContentVault account. Click the button below to set a new password.
+      Poprosiłeś(-aś) o reset hasła do konta Dyskiof. Kliknij przycisk poniżej, aby ustawić nowe hasło.
     </p>
     <a href="%s" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
-      Reset Password
+      Ustaw nowe hasło
     </a>
     <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      This link expires in %s. If you didn't request this, you can safely ignore this email.
+      Link jest ważny przez %s. Jeśli to nie Ty, zignoruj tę wiadomość.
     </p>
   </div>
 </body>
@@ -265,54 +339,54 @@ func (m *Mailer) SendPasswordReset(to, resetURL string, ttlSecs int) error {
 }
 
 func (m *Mailer) SendVerificationEmail(to, name, verifyURL string, ttlSecs int) error {
-	subject := "Verify Your Email - ContentVault"
-	displayName := name
-	if displayName == "" {
-		displayName = "there"
+	subject := "Potwierdź adres e-mail — Dyskiof"
+	greeting := "Cześć!"
+	if strings.TrimSpace(name) != "" {
+		greeting = fmt.Sprintf("Cześć, %s!", strings.TrimSpace(name))
 	}
-	expires := humanTTLLine(ttlSecs)
+	expires := humanTTLLinePL(ttlSecs)
 	body := fmt.Sprintf(`<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Verify Your Email</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Potwierdź e-mail</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Hi %s! Please verify your email address to access your ContentVault account. Click the button below.
+      %s Potwierdź adres e-mail, aby w pełni korzystać z konta Dyskiof. Kliknij przycisk poniżej.
     </p>
     <a href="%s" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
-      Verify Email
+      Potwierdzam e-mail
     </a>
     <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      This link expires in %s. If you didn't create an account, you can safely ignore this email.
+      Link jest ważny przez %s. Jeśli nie zakładałeś(-aś) konta, zignoruj tę wiadomość.
     </p>
   </div>
 </body>
-</html>`, displayName, verifyURL, expires)
+</html>`, greeting, verifyURL, expires)
 	return m.Send(to, subject, body)
 }
 
 func (m *Mailer) SendWelcome(to, name string) error {
-	subject := "Welcome to ContentVault!"
-	displayName := name
-	if displayName == "" {
-		displayName = "there"
+	subject := "Witaj w Dyskiof!"
+	title := "Witaj!"
+	if strings.TrimSpace(name) != "" {
+		title = fmt.Sprintf("Witaj, %s!", strings.TrimSpace(name))
 	}
 	body := fmt.Sprintf(`<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Welcome, %s!</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">%s</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Your ContentVault account is ready. Browse exclusive content from top creators and enjoy premium access.
+      Twoje konto Dyskiof jest gotowe. Możesz przeglądać materiały i w razie potrzeby dokupić kredyty, aby odblokować dostęp.
     </p>
     <p style="color: #737373; font-size: 12px; margin: 0;">
-      &mdash; The ContentVault Team
+      &mdash; Zespół Dyskiof
     </p>
   </div>
 </body>
-</html>`, displayName)
+</html>`, title)
 
 	return m.Send(to, subject, body)
 }
@@ -320,25 +394,51 @@ func (m *Mailer) SendWelcome(to, name string) error {
 func (m *Mailer) SendPaymentConfirmation(to string, credits int, amountPln float64) error {
 	// 4 PLN = 1 USD, round up
 	amountUsd := math.Ceil(amountPln / plnToUsd)
-	subject := "Payment Confirmed - ContentVault"
+	credPhrase := polishCreditsPhrase(credits)
+	subject := "Płatność zatwierdzona — Dyskiof"
 	body := fmt.Sprintf(`<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #22c55e;">Payment Confirmed!</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #22c55e;">Płatność przyjęta</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 16px;">
-      Your payment of <strong style="color: #fff;">%.0f PLN ($%.0f)</strong> has been approved.
+      Twoja wpłata <strong style="color: #fff;">%.0f PLN (ok. $%.0f)</strong> została zatwierdzona.
     </p>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      <strong style="color: #fff;">%d credits</strong> have been added to your balance.
+      Na saldo dodaliśmy: <strong style="color: #fff;">%s</strong>.
     </p>
     <p style="color: #737373; font-size: 12px; margin: 0;">
-      &mdash; The ContentVault Team
+      &mdash; Zespół Dyskiof
     </p>
   </div>
 </body>
-</html>`, amountPln, amountUsd, credits)
+</html>`, amountPln, amountUsd, credPhrase)
+
+	return m.Send(to, subject, body)
+}
+
+// SendCheckoutAbandonmentReminder nudges users who opened the credit checkout but did not complete a purchase.
+func (m *Mailer) SendCheckoutAbandonmentReminder(to, purchaseURL string) error {
+	subject := "Dokończ zakup kredytów — Dyskiof"
+	body := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="pl">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
+  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Wróć do płatności</h1>
+    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
+      Zacząłeś(-aś) proces zakupu kredytów, ale go nie dokończyłeś(-aś). Możesz wrócić w dowolnej chwili &mdash; zajmie to chwilę.
+    </p>
+    <a href="%s" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
+      Przejdź do kasy
+    </a>
+    <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
+      Jeśli już zapłaciłeś(-aś) lub nie potrzebujesz kredytów, zignoruj tę wiadomość.
+    </p>
+  </div>
+</body>
+</html>`, purchaseURL)
 
 	return m.Send(to, subject, body)
 }
@@ -347,17 +447,17 @@ func (m *Mailer) SendPaymentConfirmation(to string, credits int, amountPln float
 // Sends confirmation to the new address and a security alert to the old address.
 func (m *Mailer) SendEmailChanged(newEmail, oldEmail string) error {
 	// Confirmation to new email
-	subjectNew := "Your email has been changed - ContentVault"
+	subjectNew := "Zmieniono adres e-mail — Dyskiof"
 	bodyNew := `<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Email Updated</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Adres e-mail zaktualizowany</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Your ContentVault account email has been changed to this address. If you didn't make this change, contact support immediately.
+      Adres e-mail Twojego konta Dyskiof został zmieniony na ten. Jeśli to nie Ty, skontaktuj się z pomocą techniczną jak najszybciej.
     </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; The ContentVault Team</p>
+    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; Zespół Dyskiof</p>
   </div>
 </body>
 </html>`
@@ -366,17 +466,17 @@ func (m *Mailer) SendEmailChanged(newEmail, oldEmail string) error {
 	}
 	// Security alert to old email (only if different - avoids duplicate to same inbox)
 	if oldEmail != "" && oldEmail != newEmail {
-		subjectOld := "Security notice: Your ContentVault email was changed"
+		subjectOld := "Uwaga: zmieniono e-mail do Dyskiof"
 		bodyOld := `<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #f59e0b;">Security Notice</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #f59e0b;">Powiadomienie bezpieczeństwa</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      The email address for your ContentVault account was changed. If you didn't do this, use "Forgot password" to regain access.
+      Adres e-mail przypisany do konta Dyskiof został zmieniony. Jeśli to nie Ty, użyj opcji &bdquo;Nie pamiętam hasła&rdquo;, aby odzyskać dostęp.
     </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; The ContentVault Team</p>
+    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; Zespół Dyskiof</p>
   </div>
 </body>
 </html>`
@@ -389,17 +489,17 @@ func (m *Mailer) SendEmailChanged(newEmail, oldEmail string) error {
 
 // SendPasswordChanged sends a security notification when a user changes their password.
 func (m *Mailer) SendPasswordChanged(to string) error {
-	subject := "Your password was changed - ContentVault"
+	subject := "Hasło zostało zmienione — Dyskiof"
 	body := `<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
   <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #22c55e;">Password Updated</h1>
+    <h1 style="font-size: 24px; margin: 0 0 16px; color: #22c55e;">Hasło zaktualizowane</h1>
     <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Your ContentVault password was successfully changed. If you didn't make this change, use "Forgot password" to regain access.
+      Hasło do konta Dyskiof zostało pomyślnie zmienione. Jeśli to nie Ty, użyj opcji &bdquo;Nie pamiętam hasła&rdquo;, aby odzyskać dostęp.
     </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; The ContentVault Team</p>
+    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; Zespół Dyskiof</p>
   </div>
 </body>
 </html>`

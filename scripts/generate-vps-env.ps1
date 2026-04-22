@@ -36,7 +36,7 @@ $smtpRelay = $oldEnv['SMTP_RELAY_PASSWORD']
 if (-not $smtpRelay) { $smtpRelay = "PASTE_RESEND_API_KEY_FROM_OLD_VPS" }
 
 $content = @"
-# ContentVault - Production (new VPS 138.249.138.60)
+# Dyskiof - Production (new VPS 138.249.138.60)
 # Wygenerowano: $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 
 ENVIRONMENT=production

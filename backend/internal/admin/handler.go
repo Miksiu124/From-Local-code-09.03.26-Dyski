@@ -318,6 +318,7 @@ func (h *Handler) ApprovePurchase(c echo.Context) error {
 	// Discord notification
 	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
 	info.Status = "APPROVED"
+	info.ApprovedByDisplay = h.resolveAdminDisplayName(ctx, adminID)
 	h.discord.NotifyPurchaseApproved(ctx, info)
 
 	// Payment confirmation email
@@ -1810,6 +1811,29 @@ func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID st
 	return discord.FetchPurchaseInfo(ctx, h.db, purchaseID)
 }
 
+func (h *Handler) resolveAdminDisplayName(ctx context.Context, adminID string) string {
+	id := strings.TrimSpace(adminID)
+	if id == "" {
+		return ""
+	}
+	var name, email *string
+	err := h.db.QueryRow(ctx, `SELECT name, email FROM users WHERE id = $1`, id).Scan(&name, &email)
+	if err != nil {
+		return ""
+	}
+	if name != nil {
+		if n := strings.TrimSpace(*name); n != "" {
+			return n
+		}
+	}
+	if email != nil {
+		if e := strings.TrimSpace(*email); e != "" {
+			return e
+		}
+	}
+	return ""
+}
+
 // ═══ Analytics ═══════════════════════════════════════════════════════════════
 
 func (h *Handler) GetAnalytics(c echo.Context) error {
@@ -2453,7 +2477,8 @@ func (h *Handler) DownloadContentSource(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
-	keys := exportKeysForItem(ctype, sourcePath, thumbPath, hlsFolder, hlsMaster)
+	// Never serve .m3u8 from this endpoint — UI promises a source file, not HLS.
+	keys := exportKeysWithoutPlaylists(exportKeysForItem(ctype, sourcePath, thumbPath, hlsFolder, hlsMaster))
 	var chosen string
 	for _, k := range keys {
 		k = strings.TrimSpace(k)
@@ -2631,6 +2656,22 @@ func (h *Handler) BulkDownloadContentZip(c echo.Context) error {
 	return nil
 }
 
+// exportKeysWithoutPlaylists removes HLS manifests so admin “download source” cannot return a playlist.
+func exportKeysWithoutPlaylists(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(k), ".m3u8") {
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
 // exportKeysForItem lists R2 keys to try in order; first existing object is used in bulk-zip.
 // source_video_path is often unset; hls_master_path still points at the playlist — folder for thumbs is EffectiveHLSFolder.
 func exportKeysForItem(ctype string, sourcePath, thumbPath, hlsFolder, hlsMaster *string) []string {
@@ -2650,12 +2691,16 @@ func exportKeysForItem(ctype string, sourcePath, thumbPath, hlsFolder, hlsMaster
 	switch ctype {
 	case "VIDEO":
 		add(derefString(sourcePath))
+		// Prefer conventional sibling MP4 ({hls_folder}.mp4) before thumbnails or playlist.
+		eff := content.EffectiveHLSFolder(hlsFolder, hlsMaster)
+		var b string
+		if eff != "" {
+			b = strings.TrimRight(eff, "/")
+			add(b + ".mp4")
+		}
 		add(derefString(thumbPath))
 		add(derefString(hlsMaster))
-		eff := content.EffectiveHLSFolder(hlsFolder, hlsMaster)
 		if eff != "" {
-			b := strings.TrimRight(eff, "/")
-			add(b + ".mp4")
 			add(b + "_thumbnail.webp")
 			add(b + "_source_thumbnail.webp")
 			add(b + "/thumbnail.webp")

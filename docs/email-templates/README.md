@@ -1,6 +1,6 @@
-# Szablony email ContentVault dla BillionMail
+# Szablony email Dyskiof dla BillionMail
 
-Szablony w stylu ContentVault (ciemny motyw, fiolet #7c3aed) do importu w panelu BillionMail.
+Szablony w stylu Dyskiof (ciemny motyw, fiolet #7c3aed) do importu w panelu BillionMail.
 
 ## Szablony
 
@@ -36,7 +36,7 @@ W szablonach używane są placeholdery – zamień je na zmienne BillionMail:
 
 W BillionMail sprawdź, jaka jest składnia zmiennych (np. `{recipient.email}`, `{campaign.link}`) i dopasuj placeholdery.
 
-## Style ContentVault
+## Style Dyskiof
 
 - **Tło:** #0a0a0a
 - **Karta:** #171717, obramowanie rgba(255,255,255,0.06)

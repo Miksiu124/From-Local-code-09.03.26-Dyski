@@ -1,6 +1,23 @@
 import { headers } from "next/headers";
 
-const BASE_URL = process.env.API_URL || "http://localhost:8080/api";
+/** Base URL for Go API (server-side). Must reach `api` in Docker, never `localhost` from the frontend container. */
+function getServerApiBaseUrl(): string {
+  const fromEnv = process.env.API_URL?.trim();
+  if (fromEnv) {
+    let u = fromEnv;
+    if (u.includes("localhost:8080") && process.env.API_HOST === "api") {
+      u = u.replace("localhost:8080", "api:8080");
+    }
+    return u.endsWith("/") ? u.slice(0, -1) : u;
+  }
+  if (process.env.API_HOST === "api") {
+    return "http://api:8080/api";
+  }
+  if (process.env.HOSTNAME === "0.0.0.0") {
+    return "http://api:8080/api";
+  }
+  return "http://localhost:8080/api";
+}
 
 export type FetchApiOptions = RequestInit & {
   /** Revalidate cache after N seconds. Use for public data (models, countries, settings, stats). */
@@ -14,17 +31,7 @@ export async function fetchApi<T>(path: string, options: FetchApiOptions = {}): 
     const headersList = await headers();
     const cookie = headersList.get("cookie") || "";
 
-    const isDocker = process.env.HOSTNAME === "0.0.0.0" || process.env.API_HOST === "api";
-    const defaultApiUrl = isDocker ? "http://api:8080/api" : "http://localhost:8080/api";
-    const envApiUrl = process.env.API_URL;
-
-    let baseUrl = envApiUrl || defaultApiUrl;
-
-    // Fix host if in Docker but config says localhost
-    if (isDocker && baseUrl.includes("localhost:8080")) {
-        baseUrl = baseUrl.replace("localhost:8080", "api:8080");
-    }
-
+    const baseUrl = getServerApiBaseUrl();
     const url = `${baseUrl}${path}`;
 
     try {

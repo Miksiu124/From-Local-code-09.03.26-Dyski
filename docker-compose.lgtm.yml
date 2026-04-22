@@ -1,0 +1,139 @@
+# =============================================================================
+# LGTM w jednym kontenerze: grafana/otel-lgtm (Grafana + OTel Collector + Loki
+# + Tempo + Prometheus; metryki przez OTel do Prom). Uruchomienie obok appki:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.lgtm.yml up -d
+#   (na VPS dodatkowo)   -f docker-compose.vps.yml
+#
+# Interfejs Grafana: tylko w sieci Docker — dodaj vhost w nginx (patrz
+# nginx/lgtm-grafana.vhost.conf.example) lub SSH tunnel: localhost:3001.
+# Domyślne logowanie: admin / admin (ZMIEŃ przez GF_SECURITY_* w .env.lgtm).
+# API (Go): włącz wysyłkę logów (slog → OTel) — sekcja api: niżej.
+# W Grafanie: Explore → Loki, wyszukaj np. {service_name="content-api"}
+# lub etykiety z mapowania w collector (job, log.file, itd.).
+# Klik w trace_id w wierszu logu (Loki) → otwórz pełny trace w Tempo: konfig w
+# lgtm/grafana/provisioning/datasources/grafana-datasources.yaml (po zmianach:
+#   docker compose -f ... up -d otel-lgtm
+# ).
+#
+# Metryki VPS/kontenerów (cAdvisor + node_exporter) → ten sam Prometheus:
+#   Explore → Prometheus: container_cpu_usage_seconds_total, node_cpu_seconds_total
+#
+# OSTRZEŻENIE: obraz jest „dev/demowy” (Grafana docs). Dla twardych prod SLI
+# rozważ Grafana Cloud lub pełne LGTM (Helm) + backup off-site.
+# =============================================================================
+
+services:
+  otel-lgtm:
+    image: grafana/otel-lgtm:${OTEL_LGTM_TAG:-latest}
+    container_name: content-otel-lgtm
+    restart: unless-stopped
+    init: true
+    # Sekrety i URL Grafana: wyłącznie .env.lgtm (compose nie interpoluje env_file
+    # do sekcji environment — unikaj ${GF_*} w tym pliku, bo czytają się z głównego .env)
+    env_file:
+      - .env.lgtm
+    # Zgodne z run-grafana.sh w obrazie (jedna ścieżka danych — unikaj 2x grafana.db)
+    environment:
+      GF_PATHS_HOME: /data/grafana
+      GF_PATHS_DATA: /data/grafana/data
+    volumes:
+      - lgtm_data:/data
+      # Host + kontenery: scrape w OTel Collector (patrz lgtm/otelcol-config.yaml)
+      - ./lgtm/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      # Loki → Tempo: derived fields (klik w trace_id w logu). Nadpisuje plik z obrazu.
+      - ./lgtm/grafana/provisioning/datasources/grafana-datasources.yaml:/otel-lgtm/grafana/conf/provisioning/datasources/grafana-datasources.yaml:ro
+      # Dashboardy: provider MUSI być w conf/provisioning/dashboards/*.yaml (nie w podkatalogu typu dyskiof).
+      - ./lgtm/grafana/provisioning/dashboards/dyskiof.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/dyskiof.yaml:ro
+      - ./lgtm/grafana/dashboards:/otel-lgtm/grafana-dashboards-dyskiof:ro
+    # Grafana — opcjonalnie tylko localhost (odkomentuj, jeśli nie używasz samego Docker network)
+    ports:
+      - "127.0.0.1:3001:3000"
+      # OTel: zostaw ZAMKNIĘTE na 127.0.0.1, jeśli agenci są na tym hoście;
+      # w przeciwnym razie użyj VPN / prywatnej sieci albo tylko sieci Docker (bez poniższych linii)
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:4040:4040"
+    deploy:
+      resources:
+        limits:
+          memory: ${OTEL_LGTM_MEMORY:-2048M}
+          cpus: "${OTEL_LGTM_CPUS:-1.0}"
+    # Wbudowany HEALTHCHECK w obrazie (Grafana, Loki, Tempo, Mimir, OTel)
+    depends_on:
+      cadvisor:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+    networks:
+      - internal
+
+  # Metryki kontenerów Docker (CPU/RAM per container) — tylko sieć wewnętrzna.
+  # v0.49.x: Docker factory często pada na Docker 29+ (client API 1.41 < 1.44) — brak etykiet compose.
+  # Używaj aktualnej wersji z gcr; pin digest w produkcji opcjonalnie.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: content-cadvisor
+    restart: unless-stopped
+    privileged: true
+    command:
+      - --housekeeping_interval=15s
+      - --docker_only=true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    expose:
+      - "8080"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "0.35"
+    networks:
+      - internal
+
+  # Metryki hosta VPS (m.in. node_cpu_seconds_total) — tylko sieć wewnętrzna.
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.9.0
+    container_name: content-node-exporter
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+    expose:
+      - "9100"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.15"
+    networks:
+      - internal
+
+  # Logi/traces/metryki API → kolektor OTLP w `otel-lgtm` (Loki/Tempo/Prom). Init SDK w Go jest
+  # asynchroniczny (LaunchOpenTelemetryAsync) — nie blokuje :8080.
+  api:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: content-api
+      OTEL_TRACES_SAMPLE_RATIO: "1"
+    depends_on:
+      otel-lgtm:
+        condition: service_started
+
+volumes:
+  lgtm_data:

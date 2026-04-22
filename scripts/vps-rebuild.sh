@@ -1,5 +1,5 @@
 #!/bin/bash
-# ContentVault â€” peĹ‚na przebudowa kontenerĂłw na VPS (zachowanie tylko bazy PostgreSQL)
+# Dyskiof — pełna przebudowa kontenerów na VPS (zachowanie tylko bazy PostgreSQL)
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-rebuild.sh
 # Opcja: --billionmail â€” uĹĽyj docker-compose.billionmail.yml (gdy BillionMail jest zainstalowany)
 
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "=== ContentVault â€” przebudowa od zera (zachowujÄ™ postgres_data) ==="
+echo "=== Dyskiof — przebudowa od zera (zachowuję postgres_data) ==="
 
 # 1. Zatrzymaj wszystkie kontenery (bez usuwania wolumenĂłw)
 echo "ZatrzymujÄ™ kontenery..."

@@ -1,5 +1,5 @@
 #!/bin/bash
-# ContentVault — dodaj brakujące zmienne SMTP do .env na VPS
+# Dyskiof — dodaj brakujące zmienne SMTP do .env na VPS
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-fix-email.sh
 # Przed: ustaw RESEND_API_KEY w env lub podaj jako arg: bash vps-fix-email.sh re_xxx
 

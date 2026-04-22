@@ -1,0 +1,18 @@
+# Postgres: jeden nazwany wolumen z klastrem w PGDATA=/var/lib/postgresql/18/docker.
+# Na VPS produkcja (przychody w credit_purchases) jest w tym wolumenie — domyślny contentvault_postgres_data
+# bywa pusty; skan: scripts/scan-postgres-volumes-revenue.sh
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml -f docker-compose.lgtm.yml -f docker-compose.use3566349.yml up -d
+#
+# Wolumen Docker: contentvault_postgres_cluster (external — tworzysz ręcznie / skryptem migracji).
+
+services:
+  postgres:
+    environment:
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes: !override
+      - contentvault_postgres_cluster:/var/lib/postgresql
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+
+volumes:
+  contentvault_postgres_cluster:
+    external: true

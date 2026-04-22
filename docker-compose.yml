@@ -17,6 +17,8 @@ services:
       - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
       - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
       - PORT=8080
+      # W kontenerze (nie-AWS) SDK nie powinno czekać na IMDS — inaczej init R2 wisi przed e.Start
+      - AWS_EC2_METADATA_DISABLED=true
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
       # Observability: last DB backup file — mount postgres_backups (docker-compose.vps.yml) i ustaw w .env: POSTGRES_BACKUP_DIR=/backups
       - POSTGRES_BACKUP_DIR=${POSTGRES_BACKUP_DIR:-}
@@ -56,6 +58,7 @@ services:
         # Baked at build time; use https://yourdomain.com in production .env before `docker compose build`
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
         - NEXT_PUBLIC_MEDIA_HOST=${NEXT_PUBLIC_MEDIA_HOST}
+        - NEXT_PUBLIC_DISCORD_SERVER_URL=${NEXT_PUBLIC_DISCORD_SERVER_URL:-}
     container_name: content-frontend
     restart: unless-stopped
     env_file: .env
@@ -68,6 +71,7 @@ services:
       # e.g. NEXT_PUBLIC_APP_URL=https://yourdomain.com
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost}
       - NEXT_PUBLIC_MEDIA_HOST=${NEXT_PUBLIC_MEDIA_HOST}
+      - NEXT_PUBLIC_DISCORD_SERVER_URL=${NEXT_PUBLIC_DISCORD_SERVER_URL:-}
       - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
       - ADMIN_EMAILS=${ADMIN_EMAILS}
     ports:
@@ -98,6 +102,9 @@ services:
       POSTGRES_DB: content_platform
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      # Named volume jest montowany na /var/lib/postgresql/data; starszy układ ma klaster w podkatalogu data/.
+      # (root volume miał też 18/ — wtedy initdb na samym .../data się wywala). Używamy istniejącego klastra:
+      PGDATA: /var/lib/postgresql/data/data
     command:
       - postgres
       - -c
@@ -211,6 +218,25 @@ services:
         limits:
           memory: 128M
           cpus: "0.5"
+    networks:
+      - internal
+
+  # Eksport stub_status → Prometheus (via OTel collector w docker-compose.lgtm.yml)
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.1
+    container_name: content-nginx-exporter
+    restart: unless-stopped
+    command:
+      - -nginx.scrape-uri=http://nginx:80/internal/nginx_status
+    expose:
+      - "9113"
+    depends_on:
+      - nginx
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: "0.1"
     networks:
       - internal
 

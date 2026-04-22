@@ -1,8 +1,8 @@
-# 🚀 VPS Deployment Guide — ContentVault
+# 🚀 VPS Deployment Guide — Dyskiof
 
 > **Last updated:** 2026-02-26  
 > **Stack:** Next.js 16 · Go 1.24 · PostgreSQL 18 · Redis 7 · Nginx · Docker Compose  
-> **Ścieżka na VPS:** `/opt/contentvault` · **Deploy:** `./scripts/deploy-vps.sh --build`
+> **Ścieżka na VPS:** `/opt/contentvault` · **Deploy:** `./scripts/deploy-vps.sh --build` lub z Gitem na VPS: `./scripts/deploy-vps.sh --pull --build` (Windows: `.\scripts\deploy-vps.ps1 -Pull -Build`)
 
 ---
 
@@ -113,8 +113,8 @@ ssh deploy@YOUR_VPS_IP
 # Update packages
 sudo apt-get update && sudo apt-get upgrade -y
 
-# Install prerequisites
-sudo apt-get install -y ca-certificates curl gnupg ufw fail2ban git
+# Install prerequisites (rsync + tar: deploy z PC używa rsync; tar zwykle jest w systemie, jawna instalacja = pewność)
+sudo apt-get install -y ca-certificates curl gnupg ufw fail2ban git rsync tar
 
 # Install Docker
 curl -fsSL https://get.docker.com | sudo bash
@@ -207,9 +207,38 @@ sudo systemctl status certbot.timer
 sudo mkdir -p /opt/contentvault
 sudo chown deploy:deploy /opt/contentvault
 
-# Clone your repository
+# Clone your repository (HTTPS — wymaga PAT przy prywatnym repo)
 git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git /opt/contentvault
 cd /opt/contentvault
+```
+
+**Zalecane na VPS: SSH + Deploy key (read-only)** — bez hasła, tylko `git pull`:
+
+1. Na VPS (jako użytkownik deploy): `ssh-keygen -t ed25519 -f ~/.ssh/github_contentvault -N ""`
+2. `cat ~/.ssh/github_contentvault.pub` — w GitHub: **Repo → Settings → Deploy keys → Add deploy key** (wklej klucz publiczny, zaznacz *Allow write access* tylko jeśli naprawdę potrzebujesz push z serwera; do samego pull wystarczy read-only).
+3. `nano ~/.ssh/config`:
+
+   ```
+   Host github.com
+     HostName github.com
+     User git
+     IdentityFile ~/.ssh/github_contentvault
+     IdentitiesOnly yes
+   ```
+
+4. `chmod 600 ~/.ssh/config`
+5. Klon przez SSH: `git clone git@github.com:YOUR_USERNAME/YOUR_REPO.git /opt/contentvault`
+
+**Migracja z rsync / tar (bez `.git` na serwerze):** zrób kopię `.env`, przenieś katalog, sklonuj repo, przywróć `.env`:
+
+```bash
+sudo mv /opt/contentvault /opt/contentvault.bak.$(date +%Y%m%d)
+sudo mkdir -p /opt/contentvault && sudo chown deploy:deploy /opt/contentvault
+git clone git@github.com:YOUR_USERNAME/YOUR_REPO.git /opt/contentvault
+cp /opt/contentvault.bak.*/.env /opt/contentvault/.env
+chmod 600 /opt/contentvault/.env
+cd /opt/contentvault
+# ponownie: nginx domain sed, potem docker compose jak w §7
 ```
 
 ### 5.2 Create the Production `.env` File
@@ -487,6 +516,17 @@ Then reload: `sudo systemctl restart docker`
 ---
 
 ## 11. Updating the Application
+
+**Z komputera (zamiast rsync):** w katalogu `ContentManager`, z wypełnionym `.env.deploy` (`VPS_HOST`, opcjonalnie `VPS_USER`, `VPS_PATH`):
+
+```bash
+./scripts/deploy-vps.sh --pull --build
+# inna gałąź: GIT_BRANCH=staging ./scripts/deploy-vps.sh --pull --build
+```
+
+PowerShell (Windows), z katalogu `ContentManager`: `.\scripts\deploy-vps.ps1 -Pull -Build` (gałąź: `$env:GIT_BRANCH="staging"` przed uruchomieniem).
+
+**Bezpośrednio na VPS:**
 
 ```bash
 cd /opt/contentvault

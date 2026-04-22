@@ -4,7 +4,7 @@
 
 [![Dyskiof.net](https://img.shields.io/badge/Dyskiof.net-VPS%20Ready-success)](https://dyskiof.net)
 
-> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build`
+> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`).
 
 ---
 
@@ -136,8 +136,8 @@
 │   └── nginx.conf.production   # Production config (SSL, Cloudflare IP trust, rate limiting)
 │
 ├── scripts/                    # Deploy and utility scripts
-│   ├── deploy-vps.sh           # Main deploy script (rsync + docker compose)
-│   ├── deploy-vps.ps1          # PowerShell deploy variant
+│   ├── deploy-vps.sh           # Deploy: rsync lub --pull (git na VPS) + docker compose
+│   ├── deploy-vps.ps1          # PowerShell (rsync/tar lub -Pull + docker)
 │   ├── vps-fresh-install.sh    # Fresh VPS install
 │   ├── vps-rebuild-fresh.sh    # Full rebuild preserving users
 │   └── ...                     # Load testing, DNS, env generation scripts
@@ -292,7 +292,7 @@ The repository includes deploy scripts. See **[DEPLOY.md](DEPLOY.md)** for full 
 ./scripts/deploy-vps.sh --build
 ```
 
-Set `VPS_HOST`, `VPS_USER` in `.env.deploy`. Skrypty deploy dokładają **`docker-compose.vps.yml`** (produkcyjny nginx). Details in `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
+Set `VPS_HOST`, `VPS_USER` in `.env.deploy`; na produkcji z wolumenem `contentvault_postgres_cluster` ustaw też **`VPS_USE_POSTGRES_CLUSTER=1`** (włącza `docker-compose.use3566349.yml`). Skrypty deploy dokładają **`docker-compose.vps.yml`** (produkcyjny nginx). Details in `DEPLOY.md`, `docs/SECURITY_AUDIT.md`.
 
 ---
 

@@ -6,7 +6,7 @@ export default async function ReferralPage() {
   const user = await getServerUser();
 
   if (!user) {
-    redirect("/login?callbackUrl=/referral");
+    redirect("/login?redirect=" + encodeURIComponent("/referral"));
   }
 
   return (

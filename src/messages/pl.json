@@ -32,7 +32,8 @@
     "closeMenu": "Zamknij menu",
     "userMenu": "Menu użytkownika",
     "referral": "Program poleceń",
-    "settings": "Ustawienia"
+    "settings": "Ustawienia",
+    "discordServer": "Serwer Discord"
   },
   "auth": {
     "loginTitle": "Zaloguj się",
@@ -209,6 +210,7 @@
     "uploadProof": "Prześlij dowód płatności",
     "proofUploaded": "Dowód przesłany",
     "pending": "Oczekuje na weryfikację",
+    "pendingManualVerification": "Płatności weryfikujemy ręcznie — dziękujemy za cierpliwość.",
     "approved": "Zatwierdzono",
     "rejected": "Odrzucono",
     "perCredit": "za kredyt",

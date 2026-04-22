@@ -45,6 +45,21 @@ http {
     real_ip_header CF-Connecting-IP;
     real_ip_recursive on;
 
+    # Metryki stub_status tylko dla hosta `nginx` w sieci Docker (nginx-prometheus-exporter: http://nginx:80/...).
+    # Główne vhosty na :80 robią 301→HTTPS, więc bez tego bloku exporter widzi pustą odpowiedź (nginx_up=0).
+    server {
+        listen 80;
+        server_name nginx;
+        location /internal/nginx_status {
+            stub_status on;
+            access_log off;
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            allow 192.168.0.0/16;
+            deny all;
+        }
+    }
+
     # --- DEFAULT SERVER (Ghost Mode / No SSL Leak) ---
     server {
         listen 80 default_server;
@@ -61,6 +76,15 @@ http {
     server {
         listen 80;
         server_name dyskiof.net www.dyskiof.net;
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    # --- HTTP -> HTTPS (Grafana) ---
+    server {
+        listen 80;
+        server_name grafana.dyskiof.net;
         location / {
             return 301 https://$host$request_uri;
         }
@@ -102,6 +126,16 @@ http {
         ssl_session_timeout 1d;
         ssl_session_cache shared:SSL:10m;
         ssl_session_tickets off;
+
+        # Metryki dla nginx-prometheus-exporter (sieć Docker; nie wystawiaj na publiczny Internet)
+        location /internal/nginx_status {
+            stub_status on;
+            access_log off;
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            allow 192.168.0.0/16;
+            deny all;
+        }
 
         # --- CONTENT THUMBNAILS (galerie: wiele równoległych GET na jedną sesję) ---
         # Bez limit_req/limit_conn: unika 429 przy dużej siatce. Ryzyko: scraping / koszt R2+CPU — łagodź Cloudflare
@@ -169,6 +203,53 @@ http {
             proxy_hide_header Strict-Transport-Security;
             proxy_hide_header Referrer-Policy;
             proxy_hide_header X-Powered-By;
+        }
+    }
+
+    # --- GRAFANA (content-otel-lgtm) — wymaga certu z SAN dla grafana.dyskiof.net ---
+    server {
+        listen 443 ssl;
+        http2 on;
+        server_name grafana.dyskiof.net;
+
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $upstream_grafana "otel-lgtm";
+
+        ssl_certificate     /etc/nginx/certs/fullchain.pem;
+        ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+        ssl_client_certificate /etc/nginx/certs/security/cloudflare-origin.crt;
+        ssl_verify_client optional;
+
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+        add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()" always;
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+        ssl_session_timeout 1d;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_tickets off;
+
+        limit_req zone=req_limit burst=100 nodelay;
+        limit_conn conn_limit 20;
+
+        location / {
+            proxy_pass http://$upstream_grafana:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            proxy_buffering off;
         }
     }
 }

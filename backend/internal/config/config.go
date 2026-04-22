@@ -25,6 +25,11 @@ type Config struct {
 	PostgresBackupDir   string // POSTGRES_BACKUP_DIR e.g. /backups; empty = admin UI hides backup status
 	PostgresBackupDBName string // POSTGRES_BACKUP_DB_NAME — must match postgres-backup-local POSTGRES_DB (symlink name)
 
+	// OpenTelemetry: OTLP HTTP — logi (Loki), trace (Tempo), metryki (Prometheus/Mimir). Puste = wyłączone.
+	// OTEL_TRACES_SAMPLE_RATIO (opcjonalnie, 0–1, domyślnie 0.25) — patrz observability.InitOpenTelemetry.
+	OTLPLogEndpoint string
+	OTELServiceName string
+
 	// Redis
 	RedisURL string
 
@@ -86,6 +91,11 @@ type Config struct {
 	DiscordClientSecret string
 	DiscordRedirectURI  string
 	TurnstileSecretKey  string
+
+	// Growth: abandoned checkout reminder (cron). SMTP must be configured.
+	CheckoutReminderDisabled     bool
+	CheckoutReminderDelayMinutes int
+	CheckoutReminderLookbackDays int
 }
 
 func Load() (*Config, error) {
@@ -100,6 +110,8 @@ func Load() (*Config, error) {
 		DatabaseURL:            requireEnv("DATABASE_URL"),
 		PostgresBackupDir:      strings.TrimSpace(getEnvOrDefault("POSTGRES_BACKUP_DIR", "")),
 		PostgresBackupDBName:   getEnvOrDefault("POSTGRES_BACKUP_DB_NAME", "content_platform"),
+		OTLPLogEndpoint:        strings.TrimSpace(getEnvOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
+		OTELServiceName:        getEnvOrDefault("OTEL_SERVICE_NAME", "content-api"),
 		RedisURL:               getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:                requireEnv("JWT_SECRET"),
 		JWTExpirySecs:            resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
@@ -126,13 +138,16 @@ func Load() (*Config, error) {
 		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 587),
 		SMTPUser:              getEnvOrDefault("SMTP_USER", ""),
 		SMTPPassword:          getEnvOrDefault("SMTP_PASSWORD", ""),
-		SMTPFrom:              getEnvOrDefault("SMTP_FROM", "noreply@contentvault.io"),
+		SMTPFrom:              getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
 		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
 		TurnstileSecretKey:            getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
 		PasswordResetTokenTTLSecs:     getEnvOrDefaultInt("PASSWORD_RESET_TOKEN_TTL_SEC", 3600),
 		EmailVerificationTokenTTLSecs: getEnvOrDefaultInt("EMAIL_VERIFICATION_TOKEN_TTL_SEC", 86400),
+		CheckoutReminderDisabled:      getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "1" || getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "true",
+		CheckoutReminderDelayMinutes:  getEnvOrDefaultInt("CHECKOUT_REMINDER_DELAY_MINUTES", 45),
+		CheckoutReminderLookbackDays:  getEnvOrDefaultInt("CHECKOUT_REMINDER_LOOKBACK_DAYS", 14),
 	}
 
 	// Normalize URLs: strip trailing slashes to prevent double-slash bugs

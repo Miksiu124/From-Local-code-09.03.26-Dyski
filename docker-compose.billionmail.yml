@@ -1,5 +1,5 @@
 # Override: docker compose -f docker-compose.yml -f docker-compose.billionmail.yml up -d
-# Łączy ContentVault API z BillionMail Postfix (SMTP) zamiast boky/postfix.
+# Łączy Dyskiof API z BillionMail Postfix (SMTP) zamiast boky/postfix.
 # Wymaga: BillionMail uruchomiony w osobnym katalogu, sieć billionmail_billionmail-network istnieje.
 # Dokumentacja: docs/BILLIONMAIL_SETUP.md
 

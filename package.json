@@ -2,6 +2,14 @@
   "name": "content-sharing-platform",
   "version": "1.0.0",
   "private": true,
+  "browserslist": [
+    "chrome >= 93",
+    "edge >= 93",
+    "firefox >= 92",
+    "safari >= 15.4",
+    "ios_saf >= 15.4",
+    "not dead"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -34,6 +42,7 @@
     "next-intl": "^4.8.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "sharp": "^0.34.5",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.3.6"
   },
