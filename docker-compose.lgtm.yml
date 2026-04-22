@@ -120,25 +120,10 @@ services:
     networks:
       - internal
 
-  # Logi backendu → `otel-lgtm` (collector → Loki) — tylko gdy ładujesz ten plik compose.
-  api:
-    environment:
-      # Ten sam host dla wszystkich sygnałów: SDK daje pierwszeństwo
-      # OTEL_EXPORTER_OTLP_TRACES_* / _LOGS_* / _METRICS_* nad samym OTEL_EXPORTER_OTLP_*.
-      # W .env mógł zostać inny URL (np. tylko logi) — wtedy trace’y nie lądowały w Tempo mimo działających logów.
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-      OTEL_SERVICE_NAME: content-api
-      # Domyślnie w kodzie API: sample 25% trace'ów — logi Loki mają trace_id przy każdym HTTP,
-      # więc klik „Trace” w Grafanie dawałby Not Found w Tempo dla ~75% żądań. Przy LGTM (dev)
-      # włączamy 100%, żeby link z logów zgadzał się z backendem trace'ów.
-      OTEL_TRACES_SAMPLE_RATIO: "1"
-    depends_on:
-      otel-lgtm:
-        condition: service_started
+  # NIE wstrzykuj tutaj OTEL_* do usługi `api`: inicjalizacja SDK OTLP w procesie Go potrafi
+  # zablokować start serwera HTTP (brak nasłuchu :8080, pusty katalog). Stack LGTM (Loki/Tempo)
+  # działa nadal; metryki kontenerów idą przez cAdvisor. Eksport logów/traces z API: osobno
+  # (np. stdout → agent) albo gdy zbadamy nieblokujący init.
 
 volumes:
   lgtm_data:
