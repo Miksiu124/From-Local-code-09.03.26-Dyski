@@ -28,6 +28,8 @@ services:
       - postgres_backups:/backups:ro
     environment:
       POSTGRES_BACKUP_DIR: /backups
+      # Nadpisuje ewentualny OTEL_EXPORTER_OTLP_ENDPOINT z .env — SDK OTLP mógł blokować start HTTP.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
 
   nginx:
     volumes:
