@@ -34,6 +34,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/otel"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -65,6 +67,9 @@ func main() {
 	}
 	defer redisClient.Close()
 	log.Println("✓ Connected to Redis")
+
+	// Globalny noop tracer zanim ukończy się async InitOpenTelemetry; inaczej otelecho może zablokować start (provider jeszcze pusty).
+	otel.SetTracerProvider(oteltrace.NewNoopTracerProvider())
 
 	// OpenTelemetry w tle — HTTP musi nasłuchiwać od razu; Loki/Tempo/metryki włączą się po połączeniu z kolektorem
 	otlpShutdown := observability.LaunchOpenTelemetryAsync(cfg.OTLPLogEndpoint, cfg.OTELServiceName)

@@ -17,6 +17,8 @@ services:
       - DATABASE_URL=postgresql://platform:${POSTGRES_PASSWORD}@postgres:5432/content_platform?sslmode=disable
       - REDIS_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
       - PORT=8080
+      # W kontenerze (nie-AWS) SDK nie powinno czekać na IMDS — inaczej init R2 wisi przed e.Start
+      - AWS_EC2_METADATA_DISABLED=true
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
       # Observability: last DB backup file — mount postgres_backups (docker-compose.vps.yml) i ustaw w .env: POSTGRES_BACKUP_DIR=/backups
       - POSTGRES_BACKUP_DIR=${POSTGRES_BACKUP_DIR:-}
