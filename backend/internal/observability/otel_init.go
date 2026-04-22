@@ -108,7 +108,8 @@ func InitOpenTelemetry(ctx context.Context, rawEndpoint, serviceName string) (sh
 	slog.SetDefault(slog.New(h))
 	otlpLogsOn.Store(true)
 	OtelExportEnabled.Store(true)
-	slog.Info("otel export on", "otlp_endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "service", serviceName)
+	// NIE używaj slog.Info zaraz po podpięciu otelslog — może deadlock (goroutine init vs mutex log/otel error handler).
+	log.Printf("OpenTelemetry: otel export on (endpoint=%s, service=%s)", strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), serviceName)
 
 	return func(sctx context.Context) error {
 		var first error
