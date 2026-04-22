@@ -31,6 +31,9 @@ var OtelExportEnabled bool
 // InitOpenTelemetry configures OTLP log, trace, and metric export when rawEndpoint is non-empty.
 // Uses OTEL_EXPORTER_OTLP_* from the environment (same as Grafana Cloud / otel-lgtm).
 func InitOpenTelemetry(ctx context.Context, rawEndpoint, serviceName string) (shutdown func(context.Context) error, _ error) {
+	if s := strings.TrimSpace(os.Getenv("OTEL_SDK_DISABLED")); s == "1" || strings.EqualFold(s, "true") {
+		return func(context.Context) error { return nil }, nil
+	}
 	raw := strings.TrimSpace(rawEndpoint)
 	if raw == "" {
 		return func(context.Context) error { return nil }, nil

@@ -48,12 +48,7 @@ func main() {
 
 	ctx := context.Background()
 
-	otlpShutdown, errOtel := observability.InitOpenTelemetry(ctx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
-	if errOtel != nil {
-		log.Fatalf("OpenTelemetry: %v", errOtel)
-	}
-
-	// ── Database connections ─────────────────────────────────────────────
+	// ── Database & Redis first — must not sit behind OTLP init (collector hang = no HTTP, empty site)
 	pgPool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
@@ -70,6 +65,15 @@ func main() {
 	}
 	defer redisClient.Close()
 	log.Println("✓ Connected to Redis")
+
+	// OpenTelemetry: optional; timeout + soft-fail so a broken/slow collector cannot take the API down
+	otelCtx, otelCancel := context.WithTimeout(ctx, 25*time.Second)
+	otlpShutdown, errOtel := observability.InitOpenTelemetry(otelCtx, cfg.OTLPLogEndpoint, cfg.OTELServiceName)
+	otelCancel()
+	if errOtel != nil {
+		log.Printf("OpenTelemetry init failed (continuing without OTLP export): %v", errOtel)
+		otlpShutdown = func(context.Context) error { return nil }
+	}
 
 	// ── Echo server ──────────────────────────────────────────────────────
 	e := echo.New()
