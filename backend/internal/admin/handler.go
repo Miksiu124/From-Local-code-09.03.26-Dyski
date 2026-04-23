@@ -1944,8 +1944,9 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 	}
 
 	// Model purchases (spending credits)
-	var totalPurchases, bundlePurchases, individualPurchases int
+	var totalPurchases, bundlePurchases, individualPurchases, usersWithPurchase int
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM purchases`).Scan(&totalPurchases)
+	_ = h.db.QueryRow(ctx, `SELECT COUNT(DISTINCT user_id) FROM purchases`).Scan(&usersWithPurchase)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM purchases WHERE purchase_type = 'BUNDLE'`).Scan(&bundlePurchases)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM purchases WHERE purchase_type = 'INDIVIDUAL_MODEL'`).Scan(&individualPurchases)
 
@@ -2018,9 +2019,10 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 			"recent":   recent,
 		},
 		"purchases": map[string]int{
-			"total":      totalPurchases,
-			"bundles":    bundlePurchases,
-			"individual": individualPurchases,
+			"total":               totalPurchases,
+			"usersWithPurchase":   usersWithPurchase,
+			"bundles":             bundlePurchases,
+			"individual":          individualPurchases,
 		},
 		"topSellers": topSellers,
 		"referral": map[string]interface{}{

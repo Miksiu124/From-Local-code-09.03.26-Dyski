@@ -29,7 +29,7 @@ interface Analytics {
     byStatus: { status: string; count: number; amount: number }[];
     byMethod: { method: string; count: number; amount: number }[];
   };
-  purchases: { total: number; bundles: number; individual: number };
+  purchases: { total: number; usersWithPurchase: number; bundles: number; individual: number };
   topSellers: {
     modelId: string;
     modelName: string;
@@ -170,7 +170,16 @@ export default function AdminAnalyticsPage() {
         <StatCard icon={Coins} label="Credits Issued" value={data.credits.totalIssued} sub={`Spent: ${data.credits.totalSpent}`} />
         <StatCard icon={FolderOpen} label="Models" value={`${data.content.activeModels} / ${data.content.totalModels}`} sub={`${data.content.totalContentItems} content items`} />
         <StatCard icon={ShoppingCart} label="Model Purchases" value={data.purchases.total} sub={`${data.purchases.bundles} bundles, ${data.purchases.individual} individual`} />
-        <StatCard icon={TrendingUp} label="Conversion" value={data.users.total > 0 ? `${Math.round((data.purchases.total / data.users.total) * 100)}%` : "0%"} sub="Users who purchased" />
+        <StatCard
+          icon={TrendingUp}
+          label="Conversion"
+          value={
+            data.users.total > 0
+              ? `${Math.round(((data.purchases.usersWithPurchase ?? 0) / data.users.total) * 100)}%`
+              : "0%"
+          }
+          sub="Users who purchased"
+        />
         <StatCard icon={Package} label="Avg Purchase" value={data.purchases.total > 0 ? fmtCurrency(data.revenue.total / data.purchases.total) : fmtCurrency(0)} />
         {data.referral && (
           <div className="bg-card rounded-xl border border-border p-5 col-span-2 md:col-span-1">
