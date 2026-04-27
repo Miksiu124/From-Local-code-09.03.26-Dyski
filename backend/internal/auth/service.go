@@ -60,6 +60,40 @@ func (s *Service) StoreSessionIP(ctx context.Context, userID, ip string, ttlSecs
 	s.redis.Set(ctx, key, ip, time.Duration(ttlSecs)*time.Second)
 }
 
+// TryBackfillCustomLinkFromCookie sets users.custom_link_id when empty and the cookie references an active campaign link.
+func (s *Service) TryBackfillCustomLinkFromCookie(ctx context.Context, userID, linkID string) error {
+	linkID = strings.TrimSpace(linkID)
+	if linkID == "" || userID == "" {
+		return nil
+	}
+	var exists bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM custom_links WHERE id = $1 AND is_active = true)`, linkID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	_, err := s.db.Exec(ctx, `UPDATE users SET custom_link_id = $1 WHERE id = $2 AND custom_link_id IS NULL`, linkID, userID)
+	return err
+}
+
+// TryAttachReferralFromCookieAfterLogin attaches referral from ref_code when the user has no referrals row yet.
+func (s *Service) TryAttachReferralFromCookieAfterLogin(ctx context.Context, userID, refCode, refereeIP string) error {
+	refCode = strings.TrimSpace(refCode)
+	if refCode == "" || userID == "" {
+		return nil
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := referral.TryAttachReferralFromCodeAtCheckout(ctx, tx, s.redis, userID, refCode, refereeIP); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // Register creates a new user with hashed password and optionally saves referral and custom link attribution.
 // refereeIP is used for anti-gaming: if referrer and referee share the same IP, referral is rejected.
 // Returns the new user's id on success (for first-party funnel events with user_id).

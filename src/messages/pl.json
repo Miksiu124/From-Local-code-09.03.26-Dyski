@@ -556,6 +556,8 @@
     "bundleCreditCost": "Koszt pakietu (kredyty)",
     "grantAccess": "Przyznaj dostęp",
     "revokeAccess": "Cofnij dostęp",
+    "referralStatus": "Program poleceń — status",
+    "referralLoadError": "Nie udało się wczytać statystyk poleceń.",
     "userDetails": "Szczegóły użytkownika",
     "accessHistory": "Historia dostępu",
     "recentPurchases": "Ostatnie zakupy",

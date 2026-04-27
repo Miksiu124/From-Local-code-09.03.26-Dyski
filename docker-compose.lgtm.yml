@@ -122,12 +122,13 @@ services:
 
   # Logi/traces/metryki API → kolektor OTLP w `otel-lgtm` (Loki/Tempo/Prom). Init SDK w Go jest
   # asynchroniczny (LaunchOpenTelemetryAsync) — nie blokuje :8080.
+  #
+  # Tylko OTEL_EXPORTER_OTLP_*ENDPOINT* (bazowy) — Go SDK składa /v1/traces|logs|metrics.
+  # Nie ustawiaj OTEL_EXPORTER_OTLP_TRACES/LOGS/METRICS_ENDPOINT na ten sam host:port bez ścieżki:
+  # spec wymaga użycia URL „as-is”, więc pusty path → POST na „/” i 404 w kolektorze.
   api:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-lgtm:4318
-      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://otel-lgtm:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: content-api
       OTEL_TRACES_SAMPLE_RATIO: "1"

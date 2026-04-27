@@ -7,7 +7,7 @@ providers:
     folder: Dyskiof
     type: file
     disableDeletion: false
-    updateIntervalSeconds: 60
+    updateIntervalSeconds: 15
     allowUiUpdates: false
     options:
       path: /otel-lgtm/grafana-dashboards-dyskiof

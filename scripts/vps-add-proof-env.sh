@@ -50,6 +50,6 @@ ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && \
   mv .env.tmp .env"
 
 echo "Restartuję kontenery..."
-ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d"
+ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && source scripts/compose-vps-files.sh && set_compose_vps_files && docker compose \$COMPOSE_FILES up -d"
 
 echo "R2 Proof env dodane. API i frontend zrestartowane."

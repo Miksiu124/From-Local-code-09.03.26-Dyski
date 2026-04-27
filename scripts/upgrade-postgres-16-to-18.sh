@@ -15,18 +15,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=compose-vps-files.sh
+source "$SCRIPT_DIR/compose-vps-files.sh"
+FLAGS=()
+RESUME=false
+for arg in "$@"; do
+  [[ "$arg" == "--billionmail" ]] && FLAGS+=(--billionmail)
+  [[ "$arg" == "--lgtm" ]] && FLAGS+=(--lgtm)
+  [[ "$arg" == "--resume" ]] && RESUME=true
+done
+set_compose_vps_files "${FLAGS[@]}"
+
 # Backup w katalogu projektu (nie w /tmp — na VPS /tmp może być czyszczony)
 BACKUP_DIR="${REPO_ROOT}/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/pre_pg18_upgrade_${TIMESTAMP}.dump"
 
-# Compose files (VPS nginx production + opcjonalnie billionmail)
-COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
-RESUME=false
-for arg in "$@"; do
-  [[ "$arg" == "--billionmail" ]] && COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
-  [[ "$arg" == "--resume" ]] && RESUME=true
-done
+postgres_data_volume_name() {
+  local n d
+  while IFS='|' read -r n d; do
+    case "$d" in
+      /var/lib/postgresql|/var/lib/postgresql/data) echo "$n"; return 0 ;;
+    esac
+  done < <(docker inspect content-postgres --format '{{range .Mounts}}{{.Name}}|{{.Destination}}{{"\n"}}{{end}}' 2>/dev/null)
+  return 1
+}
 
 echo "=============================================="
 echo "PostgreSQL 16 → 18 — bezpieczny upgrade"
@@ -50,9 +63,12 @@ if [[ "$RESUME" == true ]]; then
     exit 1
   fi
   echo "Resume: używam backupu $BACKUP_FILE"
-  VOLUME_NAME=$(docker volume ls -q | grep postgres_data | head -1)
+  VOLUME_NAME=$(postgres_data_volume_name) || true
   if [[ -z "$VOLUME_NAME" ]]; then
-    echo "Błąd: Nie znaleziono volume postgres_data"
+    VOLUME_NAME=$(docker volume ls -q | grep -E 'contentvault_postgres_cluster|_postgres_data$' | head -1)
+  fi
+  if [[ -z "$VOLUME_NAME" ]]; then
+    echo "Błąd: Nie znaleziono wolumenu danych Postgresa (kontener albo contentvault_postgres_cluster / *_postgres_data)."
     exit 1
   fi
   echo "Volume: $VOLUME_NAME"
@@ -92,10 +108,9 @@ else
   fi
   echo "   Backup OK"
 
-  # ── 4. Pobierz nazwę volume PRZED zatrzymaniem ──
+  # ── 4. Pobierz nazwę volume PRZED zatrzymaniem (layout: .../data lub klastrowy .../postgresql) ──
   echo "[4/8] Pobieram nazwę volume..."
-  VOLUME_NAME=$(docker inspect content-postgres --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' 2>/dev/null || true)
-  if [[ -z "$VOLUME_NAME" ]]; then
+  if ! VOLUME_NAME=$(postgres_data_volume_name); then
     echo "Błąd: Nie mogę pobrać nazwy volume. Upewnij się, że postgres działa."
     exit 1
   fi

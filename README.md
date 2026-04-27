@@ -4,7 +4,7 @@
 
 [![Dyskiof.net](https://img.shields.io/badge/Dyskiof.net-VPS%20Ready-success)](https://dyskiof.net)
 
-> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`).
+> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`). Wolumin produkcyjny Postgresa i LGTM: ta sama reguła w `scripts/compose-vps-files.sh` (stosuje ją m.in. `vps-rebuild.sh` i `deploy-vps` po stronie serwera).
 
 ---
 

@@ -12,9 +12,7 @@ set -e
 PROTECTED_EMAILS="dominikql.smurf@gmail.com|puma3850@wp.pl|misi3k124@proton.me|hakpola@gmail.com"
 PROTECTED_EMAILS_SQL="'dominikql.smurf@gmail.com','puma3850@wp.pl','misi3k124@proton.me','hakpola@gmail.com'"
 
-COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
 if [[ "$1" == "--billionmail" ]]; then
-  COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
   echo "Używam BillionMail + VPS nginx (production)."
 fi
 
@@ -25,6 +23,21 @@ DUMP_FILE="$BACKUP_DIR/pre_rebuild.dump"
 
 cd "$REPO_ROOT"
 
+# shellcheck source=compose-vps-files.sh
+source "$SCRIPT_DIR/compose-vps-files.sh"
+set_compose_vps_files "$@"
+
+if [[ "$COMPOSE_FILES" == *"use3566349"* ]]; then
+  if [[ "${ALLOW_FRESH_REBUILD_ON_CLUSTER:-0}" != "1" ]]; then
+    echo "BŁĄD: Ten skrypt był testowany głównie na domyślnym wolumenie postgres_data."
+    echo "Przy wolumenie klastra (VPS_USE_POSTGRES_CLUSTER) może zostawić niespójny stan."
+    echo "Użyj innego runbooku albo: ALLOW_FRESH_REBUILD_ON_CLUSTER=1 bash scripts/vps-rebuild-fresh.sh"
+    exit 1
+  fi
+  echo "(!) ALLOW_FRESH_REBUILD_ON_CLUSTER=1 — wiesz, co robisz względem contentvault_postgres_cluster."
+fi
+
+echo "Compose: $COMPOSE_FILES"
 echo "=========================================="
 echo "Dyskiof — REBUILD OD ZERA (fresh DB)"
 echo "=========================================="
@@ -68,6 +81,9 @@ docker compose $COMPOSE_FILES build --no-cache
 
 # 6. Uruchom
 echo "[6/10] Uruchamiam kontenery..."
+if [[ "$COMPOSE_FILES" == *"docker-compose.lgtm.yml"* ]]; then
+  [ -f .env.lgtm ] || cp .env.lgtm.example .env.lgtm
+fi
 docker compose $COMPOSE_FILES up -d
 
 # 7. Czekaj na Postgres

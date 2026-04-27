@@ -217,6 +217,11 @@ func (h *Handler) Register(c echo.Context) error {
 	if refCode == "" {
 		refCode = c.QueryParam("ref")
 	}
+	if refCode == "" {
+		if cookie, err := c.Cookie("ref_code"); err == nil && cookie.Value != "" {
+			refCode = strings.TrimSpace(cookie.Value)
+		}
+	}
 
 	// Custom link attribution (from ref_link_id cookie set when visiting /l/slug)
 	var customLinkID string
@@ -323,6 +328,17 @@ func (h *Handler) Login(c echo.Context) error {
 		return common.InvalidCredentials(c)
 	}
 	h.service.StoreSessionIP(c.Request().Context(), user.ID, ip, sessionTTLSecs)
+
+	if cookie, err := c.Cookie("ref_link_id"); err == nil && cookie.Value != "" {
+		if err := h.service.TryBackfillCustomLinkFromCookie(c.Request().Context(), user.ID, strings.TrimSpace(cookie.Value)); err != nil {
+			log.Printf("[Login] Backfill custom_link_id: %v", err)
+		}
+	}
+	if cookie, err := c.Cookie("ref_code"); err == nil && cookie.Value != "" {
+		if err := h.service.TryAttachReferralFromCookieAfterLogin(c.Request().Context(), user.ID, strings.TrimSpace(cookie.Value), ip); err != nil {
+			log.Printf("[Login] Referral attach from cookie: %v", err)
+		}
+	}
 
 	cookie := new(http.Cookie)
 	cookie.Name = "session_token"

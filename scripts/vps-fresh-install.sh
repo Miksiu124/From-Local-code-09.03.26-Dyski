@@ -22,8 +22,6 @@ DUMP_FILE="$BACKUP_DIR/pre_nuke.dump"
 
 cd "$REPO_ROOT"
 
-COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
-
 echo "=========================================="
 echo "Dyskiof - FRESH INSTALL"
 echo "=========================================="
@@ -41,6 +39,21 @@ else
   echo "Blad: Brak pliku .env"
   exit 1
 fi
+
+# shellcheck source=compose-vps-files.sh
+source "$SCRIPT_DIR/compose-vps-files.sh"
+set_compose_vps_files "$@"
+
+if [[ "$COMPOSE_FILES" == *"use3566349"* ]]; then
+  if [[ "${ALLOW_FRESH_INSTALL_ON_CLUSTER:-0}" != "1" ]]; then
+    echo "BŁĄD: vps-fresh-install.sh z nuklearnym down -v + git reset jest do środowisk bez wolumenu klastra produkcyjnego."
+    echo "Ustaw ALLOW_FRESH_INSTALL_ON_CLUSTER=1 tylko jeśli wiesz, co robisz względem contentvault_postgres_cluster."
+    exit 1
+  fi
+fi
+
+echo "Compose: $COMPOSE_FILES"
+echo ""
 
 # 1. Backup .env
 echo "[1/9] Backup .env..."
@@ -75,9 +88,16 @@ fi
 # 5. Przywroc .env
 echo "[5/9] Przywracam .env..."
 cp "$BACKUP_DIR/.env.backup" .env
+set -a
+source .env
+set +a
+set_compose_vps_files "$@"
 
 # 6. Build i start
 echo "[6/9] Buduje i uruchamiam..."
+if [[ "$COMPOSE_FILES" == *"docker-compose.lgtm.yml"* ]]; then
+  [ -f .env.lgtm ] || cp .env.lgtm.example .env.lgtm
+fi
 docker compose $COMPOSE_FILES build --no-cache
 docker compose $COMPOSE_FILES up -d
 

@@ -9,6 +9,7 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/otelspan"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +71,7 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 		c.Set(string(UserIDKey), claims.UserID)
 		c.Set(string(UserEmailKey), claims.Email)
 		c.Set(string(UserRoleKey), claims.Role)
+		otelspan.AnnotateHTTPServerSpanWithUser(c, claims.UserID, claims.Role)
 
 		return next(c)
 	}
@@ -108,6 +110,7 @@ func (am *AuthMiddleware) OptionalAuth(next echo.HandlerFunc) echo.HandlerFunc {
 				c.Set(string(UserIDKey), claims.UserID)
 				c.Set(string(UserEmailKey), claims.Email)
 				c.Set(string(UserRoleKey), claims.Role)
+				otelspan.AnnotateHTTPServerSpanWithUser(c, claims.UserID, claims.Role)
 			}
 		}
 		return next(c)

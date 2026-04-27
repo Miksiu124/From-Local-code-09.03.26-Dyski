@@ -19,7 +19,9 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/discord"
+	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/referral"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -240,6 +242,25 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
+	// Keep user row aligned with purchase attribution (signup may have missed cookie / OAuth edge cases).
+	if linkIDStr, ok := customLinkID.(string); ok && linkIDStr != "" {
+		if _, err := tx.Exec(ctx, `UPDATE users SET custom_link_id = $1 WHERE id = $2 AND custom_link_id IS NULL`, linkIDStr, userID); err != nil {
+			log.Printf("[Credits] Backfill users.custom_link_id user=%s: %v", userID, err)
+			return common.InternalError(c)
+		}
+	}
+
+	refCode := ""
+	if cookie, err := c.Cookie("ref_code"); err == nil && cookie.Value != "" {
+		refCode = strings.TrimSpace(cookie.Value)
+	}
+	if refCode != "" {
+		if err := referral.TryAttachReferralFromCodeAtCheckout(ctx, tx, h.redis, userID, refCode, c.RealIP()); err != nil {
+			log.Printf("[Credits] Referral attach at checkout user=%s: %v", userID, err)
+			return common.InternalError(c)
+		}
+	}
+
 	insertQuery := `
 		INSERT INTO credit_purchases (
 			user_id, credit_package_id, credits, amount, payment_method,
@@ -355,6 +376,33 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE id = $1`, userID).Scan(&uCountry)
 	if uCountry != nil {
 		discordInfo.UserCountry = *uCountry
+	}
+	// Discord + admin: CF-IPCountry at checkout (Cloudflare); persist when DB empty for later webhooks
+	if strings.TrimSpace(discordInfo.UserCountry) == "" {
+		if cf := geo.CountryFromEcho(c); cf != "" {
+			discordInfo.UserCountry = cf
+			_, _ = h.db.Exec(ctx, `UPDATE users SET country = $1 WHERE id = $2 AND (country IS NULL OR TRIM(country) = '')`, cf, userID)
+		}
+	}
+	discordInfo.FromCustomLink = fromCustomLink
+	discordInfo.FromUserReferral = fromUserReferral
+	if customLinkSlug != nil {
+		discordInfo.CustomLinkSlug = *customLinkSlug
+	}
+	if fromUserReferral {
+		if rr, ok := referralReferrer.(map[string]interface{}); ok {
+			if e, ok := rr["email"].(string); ok {
+				discordInfo.ReferralReferrerEmail = e
+			}
+			switch v := rr["name"].(type) {
+			case *string:
+				if v != nil {
+					discordInfo.ReferralReferrerName = *v
+				}
+			case string:
+				discordInfo.ReferralReferrerName = v
+			}
+		}
 	}
 	h.discord.NotifyNewPurchase(ctx, discordInfo)
 
@@ -917,41 +965,15 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 		return common.NotFound(c, "BLIK purchase not found or not pending")
 	}
 
-	// Discord notification for updated BLIK code
-	var pkgName, uEmail string
-	var uName *string
-	var pkgCredits, retryCount int
-	var amount float64
-	var uCreatedAt time.Time
-	_ = h.db.QueryRow(ctx, `
-		SELECT cp.amount, cp.credits, cp.retry_count, pkg.name,
-		       u.email, u.name, u.created_at
-		FROM credit_purchases cp
-		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		JOIN users u ON u.id = cp.user_id
-		WHERE cp.id = $1
-	`, purchaseID).Scan(&amount, &pkgCredits, &retryCount, &pkgName, &uEmail, &uName, &uCreatedAt)
-
-	discordInfo := discord.PurchaseInfo{
-		PurchaseID:      purchaseID,
-		UserEmail:       uEmail,
-		BlikCode:        strings.TrimSpace(req.BlikCode),
-		PackageName:     pkgName,
-		Credits:         pkgCredits,
-		Amount:          amount,
-		Currency:        "PLN",
-		PaymentAttempts: retryCount,
-		UserCreatedAt:   uCreatedAt,
-		UserAgent:       c.Request().Header.Get("User-Agent"),
-	}
-	if uName != nil {
-		discordInfo.UserName = *uName
-	}
-	// country column may not exist yet if migration hasn't been applied
-	var uCountry *string
-	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE id = $1`, userID).Scan(&uCountry)
-	if uCountry != nil {
-		discordInfo.UserCountry = *uCountry
+	// Discord notification for updated BLIK code (full purchase row + attribution)
+	discordInfo := discord.FetchPurchaseInfo(ctx, h.db, purchaseID)
+	discordInfo.BlikCode = strings.TrimSpace(req.BlikCode)
+	discordInfo.UserAgent = c.Request().Header.Get("User-Agent")
+	if strings.TrimSpace(discordInfo.UserCountry) == "" {
+		if cf := geo.CountryFromEcho(c); cf != "" {
+			discordInfo.UserCountry = cf
+			_, _ = h.db.Exec(ctx, `UPDATE users SET country = $1 WHERE id = $2 AND (country IS NULL OR TRIM(country) = '')`, cf, userID)
+		}
 	}
 	h.discord.NotifyBlikCodeUpdated(ctx, discordInfo)
 

@@ -556,6 +556,8 @@
     "bundleCreditCost": "Bundle Credit Cost",
     "grantAccess": "Grant Access",
     "revokeAccess": "Revoke Access",
+    "referralStatus": "Referral program — status",
+    "referralLoadError": "Could not load referral stats.",
     "userDetails": "User Details",
     "accessHistory": "Access History",
     "recentPurchases": "Recent Purchases",

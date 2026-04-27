@@ -68,9 +68,13 @@ func main() {
 	defer redisClient.Close()
 	log.Println("✓ Connected to Redis")
 
-	// Globalny noop tracer zanim ukończy się async InitOpenTelemetry; inaczej otelecho może zablokować start (provider jeszcze pusty).
+	// Global noop do czasu async InitOpenTelemetry. otelecho wywołuje Tracer() tylko raz przy rejestracji
+	// i trzyma wynik — EchoOTelTrace używa echoDelegatingTracer.Start() → zawsze bieżący GetTracerProvider().
 	otel.SetTracerProvider(oteltrace.NewNoopTracerProvider())
 
+	if cfg.OTLPLogEndpoint == "" {
+		log.Printf("OpenTelemetry: wyłączone (brak OTEL_EXPORTER_OTLP_ENDPOINT) — ślady nie trafiają do Tempo, logi OTLP do Loki wyłączone")
+	}
 	// OpenTelemetry w tle — HTTP musi nasłuchiwać od razu; Loki/Tempo/metryki włączą się po połączeniu z kolektorem
 	otlpShutdown := observability.LaunchOpenTelemetryAsync(cfg.OTLPLogEndpoint, cfg.OTELServiceName)
 
@@ -280,6 +284,7 @@ func main() {
 	adminGroup.POST("/credits/purchases/:id/reject", adminHandler.RejectPurchase)
 	adminGroup.GET("/users", adminHandler.ListUsers)
 	adminGroup.GET("/users/:id", adminHandler.GetUser)
+	adminGroup.GET("/users/:id/referral", referralHandler.GetAdminUserReferral)
 	adminGroup.PATCH("/users/:id", adminHandler.UpdateUser)
 	adminGroup.DELETE("/users/:id", adminHandler.DeleteUser)
 	adminGroup.POST("/users/:id/credits", adminHandler.UpdateUserCredits)

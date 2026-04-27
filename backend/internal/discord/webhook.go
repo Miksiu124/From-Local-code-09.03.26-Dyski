@@ -199,6 +199,13 @@ type PurchaseInfo struct {
 
 	// ApprovedByDisplay is set only for NotifyPurchaseApproved (admin name or email).
 	ApprovedByDisplay string
+
+	// Attribution (same logic as admin payments list: custom /l/ link vs user referral).
+	FromCustomLink          bool
+	CustomLinkSlug          string
+	FromUserReferral        bool
+	ReferralReferrerEmail   string
+	ReferralReferrerName    string
 }
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
@@ -427,6 +434,7 @@ func (n *Notifier) NotifyPurchaseExpired(ctx context.Context, info PurchaseInfo)
 // insightFields returns the "Admin Insights" field block appended to every embed.
 func insightFields(info PurchaseInfo, riskEmail bool) []Field {
 	fields := []Field{
+		{Name: "\U0001F517 Źródło", Value: formatPurchaseSource(info), Inline: false},
 		{Name: "\u200B", Value: "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\U0001F4CA **Admin Insights**", Inline: false},
 		{Name: "\U0001F4C5 Account Age", Value: formatAccountAge(info.UserCreatedAt), Inline: true},
 		{Name: "\U0001F30D Location", Value: formatCountry(info.UserCountry), Inline: true},
@@ -448,6 +456,31 @@ func insightFields(info PurchaseInfo, riskEmail bool) []Field {
 	}
 
 	return fields
+}
+
+// formatPurchaseSource mirrors admin/payments: custom /l/ campaign link takes precedence over user referral.
+func formatPurchaseSource(info PurchaseInfo) string {
+	if info.FromCustomLink {
+		slug := strings.TrimSpace(info.CustomLinkSlug)
+		if slug != "" {
+			return fmt.Sprintf("**Własny link /l/…** — `/%s`", strings.ReplaceAll(slug, "`", "'"))
+		}
+		return "**Własny link /l/…** (kampania)"
+	}
+	if info.FromUserReferral {
+		var who []string
+		if n := strings.TrimSpace(info.ReferralReferrerName); n != "" {
+			who = append(who, strings.ReplaceAll(n, "`", "'"))
+		}
+		if e := strings.TrimSpace(info.ReferralReferrerEmail); e != "" {
+			who = append(who, fmt.Sprintf("`%s`", strings.ReplaceAll(e, "`", "'")))
+		}
+		if len(who) == 0 {
+			return "**Polecenie znajomego** (/r/… lub ?ref=)"
+		}
+		return "**Polecenie znajomego** (/r/… lub ?ref=) — " + strings.Join(who, " · ")
+	}
+	return "**Standardowo** — bez /l/ i bez polecenia użytkownika"
 }
 
 func displayName(info PurchaseInfo) string {
@@ -534,11 +567,33 @@ func formatAccountAge(createdAt time.Time) string {
 	return fmt.Sprintf("Created: `%s`\n(%s)", createdAt.Format("2006-01-02"), age)
 }
 
-func formatCountry(country string) string {
-	if country == "" {
-		return "_Unknown_ \U0001F6A9"
+func isoAlpha2ToFlagEmoji(iso string) string {
+	iso = strings.ToUpper(strings.TrimSpace(iso))
+	if len(iso) != 2 {
+		return ""
 	}
-	return fmt.Sprintf("%s \U0001F6A9", country)
+	toRI := func(b byte) rune {
+		if b < 'A' || b > 'Z' {
+			return 0
+		}
+		return rune(0x1F1E6 + int(b-'A'))
+	}
+	a, b := toRI(iso[0]), toRI(iso[1])
+	if a == 0 || b == 0 {
+		return ""
+	}
+	return string(a) + string(b)
+}
+
+func formatCountry(country string) string {
+	cc := strings.ToUpper(strings.TrimSpace(country))
+	if cc == "" {
+		return "_Unknown_"
+	}
+	if flag := isoAlpha2ToFlagEmoji(cc); flag != "" {
+		return fmt.Sprintf("`%s` %s", cc, flag)
+	}
+	return fmt.Sprintf("`%s`", strings.ReplaceAll(country, "`", "'"))
 }
 
 func parseOSInfo(userAgent string) string {
