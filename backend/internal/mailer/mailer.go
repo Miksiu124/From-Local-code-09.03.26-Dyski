@@ -190,9 +190,9 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 		if err == nil {
 			return nil
 		}
-		log.Printf("[Mailer] Saasmail send failed: %v", err)
+		log.Printf("[Mailer] Saasmail send failed (to=%s from=%s): %v", to, m.from, err)
 		if m.useCloudflare() {
-			log.Printf("[Mailer] Falling back to Cloudflare Email REST")
+			log.Printf("[Mailer] Falling back to Cloudflare Email REST (transactional mail still delivers)")
 			return m.sendCloudflareWithRetry(to, subject, htmlBody)
 		}
 		return err

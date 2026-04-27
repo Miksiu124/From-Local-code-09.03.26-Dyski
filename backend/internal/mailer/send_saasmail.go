@@ -86,24 +86,35 @@ func (m *Mailer) sendSaasmailOnce(to, subject, htmlBody string) error {
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	bodySnippet := string(raw)
+	if len(bodySnippet) > 600 {
+		bodySnippet = bodySnippet[:600] + "…"
+	}
 
 	if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+		log.Printf("[Mailer] Saasmail POST %s → HTTP %d body=%q", url, resp.StatusCode, bodySnippet)
 		return fmt.Errorf("saasmail send: HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 
 	if resp.StatusCode >= 400 {
+		log.Printf("[Mailer] Saasmail POST %s → HTTP %d body=%q", url, resp.StatusCode, bodySnippet)
 		return fmt.Errorf("saasmail send: HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 
 	var parsed saasmailSendResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			log.Printf("[Mailer] Saasmail POST %s → HTTP %d non-JSON body (treating as ok): %q", url, resp.StatusCode, bodySnippet)
 			return nil
 		}
 		return fmt.Errorf("saasmail send: decode response: %w (body: %s)", err, string(raw))
 	}
 	if parsed.Status == "failed" {
-		return fmt.Errorf("saasmail send: status failed (id=%s)", parsed.ID)
+		log.Printf("[Mailer] Saasmail POST %s → 2xx but status=failed id=%s (worker could not send mail — check Worker binding EMAIL and Cloudflare Email Sending for from-domain)", url, parsed.ID)
+		return fmt.Errorf(
+			"saasmail send: worker returned status failed (id=%s): fix Saasmail outbound (EMAIL binding + Email Sending for SMTP_FROM domain), or use API logs",
+			parsed.ID,
+		)
 	}
 	return nil
 }
