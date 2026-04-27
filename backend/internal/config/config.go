@@ -79,12 +79,21 @@ type Config struct {
 	// BLIK
 	BlikExpirationMinutes int
 
-	// SMTP
+	// SMTP (optional fallback when Cloudflare Email REST is not configured)
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+
+	// Cloudflare Email Service (REST). When account ID and API token are set, the mailer sends via HTTPS instead of SMTP.
+	CloudflareEmailAccountID string
+	CloudflareEmailAPIToken  string
+
+	// Saasmail (optional): when SAASMAIL_SEND_URL and SAASMAIL_API_KEY are set, outbound mail goes through
+	// Saasmail POST /api/send so messages appear in the Saasmail UI (takes precedence over CLOUDFLARE_EMAIL_*).
+	SaasmailSendURL string
+	SaasmailAPIKey  string
 
 	// Discord OAuth
 	DiscordClientID     string
@@ -134,11 +143,15 @@ func Load() (*Config, error) {
 		MediaCDNSigningSecret: getEnvOrDefault("MEDIA_CDN_SIGNING_SECRET", ""),
 		MediaCDNUrlTTL:        getEnvOrDefaultInt("MEDIA_CDN_URL_TTL_SEC", 1800),
 		BlikExpirationMinutes: getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
-		SMTPHost:              getEnvOrDefault("SMTP_HOST", "smtp"),
-		SMTPPort:              getEnvOrDefaultInt("SMTP_PORT", 587),
-		SMTPUser:              getEnvOrDefault("SMTP_USER", ""),
-		SMTPPassword:          getEnvOrDefault("SMTP_PASSWORD", ""),
-		SMTPFrom:              getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
+		SMTPHost:                 getEnvOrDefault("SMTP_HOST", ""),
+		SMTPPort:                 getEnvOrDefaultInt("SMTP_PORT", 587),
+		SMTPUser:                 getEnvOrDefault("SMTP_USER", ""),
+		SMTPPassword:             getEnvOrDefault("SMTP_PASSWORD", ""),
+		SMTPFrom:                 getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
+		CloudflareEmailAccountID: strings.TrimSpace(getEnvOrDefault("CLOUDFLARE_EMAIL_ACCOUNT_ID", "")),
+		CloudflareEmailAPIToken:  strings.TrimSpace(getEnvOrDefault("CLOUDFLARE_EMAIL_API_TOKEN", "")),
+		SaasmailSendURL:          strings.TrimSpace(getEnvOrDefault("SAASMAIL_SEND_URL", "")),
+		SaasmailAPIKey:           strings.TrimSpace(getEnvOrDefault("SAASMAIL_API_KEY", "")),
 		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),

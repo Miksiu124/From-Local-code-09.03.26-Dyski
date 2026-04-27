@@ -25,24 +25,38 @@ const (
 )
 
 type Mailer struct {
-	host     string
-	port     int
-	user     string
-	password string
-	from     string
+	host             string
+	port             int
+	user             string
+	password         string
+	from             string
+	cfAccountID      string
+	cfToken          string
+	saasmailSendURL  string
+	saasmailAPIKey   string
 }
 
 func New(cfg *config.Config) *Mailer {
 	return &Mailer{
-		host:     cfg.SMTPHost,
-		port:     cfg.SMTPPort,
-		user:     cfg.SMTPUser,
-		password: cfg.SMTPPassword,
-		from:     cfg.SMTPFrom,
+		host:            cfg.SMTPHost,
+		port:            cfg.SMTPPort,
+		user:            cfg.SMTPUser,
+		password:        cfg.SMTPPassword,
+		from:            cfg.SMTPFrom,
+		cfAccountID:     cfg.CloudflareEmailAccountID,
+		cfToken:         cfg.CloudflareEmailAPIToken,
+		saasmailSendURL: cfg.SaasmailSendURL,
+		saasmailAPIKey:  cfg.SaasmailAPIKey,
 	}
 }
 
 func (m *Mailer) IsConfigured() bool {
+	if m.useSaasmail() && strings.TrimSpace(m.from) != "" {
+		return true
+	}
+	if m.useCloudflare() && strings.TrimSpace(m.from) != "" {
+		return true
+	}
 	return m.host != ""
 }
 
@@ -51,7 +65,7 @@ func (m *Mailer) needsAuth() bool {
 }
 
 // isLocalRelay returns true when connecting to internal Docker relay (smtp, postfix, localhost)
-// which often has self-signed certs not matching the hostname. Includes BillionMail's postfix.
+// which often has self-signed certs not matching the hostname.
 func (m *Mailer) isLocalRelay() bool {
 	h := strings.ToLower(m.host)
 	return h == "smtp" || h == "postfix" || h == "localhost" || h == "127.0.0.1" || strings.HasPrefix(h, "mail.")
@@ -167,8 +181,16 @@ func (m *Mailer) sendOnce(to string, msgBody []byte, addr string, auth smtp.Auth
 
 func (m *Mailer) Send(to, subject, htmlBody string) error {
 	if !m.IsConfigured() {
-		log.Printf("[Mailer] SMTP not configured, skipping email")
+		log.Printf("[Mailer] Email not configured (set SAASMAIL_* or CLOUDFLARE_EMAIL_* or SMTP_HOST), skipping email")
 		return nil
+	}
+
+	if m.useSaasmail() {
+		return m.sendSaasmailWithRetry(to, subject, htmlBody)
+	}
+
+	if m.useCloudflare() {
+		return m.sendCloudflareWithRetry(to, subject, htmlBody)
 	}
 
 	headers := map[string]string{
