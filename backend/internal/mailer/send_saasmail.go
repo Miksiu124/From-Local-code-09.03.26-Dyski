@@ -11,6 +11,21 @@ import (
 	"time"
 )
 
+// normalizeSaasmailSendURL accepts either the full POST URL or only the worker origin
+// (e.g. https://saasmail-xxx.workers.dev) and ensures POST targets …/api/send.
+func normalizeSaasmailSendURL(raw string) string {
+	u := strings.TrimSpace(raw)
+	u = strings.TrimSuffix(u, "/")
+	if u == "" {
+		return u
+	}
+	lower := strings.ToLower(u)
+	if strings.HasSuffix(lower, "/api/send") {
+		return u
+	}
+	return u + "/api/send"
+}
+
 type saasmailSendRequest struct {
 	To          string `json:"to"`
 	FromAddress string `json:"fromAddress"`
@@ -30,7 +45,7 @@ func (m *Mailer) useSaasmail() bool {
 }
 
 func (m *Mailer) sendSaasmailOnce(to, subject, htmlBody string) error {
-	url := strings.TrimSpace(m.saasmailSendURL)
+	url := normalizeSaasmailSendURL(m.saasmailSendURL)
 	if url == "" {
 		return fmt.Errorf("saasmail: empty SAASMAIL_SEND_URL")
 	}
