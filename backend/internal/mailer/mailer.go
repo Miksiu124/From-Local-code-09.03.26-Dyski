@@ -186,7 +186,16 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 	}
 
 	if m.useSaasmail() {
-		return m.sendSaasmailWithRetry(to, subject, htmlBody)
+		err := m.sendSaasmailWithRetry(to, subject, htmlBody)
+		if err == nil {
+			return nil
+		}
+		log.Printf("[Mailer] Saasmail send failed: %v", err)
+		if m.useCloudflare() {
+			log.Printf("[Mailer] Falling back to Cloudflare Email REST")
+			return m.sendCloudflareWithRetry(to, subject, htmlBody)
+		}
+		return err
 	}
 
 	if m.useCloudflare() {
