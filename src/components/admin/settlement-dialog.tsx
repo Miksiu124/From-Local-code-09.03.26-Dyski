@@ -6,7 +6,6 @@ import { formatPrice } from "@/lib/utils";
 import type { StatsPayload } from "@/components/admin/payments-dashboard";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -61,7 +60,7 @@ export function SettlementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md rounded-2xl border border-white/[0.1] bg-card">
+      <div className="max-w-md rounded-2xl border border-white/[0.1] bg-card p-6">
         <DialogHeader>
           <DialogTitle>{t("settleNow")}</DialogTitle>
           <DialogDescription>{t("settlementPreview")}</DialogDescription>
@@ -99,7 +98,7 @@ export function SettlementDialog({
             {loading ? "…" : t("settlementConfirm")}
           </Button>
         </DialogFooter>
-      </DialogContent>
+      </div>
     </Dialog>
   );
 }

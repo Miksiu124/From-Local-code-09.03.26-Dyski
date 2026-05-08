@@ -8,7 +8,6 @@ import { formatPrice } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -134,7 +133,7 @@ export function PaymentsHistoryTable({
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg rounded-2xl border border-white/[0.1] bg-card">
+        <div className="max-w-lg rounded-2xl border border-white/[0.1] bg-card p-6">
           <DialogHeader>
             <DialogTitle>{t("detailTitle")}</DialogTitle>
           </DialogHeader>
@@ -155,7 +154,7 @@ export function PaymentsHistoryTable({
               </Button>
             </div>
           )}
-        </DialogContent>
+        </div>
       </Dialog>
     </section>
   );
