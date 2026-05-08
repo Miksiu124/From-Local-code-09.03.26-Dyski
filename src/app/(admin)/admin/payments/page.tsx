@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { fetchApi } from "@/lib/api-client";
 import { getServerUser } from "@/lib/session-server";
 import { PaymentsDashboard } from "@/components/admin/payments-dashboard";
+import { resolvePaymentsAdminScope } from "@/lib/payments-admin-scope";
 
 interface SettingItem {
   key: string;
@@ -24,7 +25,7 @@ function isProbablyIsoDateTime(v: string | undefined): v is string {
   return Number.isFinite(t);
 }
 
-function buildHistoryQuery(sp: Record<string, string | undefined>, meId: string | undefined): string {
+function buildHistoryQuery(sp: Record<string, string | undefined>): string {
   const p = new URLSearchParams();
   if (isProbablyIsoDateTime(sp.from)) p.set("from", sp.from);
   if (isProbablyIsoDateTime(sp.to)) p.set("to", sp.to);
@@ -32,8 +33,9 @@ function buildHistoryQuery(sp: Record<string, string | undefined>, meId: string 
     const v = sp[key];
     if (v) p.set(key, v);
   }
-  if (sp.adminScope === "me" && meId) p.set("adminId", meId);
-  else if (sp.adminScope === "partner") p.set("partnerOnly", "1");
+  const scoped = resolvePaymentsAdminScope(sp.adminScope);
+  if (scoped.adminId) p.set("adminId", scoped.adminId);
+  else if (scoped.partnerOnly) p.set("partnerOnly", "1");
   if (sp.adminId) p.set("adminId", sp.adminId);
   p.set("limit", "80");
   p.set("sortBy", "createdAt");
@@ -54,7 +56,7 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
   const me = await getServerUser();
   const meId = me?.id;
 
-  const historyQs = buildHistoryQuery(sp, meId);
+  const historyQs = buildHistoryQuery(sp);
 
   const [
     pendingRes,

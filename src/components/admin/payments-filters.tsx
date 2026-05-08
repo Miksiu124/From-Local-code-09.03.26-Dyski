@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { resolvePaymentsAdminScope } from "@/lib/payments-admin-scope";
 
 const METHODS = ["BLIK", "CRYPTO", "PAYPAL", "REVOLUT"] as const;
 
@@ -24,7 +25,7 @@ function localInputToIso(v: string): string {
   return d.toISOString();
 }
 
-export function PaymentsFilters({ onApply, currentUserId }: { onApply: () => void; currentUserId: string }) {
+export function PaymentsFilters({ onApply }: { onApply: () => void }) {
   const t = useTranslations("admin.payments");
   const router = useRouter();
   const pathname = usePathname();
@@ -47,11 +48,9 @@ export function PaymentsFilters({ onApply, currentUserId }: { onApply: () => voi
     setOrDel("paymentMethod", method);
     p.delete("adminId");
     p.delete("partnerOnly");
-    if (adminScope === "me" && currentUserId) {
-      p.set("adminId", currentUserId);
-    } else if (adminScope === "partner") {
-      p.set("partnerOnly", "1");
-    }
+    const scoped = resolvePaymentsAdminScope(adminScope);
+    if (scoped.adminId) p.set("adminId", scoped.adminId);
+    else if (scoped.partnerOnly) p.set("partnerOnly", "1");
     setOrDel("adminScope", adminScope === "all" ? "" : adminScope);
     setOrDel("q", q.trim());
     setOrDel("status", status);
@@ -59,7 +58,7 @@ export function PaymentsFilters({ onApply, currentUserId }: { onApply: () => voi
     p.delete("cursorBeforeId");
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
     onApply();
-  }, [adminScope, currentUserId, from, method, onApply, pathname, q, router, sp, status, to]);
+  }, [adminScope, from, method, onApply, pathname, q, router, sp, status, to]);
 
   const reset = useCallback(() => {
     router.replace(pathname, { scroll: false });

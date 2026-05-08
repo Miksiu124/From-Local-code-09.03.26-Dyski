@@ -15,6 +15,8 @@ import { PaymentsHistoryTable } from "@/components/admin/payments-history-table"
 import { SettlementDialog } from "@/components/admin/settlement-dialog";
 import { SettlementsHistory } from "@/components/admin/settlements-history";
 import { Button } from "@/components/ui/button";
+import { resolvePaymentsAdminScope } from "@/lib/payments-admin-scope";
+import { formatPrice } from "@/lib/utils";
 
 export type StatsPayload = Record<string, unknown> | null;
 
@@ -30,6 +32,15 @@ export interface PaymentsDashboardProps {
   currentUserId: string;
   highlightId?: string;
   initialBlikEnabled: boolean;
+}
+
+function readApprovedStats(s: StatsPayload): { totalAmount: number; count: number } {
+  if (!s || typeof s !== "object") return { totalAmount: 0, count: 0 };
+  const approved = (s as { approved?: { totalAmount?: number; count?: number } }).approved;
+  return {
+    totalAmount: Number(approved?.totalAmount ?? 0),
+    count: Number(approved?.count ?? 0),
+  };
 }
 
 export function PaymentsDashboard({
@@ -55,6 +66,8 @@ export function PaymentsDashboard({
   const [loadingMore, setLoadingMore] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedRangeStats, setSelectedRangeStats] = useState<StatsPayload>(null);
+  const [selectedRangeLoading, setSelectedRangeLoading] = useState(false);
 
   const qKey = useMemo(() => searchParams.toString(), [searchParams]);
   const skipFirst = useRef(true);
@@ -65,8 +78,9 @@ export function PaymentsDashboard({
     params.delete("adminScope");
     params.delete("adminId");
     params.delete("partnerOnly");
-    if (scope === "me" && currentUserId) params.set("adminId", currentUserId);
-    if (scope === "partner") params.set("partnerOnly", "1");
+    const scoped = resolvePaymentsAdminScope(scope);
+    if (scoped.adminId) params.set("adminId", scoped.adminId);
+    if (scoped.partnerOnly) params.set("partnerOnly", "1");
     params.set("limit", "80");
     params.set("sortBy", "createdAt");
     params.set("sortDir", "desc");
@@ -91,6 +105,55 @@ export function PaymentsDashboard({
     }
     void refetchHistory();
   }, [qKey, refetchHistory]);
+
+  useEffect(() => {
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (!from || !to || Number.isNaN(Date.parse(from)) || Number.isNaN(Date.parse(to)) || new Date(to) <= new Date(from)) {
+      setSelectedRangeStats(null);
+      setSelectedRangeLoading(false);
+      return;
+    }
+
+    let disposed = false;
+    setSelectedRangeLoading(true);
+    void (async () => {
+      try {
+        const p = new URLSearchParams();
+        p.set("range", "custom");
+        p.set("from", from);
+        p.set("to", to);
+        const res = await fetch(`/api/admin/credits/purchases/stats?${p.toString()}`, { credentials: "include" });
+        if (!res.ok) throw new Error("stats fetch failed");
+        const payload = (await res.json()) as StatsPayload;
+        if (!disposed) setSelectedRangeStats(payload);
+      } catch {
+        if (!disposed) setSelectedRangeStats(null);
+      } finally {
+        if (!disposed) setSelectedRangeLoading(false);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+    };
+  }, [searchParams]);
+
+  const selectedRangeSummary = useMemo(() => {
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (!from || !to) return null;
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return null;
+    const { totalAmount, count } = readApprovedStats(selectedRangeStats);
+    return {
+      fromText: fromDate.toLocaleString(),
+      toText: toDate.toLocaleString(),
+      totalAmount,
+      count,
+    };
+  }, [searchParams, selectedRangeStats]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor?.createdAt || !nextCursor?.id || loadingMore) return;
@@ -194,7 +257,27 @@ export function PaymentsDashboard({
 
       <RevenueCanvasChart stats={stats7d} />
 
-      <PaymentsFilters key={qKey} currentUserId={currentUserId} onApply={() => void refetchHistory()} />
+      <PaymentsFilters key={qKey} onApply={() => void refetchHistory()} />
+      {(selectedRangeLoading || selectedRangeSummary) && (
+        <section className="rounded-xl border border-white/[0.08] bg-card/40 px-3 py-2 text-sm">
+          {selectedRangeLoading ? (
+            <p className="text-muted-foreground">{t("selectedRangeLoading")}</p>
+          ) : selectedRangeSummary ? (
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-muted-foreground">
+                {t("selectedRangeSales", {
+                  from: selectedRangeSummary.fromText,
+                  to: selectedRangeSummary.toText,
+                })}
+              </p>
+              <p className="font-semibold tabular-nums">
+                {formatPrice(selectedRangeSummary.totalAmount)}{" "}
+                <span className="font-normal text-muted-foreground">({t("selectedRangeApprovedCount", { count: selectedRangeSummary.count })})</span>
+              </p>
+            </div>
+          ) : null}
+        </section>
+      )}
 
       <div key={qKey + String(refreshKey)}>
         <PaymentsHistoryTable rows={historyRows} currentUserId={currentUserId} />
