@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS revenue_settlements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   settled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  settled_by_admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  settled_by_admin_id TEXT,
   period_start TIMESTAMPTZ NOT NULL,
   period_end TIMESTAMPTZ NOT NULL,
   snapshot JSONB NOT NULL,

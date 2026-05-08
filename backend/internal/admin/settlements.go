@@ -145,7 +145,7 @@ func (h *Handler) CreateRevenueSettlement(c echo.Context) error {
 	var newID, settledAtOut string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO revenue_settlements (settled_by_admin_id, period_start, period_end, snapshot, transfer_amount, notes)
-		VALUES ($1::uuid, $2, $3, $4::jsonb, $5, $6)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6)
 		RETURNING id::text, settled_at::text
 	`, adminID, periodStart, periodEnd, snapJSON, transfer, nullString(strings.TrimSpace(req.Notes))).Scan(&newID, &settledAtOut)
 	if err != nil {
