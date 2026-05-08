@@ -1577,7 +1577,7 @@ export function ModelDetail({
                 type="button"
                 data-model-folder-reveal
                 style={{ "--reveal-stagger": index % 12 } as CSSProperties}
-                className="model-folder-reveal grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0"
+                className="model-folder-reveal grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0 [content-visibility:auto] [contain-intrinsic-size:240px_320px]"
                 onClick={() => handleContentClick(item.id)}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >

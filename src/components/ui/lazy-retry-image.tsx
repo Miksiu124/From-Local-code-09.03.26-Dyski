@@ -3,6 +3,44 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { RetryImage } from "./retry-image";
 
+/** One rAF-throttled scroll/resize notifier for all LazyRetryImage instances (avoids N window listeners on huge grids). */
+const viewportSubscribers = new Set<() => void>();
+let viewportFlushScheduled = false;
+let viewportHooksInstalled = false;
+
+function flushViewportSubscribers() {
+  viewportFlushScheduled = false;
+  viewportSubscribers.forEach((fn) => {
+    fn();
+  });
+}
+
+function scheduleViewportFlush() {
+  if (viewportFlushScheduled) return;
+  viewportFlushScheduled = true;
+  requestAnimationFrame(flushViewportSubscribers);
+}
+
+function ensureViewportHooks() {
+  if (viewportHooksInstalled || typeof window === "undefined") return;
+  viewportHooksInstalled = true;
+  window.addEventListener("scroll", scheduleViewportFlush, { passive: true });
+  window.addEventListener("resize", scheduleViewportFlush);
+}
+
+function subscribeViewportFlush(cb: () => void) {
+  ensureViewportHooks();
+  viewportSubscribers.add(cb);
+  return () => {
+    viewportSubscribers.delete(cb);
+    if (viewportSubscribers.size === 0 && typeof window !== "undefined") {
+      window.removeEventListener("scroll", scheduleViewportFlush);
+      window.removeEventListener("resize", scheduleViewportFlush);
+      viewportHooksInstalled = false;
+    }
+  };
+}
+
 interface LazyRetryImageProps extends Omit<React.ComponentProps<typeof RetryImage>, "src"> {
   src: string;
   /** Pixels before viewport to start loading. Larger = load earlier, fewer misses on fast scroll. */
@@ -79,37 +117,15 @@ export function LazyRetryImage({
     // Initial check: above-fold items may not trigger IO immediately; run once after layout
     const raf = requestAnimationFrame(() => tryLoad());
 
-    // Fallback: viewport resize (e.g. dev tools open) can cause IO to miss elements.
-    // Throttle like scroll — rapid resize was thrashing layout with the content grid under the overlay.
-    let resizeTicking = false;
-    const resizeHandler = () => {
-      if (resizeTicking) return;
-      resizeTicking = true;
-      requestAnimationFrame(() => {
-        resizeTicking = false;
-        tryLoad();
-      });
-    };
-    window.addEventListener("resize", resizeHandler);
-
-    // Fallback: fast scroll can miss IO callbacks; throttle scroll check
-    let scrollTicking = false;
-    const scrollHandler = () => {
-      if (scrollTicking) return;
-      scrollTicking = true;
-      requestAnimationFrame(() => {
-        scrollTicking = false;
-        tryLoad();
-      });
-    };
-    window.addEventListener("scroll", scrollHandler, { passive: true });
+    const unsubViewport = subscribeViewportFlush(() => {
+      tryLoad();
+    });
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       observer.disconnect();
-      window.removeEventListener("resize", resizeHandler);
-      window.removeEventListener("scroll", scrollHandler);
+      unsubViewport();
     };
   }, [rootMargin, tryLoad]);
 
