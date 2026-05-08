@@ -18,9 +18,17 @@ function normalizeSearchParams(raw: Record<string, string | string[] | undefined
   return sp;
 }
 
+function isProbablyIsoDateTime(v: string | undefined): v is string {
+  if (!v) return false;
+  const t = Date.parse(v);
+  return Number.isFinite(t);
+}
+
 function buildHistoryQuery(sp: Record<string, string | undefined>, meId: string | undefined): string {
   const p = new URLSearchParams();
-  for (const key of ["from", "to", "paymentMethod", "q", "status"] as const) {
+  if (isProbablyIsoDateTime(sp.from)) p.set("from", sp.from);
+  if (isProbablyIsoDateTime(sp.to)) p.set("to", sp.to);
+  for (const key of ["paymentMethod", "q", "status"] as const) {
     const v = sp[key];
     if (v) p.set(key, v);
   }

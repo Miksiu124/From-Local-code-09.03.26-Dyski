@@ -9,6 +9,21 @@ import { cn } from "@/lib/utils";
 
 const METHODS = ["BLIK", "CRYPTO", "PAYPAL", "REVOLUT"] as const;
 
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function localInputToIso(v: string): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString();
+}
+
 export function PaymentsFilters({ onApply, currentUserId }: { onApply: () => void; currentUserId: string }) {
   const t = useTranslations("admin.payments");
   const router = useRouter();
@@ -67,12 +82,11 @@ export function PaymentsFilters({ onApply, currentUserId }: { onApply: () => voi
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           {t("dateFrom")}
           <input
-            type="text"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            placeholder="2026-05-01T00:00:00Z"
+            type="datetime-local"
+            value={isoToLocalInput(from)}
+            onChange={(e) => setFrom(localInputToIso(e.target.value))}
             className={cn(
-              "rounded-xl border border-white/[0.1] bg-black/30 px-2 py-1.5 text-sm text-foreground font-mono",
+              "rounded-xl border border-white/[0.1] bg-black/30 px-2 py-1.5 text-sm text-foreground",
               "focus:outline-none focus:ring-2 focus:ring-primary/40",
             )}
           />
@@ -80,12 +94,11 @@ export function PaymentsFilters({ onApply, currentUserId }: { onApply: () => voi
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           {t("dateTo")}
           <input
-            type="text"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="2026-05-08T23:59:59Z"
+            type="datetime-local"
+            value={isoToLocalInput(to)}
+            onChange={(e) => setTo(localInputToIso(e.target.value))}
             className={cn(
-              "rounded-xl border border-white/[0.1] bg-black/30 px-2 py-1.5 text-sm text-foreground font-mono",
+              "rounded-xl border border-white/[0.1] bg-black/30 px-2 py-1.5 text-sm text-foreground",
               "focus:outline-none focus:ring-2 focus:ring-primary/40",
             )}
           />
