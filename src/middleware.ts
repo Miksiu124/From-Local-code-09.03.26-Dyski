@@ -72,6 +72,40 @@ function isSafeOrigin(request: NextRequest) {
 
 const isProd = process.env.NODE_ENV === "production";
 
+/**
+ * Origins that must appear in connect-src besides 'self':
+ * - HLS segment URLs often hit the public CDN host (NEXT_PUBLIC_MEDIA_HOST), not R2 API.
+ * - resolveApiPathForBrowser() may call NEXT_PUBLIC_APP_URL while the user is on www
+ *   (or the reverse) — those are different origins than 'self'.
+ */
+function connectSrcOrigins(): string[] {
+  const origins = new Set<string>();
+
+  const tryAddUrlOrigin = (raw: string | undefined) => {
+    const s = raw?.trim();
+    if (!s) return;
+    try {
+      const u = new URL(s);
+      origins.add(`${u.protocol}//${u.host}`);
+    } catch {
+      /* ignore invalid env */
+    }
+  };
+
+  tryAddUrlOrigin(process.env.NEXT_PUBLIC_APP_URL);
+  tryAddUrlOrigin(process.env.NEXT_PUBLIC_BASE_URL);
+
+  const mediaHosts = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  for (const h of mediaHosts) {
+    origins.add(`https://${h}`);
+  }
+
+  return [...origins];
+}
+
 /** Build a per-request nonce-based Content-Security-Policy header. */
 function buildCSP(nonce: string): string {
   // 'strict-dynamic' lets nonced scripts load further scripts without explicit
@@ -96,8 +130,14 @@ function buildCSP(nonce: string): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com https://files.dyskiof.net",
     "font-src 'self' data:",
-    // Tightened: only known origins (same-origin SSE, R2, Turnstile).
-    "connect-src 'self' https://*.r2.cloudflarestorage.com https://challenges.cloudflare.com",
+    // connect-src: include CDN + canonical app URL(s) so HLS.js XHR to presigned
+    // URLs and cross-subdomain API playlists is not blocked (see connectSrcOrigins).
+    [
+      "connect-src 'self'",
+      ...connectSrcOrigins(),
+      "https://*.r2.cloudflarestorage.com",
+      "https://challenges.cloudflare.com",
+    ].join(" "),
     "media-src 'self' blob: https://*.r2.cloudflarestorage.com https://files.dyskiof.net",
     "object-src 'none'",
     "base-uri 'self'",
