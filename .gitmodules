@@ -1,0 +1,3 @@
+[submodule "saasmail"]
+	path = saasmail
+	url = https://github.com/choyiny/saasmail.git

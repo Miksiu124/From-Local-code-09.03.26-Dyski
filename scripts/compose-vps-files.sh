@@ -15,19 +15,13 @@
 #   docker compose $COMPOSE_FILES up -d
 
 set_compose_vps_files() {
-  local use_billionmail=false
-  local use_cluster=false
   local use_lgtm_flag=false
+  local use_cluster=false
   for a in "$@"; do
-    [[ "$a" == "--billionmail" ]] && use_billionmail=true
     [[ "$a" == "--lgtm" ]] && use_lgtm_flag=true
   done
 
-  if [[ "$use_billionmail" == true ]]; then
-    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml"
-  else
-    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
-  fi
+  COMPOSE_FILES="-f docker-compose.yml -f docker-compose.vps.yml"
 
   _bool_env() {
     case "$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' \r\n')" in

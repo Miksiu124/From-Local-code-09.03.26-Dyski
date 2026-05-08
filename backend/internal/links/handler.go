@@ -23,9 +23,12 @@ func NewHandler(db *pgxpool.Pool, cfg *config.Config) *Handler {
 	return &Handler{db: db, cfg: cfg}
 }
 
-// isSafeRedirectDestination rejects dangerous schemes (javascript:, data:, etc.) and allows
-// relative paths, same-origin, and https URLs to mitigate open redirect abuse.
-func isSafeRedirectDestination(dest, frontendURL string) bool {
+// IsSafeRedirectDestination rejects dangerous schemes (javascript:, data:, etc.)
+// and allows relative paths, same-origin, and https URLs to mitigate open
+// redirect abuse. Exported so the admin write path can validate destinations
+// before persisting them, instead of relying on this function only at
+// resolve-time (defense-in-depth).
+func IsSafeRedirectDestination(dest, frontendURL string) bool {
 	if dest == "" {
 		return false
 	}
@@ -74,7 +77,7 @@ func (h *Handler) TrackAndResolveLink(c echo.Context) error {
 	}
 
 	// Validate destination to prevent open redirect (reject javascript:, data:, etc.)
-	if !isSafeRedirectDestination(destination, h.cfg.FrontendURL) {
+	if !IsSafeRedirectDestination(destination, h.cfg.FrontendURL) {
 		log.Printf("[TrackAndResolveLink] Rejected unsafe destination for link %s", id)
 		return echo.NewHTTPError(http.StatusNotFound, "Link not found")
 	}

@@ -90,10 +90,8 @@ type Config struct {
 	CloudflareEmailAccountID string
 	CloudflareEmailAPIToken  string
 
-	// Saasmail (optional): when SAASMAIL_SEND_URL and SAASMAIL_API_KEY are set, outbound mail goes through
-	// Saasmail POST /api/send so messages appear in the Saasmail UI (takes precedence over CLOUDFLARE_EMAIL_*).
-	SaasmailSendURL string
-	SaasmailAPIKey  string
+	// MarketingEmailFrom: optional default From for embedded marketing templates (must be allowed in Email Sending). Empty = SMTP_FROM.
+	MarketingEmailFrom string
 
 	// Discord OAuth
 	DiscordClientID     string
@@ -105,6 +103,50 @@ type Config struct {
 	CheckoutReminderDisabled     bool
 	CheckoutReminderDelayMinutes int
 	CheckoutReminderLookbackDays int
+
+	// Winback + other marketing cron campaigns (single schedule MARKETING_CRON, legacy: WINBACK_CRON).
+	MarketingCronSpec string
+	// MarketingOpsKey: optional Bearer for POST /api/ops/marketing/run-cron without admin session.
+	MarketingOpsKey string
+	WinbackEmailEnabled           bool
+	WinbackInactivityDays         int
+	WinbackCooldownDays           int
+	WinbackBatchLimit             int
+	WinbackTemplateSlug           string
+	WinbackHookLine               string
+	WinbackCtaPath                string
+	WinbackSiteName               string
+	WinbackFirstNameFallback      string
+	WinbackTemplateDefaultsJSON   string
+
+	// Social proof re-engage (growth_events: had plays/views, now quiet). SOCIAL_PROOF_EMAIL_ENABLED=1.
+	SocialProofEmailEnabled            bool
+	SocialProofTemplateSlug            string
+	SocialProofInactivityDays          int
+	SocialProofCooldownDays            int
+	SocialProofEngagementLookbackDays  int
+	SocialProofBatchLimit              int
+	SocialProofTrendingTitle           string
+	SocialProofProofLine               string
+	SocialProofCtaPath                 string
+	SocialProofTemplateDefaultsJSON    string
+
+	// One-shot after favorite_toggled (favorited=true). FAVORITE_NUDGE_EMAIL_ENABLED + FAVORITE_NUDGE_TEMPLATE_SLUG.
+	FavoriteNudgeEmailEnabled         bool
+	FavoriteNudgeTemplateSlug         string
+	FavoriteNudgeHookLine             string
+	FavoriteNudgeCtaPath              string
+	FavoriteNudgeTrendingTitle        string
+	FavoriteNudgeProofLine            string
+	FavoriteNudgeTemplateDefaultsJSON string
+
+	// One-shot “ever purchased” promo blast (cron). REPEAT_BUYER_PROMO_EMAIL_ENABLED=1.
+	RepeatBuyerPromoEmailEnabled       bool
+	RepeatBuyerPromoCode               string
+	RepeatBuyerTemplateSlug            string
+	RepeatBuyerAbLinkSlugs             string // comma: vip10-a,vip10-b,vip10-c — must match custom_links.slug
+	RepeatBuyerBatchLimit              int
+	RepeatBuyerTemplateDefaultsJSON    string
 }
 
 func Load() (*Config, error) {
@@ -150,8 +192,7 @@ func Load() (*Config, error) {
 		SMTPFrom:                 getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
 		CloudflareEmailAccountID: strings.TrimSpace(getEnvOrDefault("CLOUDFLARE_EMAIL_ACCOUNT_ID", "")),
 		CloudflareEmailAPIToken:  strings.TrimSpace(getEnvOrDefault("CLOUDFLARE_EMAIL_API_TOKEN", "")),
-		SaasmailSendURL:          strings.TrimSpace(getEnvOrDefault("SAASMAIL_SEND_URL", "")),
-		SaasmailAPIKey:           strings.TrimSpace(getEnvOrDefault("SAASMAIL_API_KEY", "")),
+		MarketingEmailFrom:       firstNonEmpty(getEnvOrDefault("MARKETING_EMAIL_FROM", ""), getEnvOrDefault("SAASMAIL_MARKETING_FROM", "")),
 		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
@@ -161,7 +202,46 @@ func Load() (*Config, error) {
 		CheckoutReminderDisabled:      getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "1" || getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "true",
 		CheckoutReminderDelayMinutes:  getEnvOrDefaultInt("CHECKOUT_REMINDER_DELAY_MINUTES", 45),
 		CheckoutReminderLookbackDays:  getEnvOrDefaultInt("CHECKOUT_REMINDER_LOOKBACK_DAYS", 14),
+		WinbackEmailEnabled:           getEnvOrDefault("WINBACK_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("WINBACK_EMAIL_ENABLED", "") == "true",
+		WinbackInactivityDays:         getEnvOrDefaultInt("WINBACK_INACTIVITY_DAYS", 30),
+		WinbackCooldownDays:           getEnvOrDefaultInt("WINBACK_COOLDOWN_DAYS", 90),
+		WinbackBatchLimit:             getEnvOrDefaultInt("WINBACK_BATCH_LIMIT", 50),
+		WinbackTemplateSlug:           strings.TrimSpace(getEnvOrDefault("WINBACK_TEMPLATE_SLUG", "winback-soft")),
+		WinbackHookLine:               strings.TrimSpace(getEnvOrDefault("WINBACK_HOOK_LINE", "Dodaliśmy nowe materiały i poprawiliśmy wyszukiwanie — warto rzucić okiem.")),
+		WinbackCtaPath:                strings.TrimSpace(getEnvOrDefault("WINBACK_CTA_PATH", "/models")),
+		WinbackSiteName:               strings.TrimSpace(getEnvOrDefault("WINBACK_SITE_NAME", "Dyskiof")),
+		WinbackFirstNameFallback:      strings.TrimSpace(getEnvOrDefault("WINBACK_FIRSTNAME_FALLBACK", "Tam")),
+		WinbackTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("WINBACK_TEMPLATE_DEFAULTS_JSON", "")),
+		SocialProofEmailEnabled:            getEnvOrDefault("SOCIAL_PROOF_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("SOCIAL_PROOF_EMAIL_ENABLED", "") == "true",
+		SocialProofTemplateSlug:            strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TEMPLATE_SLUG", "social-proof-drop")),
+		SocialProofInactivityDays:          getEnvOrDefaultInt("SOCIAL_PROOF_INACTIVITY_DAYS", 14),
+		SocialProofCooldownDays:            getEnvOrDefaultInt("SOCIAL_PROOF_COOLDOWN_DAYS", 45),
+		SocialProofEngagementLookbackDays:  getEnvOrDefaultInt("SOCIAL_PROOF_ENGAGEMENT_LOOKBACK_DAYS", 90),
+		SocialProofBatchLimit:              getEnvOrDefaultInt("SOCIAL_PROOF_BATCH_LIMIT", 40),
+		SocialProofTrendingTitle:           strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TRENDING_TITLE", "")),
+		SocialProofProofLine:               strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_PROOF_LINE", "")),
+		SocialProofCtaPath:                 strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_CTA_PATH", "/models")),
+		SocialProofTemplateDefaultsJSON:    strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TEMPLATE_DEFAULTS_JSON", "")),
+		FavoriteNudgeEmailEnabled:         getEnvOrDefault("FAVORITE_NUDGE_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("FAVORITE_NUDGE_EMAIL_ENABLED", "") == "true",
+		FavoriteNudgeTemplateSlug:         strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TEMPLATE_SLUG", "")),
+		FavoriteNudgeHookLine:             strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_HOOK_LINE", "")),
+		FavoriteNudgeCtaPath:              strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_CTA_PATH", "/models")),
+		FavoriteNudgeTrendingTitle:        strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TRENDING_TITLE", "")),
+		FavoriteNudgeProofLine:            strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_PROOF_LINE", "")),
+		FavoriteNudgeTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON", "")),
+		RepeatBuyerPromoEmailEnabled:     getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "true",
+		RepeatBuyerPromoCode:            strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_PROMO_CODE", "DYSKIOF10BK")),
+		RepeatBuyerTemplateSlug:          strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_SLUG", "repeat-buyer-10")),
+		RepeatBuyerAbLinkSlugs:           strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_AB_LINK_SLUGS", "vip10-a,vip10-b,vip10-c")),
+		RepeatBuyerBatchLimit:            getEnvOrDefaultInt("REPEAT_BUYER_BATCH_LIMIT", 120),
+		RepeatBuyerTemplateDefaultsJSON: strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_DEFAULTS_JSON", "")),
 	}
+
+	cfg.MarketingCronSpec = strings.TrimSpace(getEnvOrDefault("MARKETING_CRON", ""))
+	if cfg.MarketingCronSpec == "" {
+		cfg.MarketingCronSpec = strings.TrimSpace(getEnvOrDefault("WINBACK_CRON", "@every 24h"))
+	}
+	cfg.MarketingOpsKey = strings.TrimSpace(getEnvOrDefault("MARKETING_OPS_KEY", ""))
 
 	// Normalize URLs: strip trailing slashes to prevent double-slash bugs
 	cfg.FrontendURL = strings.TrimRight(cfg.FrontendURL, "/")
@@ -214,10 +294,73 @@ func Load() (*Config, error) {
 		}
 	}
 
+	clampMarketingCampaigns(cfg)
 	return cfg, cfg.Validate()
 }
 
-// Validate checks that critical secrets are set. Returns error if any required field is empty.
+func clampMarketingCampaigns(cfg *Config) {
+	if cfg.MarketingCronSpec == "" {
+		cfg.MarketingCronSpec = "@every 24h"
+	}
+	if cfg.WinbackInactivityDays < 7 {
+		cfg.WinbackInactivityDays = 7
+	}
+	if cfg.WinbackInactivityDays > 365 {
+		cfg.WinbackInactivityDays = 365
+	}
+	if cfg.WinbackCooldownDays < cfg.WinbackInactivityDays {
+		cfg.WinbackCooldownDays = cfg.WinbackInactivityDays
+	}
+	if cfg.WinbackCooldownDays > 730 {
+		cfg.WinbackCooldownDays = 730
+	}
+	if cfg.WinbackBatchLimit < 1 {
+		cfg.WinbackBatchLimit = 1
+	}
+	if cfg.WinbackBatchLimit > 200 {
+		cfg.WinbackBatchLimit = 200
+	}
+	if cfg.WinbackTemplateSlug == "" {
+		cfg.WinbackTemplateSlug = "winback-soft"
+	}
+	if cfg.SocialProofTemplateSlug == "" {
+		cfg.SocialProofTemplateSlug = "social-proof-drop"
+	}
+	if cfg.SocialProofInactivityDays < 3 {
+		cfg.SocialProofInactivityDays = 3
+	}
+	if cfg.SocialProofInactivityDays > 60 {
+		cfg.SocialProofInactivityDays = 60
+	}
+	if cfg.SocialProofEngagementLookbackDays < 14 {
+		cfg.SocialProofEngagementLookbackDays = 14
+	}
+	if cfg.SocialProofEngagementLookbackDays > 180 {
+		cfg.SocialProofEngagementLookbackDays = 180
+	}
+	if cfg.SocialProofCooldownDays < cfg.SocialProofInactivityDays {
+		cfg.SocialProofCooldownDays = cfg.SocialProofInactivityDays
+	}
+	if cfg.SocialProofCooldownDays > 180 {
+		cfg.SocialProofCooldownDays = 180
+	}
+	if cfg.SocialProofBatchLimit < 1 {
+		cfg.SocialProofBatchLimit = 1
+	}
+	if cfg.SocialProofBatchLimit > 200 {
+		cfg.SocialProofBatchLimit = 200
+	}
+	if cfg.FavoriteNudgeCtaPath == "" {
+		cfg.FavoriteNudgeCtaPath = "/models"
+	}
+	if cfg.RepeatBuyerBatchLimit < 1 {
+		cfg.RepeatBuyerBatchLimit = 1
+	}
+	if cfg.RepeatBuyerBatchLimit > 500 {
+		cfg.RepeatBuyerBatchLimit = 500
+	}
+}
+
 func (c *Config) Validate() error {
 	var missing []string
 	if c.DatabaseURL == "" {
@@ -311,6 +454,15 @@ func requireEnv(name string) string {
 		return ""
 	}
 	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func getEnvOrDefault(name, defaultVal string) string {

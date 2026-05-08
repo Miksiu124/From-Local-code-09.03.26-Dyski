@@ -2,7 +2,10 @@
 package observability
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	stdlog "log"
 	"log/slog"
 	"net"
 	"strings"
@@ -36,6 +39,26 @@ type httpLogLoki struct {
 	UserID      string `json:"user_id,omitempty"`
 	TraceID     string `json:"trace_id,omitempty"`
 	SpanID      string `json:"span_id,omitempty"`
+}
+
+// mailerLogLoki: ta sama konwencja co http (jeden JSON w treści rekordu → Loki `| json`).
+type mailerLogLoki struct {
+	Msg         string `json:"msg"`
+	LogCategory string `json:"log_category"`
+}
+
+// MailerPrintf zawsze pisze na stderr (docker logs); gdy włączone są logi OTLP, duplikuje do Loki/Grafany jak linie HTTP.
+func MailerPrintf(format string, args ...any) {
+	stdlog.Printf(format, args...)
+	if !otlpLogsOn.Load() || otlechoSlog == nil {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	line, err := json.Marshal(mailerLogLoki{Msg: msg, LogCategory: "mailer"})
+	if err != nil {
+		return
+	}
+	otlechoSlog.Log(context.Background(), slog.LevelInfo, string(line))
 }
 
 // EchoSlogOTLP opcjonalnie: jedna linia slog na żądanie (→ Loki), tylko gdy InitOpenTelemetry włączył logi.

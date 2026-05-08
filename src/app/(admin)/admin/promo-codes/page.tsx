@@ -16,6 +16,7 @@ interface PromoCode {
   discountType: string;
   discountValue: number;
   minPurchaseCredits: number;
+  minPurchaseAmount?: number | null;
   maxUses: number | null;
   usedCount: number;
   expiresAt: string | null;
@@ -36,6 +37,7 @@ export default function AdminPromoCodesPage() {
     discountType: "PERCENT" as "PERCENT" | "FIXED_CREDITS",
     discountValue: 10,
     minPurchaseCredits: 0,
+    minPurchaseAmount: "" as string | number,
     maxUses: "" as string | number,
     expiresAt: "",
     oncePerUser: false,
@@ -68,6 +70,7 @@ export default function AdminPromoCodesPage() {
       discountType: "PERCENT",
       discountValue: 10,
       minPurchaseCredits: 0,
+      minPurchaseAmount: "",
       maxUses: "",
       expiresAt: "",
       oncePerUser: false,
@@ -84,6 +87,10 @@ export default function AdminPromoCodesPage() {
       discountType: promo.discountType as "PERCENT" | "FIXED_CREDITS",
       discountValue: promo.discountValue,
       minPurchaseCredits: promo.minPurchaseCredits,
+      minPurchaseAmount:
+        promo.minPurchaseAmount != null && promo.minPurchaseAmount !== undefined
+          ? promo.minPurchaseAmount
+          : "",
       maxUses: promo.maxUses ?? "",
       expiresAt: promo.expiresAt ? promo.expiresAt.slice(0, 16) : "",
       oncePerUser: promo.oncePerUser ?? false,
@@ -97,10 +104,19 @@ export default function AdminPromoCodesPage() {
     setError("");
     setSaving(true);
     try {
+      const minPurchaseAmount =
+        editingPromo
+          ? form.minPurchaseAmount === "" || form.minPurchaseAmount === undefined
+            ? 0
+            : Number(form.minPurchaseAmount)
+          : form.minPurchaseAmount === "" || form.minPurchaseAmount === undefined
+            ? undefined
+            : Number(form.minPurchaseAmount);
       const basePayload = {
         discountType: form.discountType,
         discountValue: form.discountValue,
         minPurchaseCredits: form.minPurchaseCredits,
+        ...(minPurchaseAmount !== undefined ? { minPurchaseAmount } : {}),
         maxUses: form.maxUses === "" ? null : Number(form.maxUses),
         expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
         oncePerUser: form.oncePerUser,
@@ -209,6 +225,12 @@ export default function AdminPromoCodesPage() {
                 </div>
                 <div className="mb-4 space-y-1 text-sm text-muted-foreground">
                   <p>{t("promoMinCredits")}: {promo.minPurchaseCredits}</p>
+                  <p>
+                    {t("promoMinPackagePrice")}:{" "}
+                    {promo.minPurchaseAmount != null && promo.minPurchaseAmount > 0
+                      ? promo.minPurchaseAmount
+                      : "—"}
+                  </p>
                   <p>{t("promoUsed")}: {promo.usedCount}{promo.maxUses != null ? ` / ${promo.maxUses}` : ""}</p>
                   {promo.expiresAt && (
                     <p>{t("promoExpires")}: {new Date(promo.expiresAt).toLocaleDateString()}</p>
@@ -290,6 +312,19 @@ export default function AdminPromoCodesPage() {
               min={0}
               value={form.minPurchaseCredits}
               onChange={(e) => setForm({ ...form, minPurchaseCredits: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">{t("promoMinPackagePrice")}</label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0"
+              value={form.minPurchaseAmount}
+              onChange={(e) =>
+                setForm({ ...form, minPurchaseAmount: e.target.value === "" ? "" : e.target.value })
+              }
             />
           </div>
           <div>

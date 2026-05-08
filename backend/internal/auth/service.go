@@ -222,6 +222,39 @@ func (s *Service) Logout(ctx context.Context, userID string) error {
 	return s.redis.Del(ctx, sessionKey).Err()
 }
 
+// RotateSession issues a fresh JWT + sessionID for the user and overwrites the
+// Redis session. Any previously issued JWT for this user becomes invalid (the
+// auth middleware compares jti against the stored sessionID). Use after
+// sensitive account changes (password/email update) so a stolen cookie cannot
+// continue to access the account.
+//
+// Returns the new signed token and the cookie MaxAge (seconds).
+func (s *Service) RotateSession(ctx context.Context, userID string) (string, int, error) {
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return "", 0, err
+	}
+
+	role := user.Role
+	if s.cfg.IsAdmin(user.Email) {
+		role = "ADMIN"
+	}
+
+	sessionID := generateSessionID()
+	ttlSecs := s.cfg.JWTExpirySecs
+
+	token, err := s.generateJWT(user.ID, user.Email, role, sessionID, ttlSecs)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	sessionKey := fmt.Sprintf("session:%s", user.ID)
+	if err := s.redis.Set(ctx, sessionKey, sessionID, time.Duration(ttlSecs)*time.Second).Err(); err != nil {
+		return "", 0, fmt.Errorf("failed to store session: %w", err)
+	}
+	return token, ttlSecs, nil
+}
+
 // GetUser retrieves user info by ID
 func (s *Service) GetUser(ctx context.Context, userID string) (*UserRow, error) {
 	var user UserRow

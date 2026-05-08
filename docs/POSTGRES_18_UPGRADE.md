@@ -135,12 +135,3 @@ docker compose up -d
 - **Backup:** Zachowaj `backups/pre_pg18_upgrade_*.dump` przez co najmniej tydzień
 - **Weryfikacja:** Sprawdź logi API, frontend, admin panel
 
----
-
-## BillionMail
-
-Jeśli używasz override:
-
-```bash
-bash scripts/upgrade-postgres-16-to-18.sh --billionmail
-```

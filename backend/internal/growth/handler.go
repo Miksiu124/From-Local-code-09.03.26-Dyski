@@ -19,13 +19,17 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// AfterInsertHook runs after a successful funnel persist (optional; e.g. marketing campaigns).
+type AfterInsertHook func(ctx context.Context, eventName string, userID *string, props map[string]interface{})
+
 type Handler struct {
 	db          *pgxpool.Pool
 	rateLimiter *middleware.RateLimiter
+	afterInsert AfterInsertHook
 }
 
-func NewHandler(db *pgxpool.Pool, rl *middleware.RateLimiter) *Handler {
-	return &Handler{db: db, rateLimiter: rl}
+func NewHandler(db *pgxpool.Pool, rl *middleware.RateLimiter, afterInsert AfterInsertHook) *Handler {
+	return &Handler{db: db, rateLimiter: rl, afterInsert: afterInsert}
 }
 
 type ingestBody struct {
@@ -69,6 +73,9 @@ func (h *Handler) Ingest(c echo.Context) error {
 			return common.BadRequest(c, "invalid event")
 		}
 		return common.InternalError(c)
+	}
+	if h.afterInsert != nil {
+		h.afterInsert(ctx, body.Event, userID, body.Props)
 	}
 	EmitJSON(body.Event, userID, body.Props)
 	return c.NoContent(http.StatusNoContent)

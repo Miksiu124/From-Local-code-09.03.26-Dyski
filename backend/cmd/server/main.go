@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,15 +17,18 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
+	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/favorites"
 	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/jobs"
+	"content-platform-backend/internal/links"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
-	"content-platform-backend/internal/links"
+	"content-platform-backend/internal/marketing/campaigns"
+	"content-platform-backend/internal/marketing"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
 	"content-platform-backend/internal/observability"
@@ -60,6 +64,12 @@ func main() {
 
 	jobSched := jobs.NewScheduler()
 	defer jobSched.Stop()
+	plLoc, plErr := time.LoadLocation("Europe/Warsaw")
+	if plErr != nil {
+		log.Fatalf("Europe/Warsaw timezone: %v", plErr)
+	}
+	jobSchedPL := jobs.NewSchedulerWithLocation(plLoc)
+	defer jobSchedPL.Stop()
 
 	redisClient, err := database.NewRedisClient(ctx, cfg.RedisURL)
 	if err != nil {
@@ -150,6 +160,7 @@ func main() {
 
 	// Mailer
 	mailService := mailer.New(cfg)
+	discordNotifier := discord.NewNotifier(pgPool, cfg.FrontendURL)
 
 	if _, err := jobSched.AddJob("*/15 * * * *", func() {
 		jctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -158,7 +169,26 @@ func main() {
 	}); err != nil {
 		log.Fatalf("checkout reminder cron: %v", err)
 	}
+	if cfg.WinbackEmailEnabled || cfg.SocialProofEmailEnabled || cfg.RepeatBuyerPromoEmailEnabled {
+		if _, err := jobSched.AddJob(cfg.MarketingCronSpec, func() {
+			jctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			campaigns.RunCronMarketing(jctx, pgPool, redisClient, mailService, cfg)
+			cancel()
+		}); err != nil {
+			log.Fatalf("marketing cron: %v", err)
+		}
+		log.Printf("[Jobs] Marketing cron=%s winback=%v social_proof=%v repeat_buyer_promo=%v",
+			cfg.MarketingCronSpec, cfg.WinbackEmailEnabled, cfg.SocialProofEmailEnabled, cfg.RepeatBuyerPromoEmailEnabled)
+	}
+	if _, err := jobSchedPL.AddJob("0 0 * * *", func() {
+		jctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		jobs.RunDailyRevenueReport(jctx, pgPool, redisClient, discordNotifier)
+		cancel()
+	}); err != nil {
+		log.Fatalf("daily revenue cron: %v", err)
+	}
 	jobSched.Start()
+	jobSchedPL.Start()
 
 	// Auth routes (public)
 	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient)
@@ -188,7 +218,9 @@ func main() {
 	api.GET("/geo/country", geoHandler.GetUserCountry)
 
 	// Funnel / growth events (browser → DB; optional auth for user_id)
-	growthHandler := growth.NewHandler(pgPool, rateLimiter)
+	growthHandler := growth.NewHandler(pgPool, rateLimiter, func(ctx context.Context, eventName string, userID *string, props map[string]interface{}) {
+		campaigns.GrowthHookAsync(pgPool, redisClient, mailService, cfg, eventName, userID, props)
+	})
 	api.POST("/growth-hacker", growthHandler.Ingest, authMW.OptionalAuth)
 	api.GET("/countries", modelsHandler.ListCountries)
 	api.GET("/settings/public", modelsHandler.GetPublicSettings)
@@ -252,7 +284,7 @@ func main() {
 	notifGroup.PATCH("", notifHandler.MarkAllRead)
 
 	// User (requires auth)
-	userHandler := user.NewHandler(pgPool, mailService)
+	userHandler := user.NewHandler(pgPool, mailService, cfg, authService)
 	api.GET("/user/balance", userHandler.GetBalance, authMW.Authenticate)
 	api.GET("/user/profile", userHandler.GetProfile, authMW.Authenticate)
 	api.PATCH("/user/profile", userHandler.UpdateProfile, authMW.Authenticate)
@@ -270,13 +302,33 @@ func main() {
 
 	obsHandler := observability.NewHandler(pgPool, rateLimiter, cfg.PostgresBackupDir, cfg.PostgresBackupDBName)
 	api.POST("/public/client-errors", obsHandler.PostClientError)
+	api.GET("/public/marketing-unsubscribe", marketing.UnsubscribeGET(pgPool, redisClient, cfg))
 
 	// ── Admin routes (requires auth + admin) ─────────────────────────────
 	adminGroup := api.Group("/admin", authMW.Authenticate, adminMW.RequireAdmin)
 	adminHandler := admin.NewHandler(pgPool, r2Client, r2ProofClient, cfg, redisClient, contentService, mailService)
 
+	if opsKey := strings.TrimSpace(cfg.MarketingOpsKey); opsKey != "" {
+		opsGuard := func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				raw := c.Request().Header.Get("Authorization")
+				token := strings.TrimSpace(strings.TrimPrefix(raw, "Bearer"))
+				if subtle.ConstantTimeCompare([]byte(token), []byte(opsKey)) != 1 {
+					return echo.ErrUnauthorized
+				}
+				return next(c)
+			}
+		}
+		ops := api.Group("/ops", opsGuard)
+		ops.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
+	}
+
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)
+	adminGroup.GET("/credits/purchases/stats", adminHandler.GetRevenueStats)
 	adminGroup.GET("/credits/purchases/stream", adminHandler.StreamPendingPurchases)
+	adminGroup.GET("/revenue/settlements", adminHandler.ListRevenueSettlements)
+	adminGroup.POST("/revenue/settle", adminHandler.CreateRevenueSettlement)
+	adminGroup.DELETE("/revenue/settlements/:id", adminHandler.DeleteRevenueSettlement)
 	adminGroup.GET("/credits/purchases/:id/proof", adminHandler.GetPurchaseProof)
 	adminGroup.POST("/credits/purchases/:id/approve", adminHandler.ApprovePurchase)
 	// Alias: some proxies/WAFs block path segment "approve"; UI uses /complete
@@ -318,6 +370,7 @@ func main() {
 	adminGroup.GET("/catalog-model-performance", adminHandler.GetCatalogModelPerformance)
 	adminGroup.POST("/content/bulk-zip", adminHandler.BulkDownloadContentZip, echomw.BodyLimit("512k"))
 	adminGroup.GET("/content/:id/source-download", adminHandler.DownloadContentSource)
+	adminGroup.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
 	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
 	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)

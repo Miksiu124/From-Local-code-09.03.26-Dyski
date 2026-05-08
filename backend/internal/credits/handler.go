@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,10 +120,11 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		var maxUses *int
 		var expiresAt *time.Time
 		var isActive, oncePerUser, firstPurchaseOnly bool
+		var minPurchaseAmount sql.NullFloat64
 		err := h.db.QueryRow(ctx, `
-			SELECT id, discount_type, discount_value, min_purchase_credits, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
+			SELECT id, discount_type, discount_value, min_purchase_credits, min_purchase_amount, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
 			FROM promo_codes WHERE id = $1
-		`, req.PromoCodeID).Scan(&promoID, &discountType, &discountValue, &minCredits, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
+		`, req.PromoCodeID).Scan(&promoID, &discountType, &discountValue, &minCredits, &minPurchaseAmount, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
 		if err != nil || !isActive {
 			return common.BadRequest(c, "Invalid or expired promo code")
 		}
@@ -134,6 +136,9 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 		if pkgCredits < minCredits {
 			return common.BadRequest(c, fmt.Sprintf("Minimum %d credits required for this promo", minCredits))
+		}
+		if minPurchaseAmount.Valid && minPurchaseAmount.Float64 > 0 && pkgPrice < minPurchaseAmount.Float64 {
+			return common.BadRequest(c, fmt.Sprintf("Minimum package price %.2f required for this promo", minPurchaseAmount.Float64))
 		}
 		if oncePerUser {
 			var alreadyUsed int
@@ -1024,10 +1029,11 @@ func (h *Handler) ValidatePromo(c echo.Context) error {
 	var maxUses *int
 	var expiresAt *time.Time
 	var isActive, oncePerUser, firstPurchaseOnly bool
+	var minPurchaseAmount sql.NullFloat64
 	err := h.db.QueryRow(ctx, `
-		SELECT id, discount_type, discount_value, min_purchase_credits, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
+		SELECT id, discount_type, discount_value, min_purchase_credits, min_purchase_amount, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
 		FROM promo_codes WHERE UPPER(TRIM(code)) = $1
-	`, req.Code).Scan(&promoID, &discountType, &discountValue, &minCredits, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
+	`, req.Code).Scan(&promoID, &discountType, &discountValue, &minCredits, &minPurchaseAmount, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
 	if err != nil || !isActive {
 		return common.Success(c, map[string]interface{}{"valid": false, "message": "Invalid or expired promo code"})
 	}
@@ -1040,6 +1046,11 @@ func (h *Handler) ValidatePromo(c echo.Context) error {
 	if pkgCredits < minCredits {
 		return common.Success(c, map[string]interface{}{
 			"valid": false, "message": fmt.Sprintf("Minimum %d credits required for this promo", minCredits),
+		})
+	}
+	if minPurchaseAmount.Valid && minPurchaseAmount.Float64 > 0 && pkgPrice < minPurchaseAmount.Float64 {
+		return common.Success(c, map[string]interface{}{
+			"valid": false, "message": fmt.Sprintf("Minimum package price %.2f required for this promo", minPurchaseAmount.Float64),
 		})
 	}
 	if oncePerUser {

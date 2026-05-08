@@ -1,29 +1,8 @@
+import { Suspense } from "react";
 import { getTranslations } from "next-intl/server";
 import { fetchApi } from "@/lib/api-client";
-import { AdminPaymentsList } from "@/components/admin/admin-payments-list";
-import { parseReferralReferrer } from "@/lib/referral-referrer";
-
-interface ApiPurchase {
-  id: string;
-  credits: number;
-  amount: number;
-  paymentMethod: string;
-  transactionCode: string;
-  blikCode: string | null;
-  cryptoCurrency: string | null;
-  txId: string | null;
-  status: string;
-  paymentProofUrl: string | null;
-  adminNotes: string | null;
-  expirationTime: string;
-  createdAt: string;
-  fromCustomLink?: boolean;
-  customLinkSlug?: string | null;
-  fromUserReferral?: boolean;
-  referralReferrer?: { id: string; email: string; name: string | null } | null;
-  user: { id: string; email: string; name: string | null };
-  creditPackage: { name: string; credits: number; price: number };
-}
+import { getServerUser } from "@/lib/session-server";
+import { PaymentsDashboard } from "@/components/admin/payments-dashboard";
 
 interface SettingItem {
   key: string;
@@ -31,50 +10,107 @@ interface SettingItem {
   description: string | null;
 }
 
+function normalizeSearchParams(raw: Record<string, string | string[] | undefined>): Record<string, string | undefined> {
+  const sp: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    sp[k] = Array.isArray(v) ? v[0] : v;
+  }
+  return sp;
+}
+
+function buildHistoryQuery(sp: Record<string, string | undefined>, meId: string | undefined): string {
+  const p = new URLSearchParams();
+  for (const key of ["from", "to", "paymentMethod", "q", "status"] as const) {
+    const v = sp[key];
+    if (v) p.set(key, v);
+  }
+  if (sp.adminScope === "me" && meId) p.set("adminId", meId);
+  else if (sp.adminScope === "partner") p.set("partnerOnly", "1");
+  if (sp.adminId) p.set("adminId", sp.adminId);
+  p.set("limit", "80");
+  p.set("sortBy", "createdAt");
+  p.set("sortDir", "desc");
+  return p.toString();
+}
+
 interface PageProps {
-  searchParams: Promise<{ id?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export default async function AdminPaymentsPage({ searchParams }: PageProps) {
   const t = await getTranslations("admin");
-  const { id: highlightId } = await searchParams;
+  const rawSp = await searchParams;
+  const sp = normalizeSearchParams(rawSp);
+  const highlightId = sp.id;
 
-  const data = await fetchApi<{ purchases: ApiPurchase[] }>("/admin/credits/purchases").catch(() => ({ purchases: [] }));
-  const allPurchases = data?.purchases ?? [];
+  const me = await getServerUser();
+  const meId = me?.id;
 
-  const pendingPurchases = allPurchases
-    .filter((p) => p.status === "PENDING")
-    .map((p) => ({
-      id: p.id,
-      userEmail: p.user?.email ?? "—",
-      userName: p.user?.name ?? null,
-      packageName: p.creditPackage?.name ?? "—",
-      credits: p.credits,
-      amount: p.amount,
-      paymentMethod: p.paymentMethod,
-      transactionCode: p.transactionCode,
-      blikCode: p.blikCode,
-      cryptoCurrency: p.cryptoCurrency,
-      txId: p.txId,
-      status: p.status,
-      paymentProofUrl: p.paymentProofUrl,
-      adminNotes: p.adminNotes,
-      expirationTime: p.expirationTime,
-      createdAt: p.createdAt,
-      fromCustomLink: Boolean(p.fromCustomLink),
-      customLinkSlug: p.customLinkSlug ?? null,
-      fromUserReferral: Boolean(p.fromUserReferral),
-      referralReferrer: parseReferralReferrer(p.referralReferrer),
-    }));
+  const historyQs = buildHistoryQuery(sp, meId);
 
-  const settings = await fetchApi<SettingItem[]>("/admin/settings").catch(() => [] as SettingItem[]);
+  const [
+    pendingRes,
+    histRes,
+    statsToday,
+    stats7d,
+    stats30d,
+    statsSince,
+    settlementsRes,
+    settings,
+  ] = await Promise.all([
+    fetchApi<{ purchases: Record<string, unknown>[] }>("/admin/credits/purchases?status=PENDING&limit=200").catch(() => ({
+      purchases: [],
+    })),
+    fetchApi<{ purchases: Record<string, unknown>[]; nextCursor?: { createdAt: string; id: string } | null }>(
+      `/admin/credits/purchases?${historyQs}`,
+    ).catch(() => ({ purchases: [], nextCursor: null })),
+    fetchApi<Record<string, unknown>>("/admin/credits/purchases/stats?range=today").catch(() => null),
+    fetchApi<Record<string, unknown>>("/admin/credits/purchases/stats?range=7d").catch(() => null),
+    fetchApi<Record<string, unknown>>("/admin/credits/purchases/stats?range=30d").catch(() => null),
+    fetchApi<Record<string, unknown>>("/admin/credits/purchases/stats?range=since_settlement").catch(() => null),
+    fetchApi<{ settlements: Record<string, unknown>[] }>("/admin/revenue/settlements?limit=15").catch(() => ({ settlements: [] })),
+    fetchApi<SettingItem[]>("/admin/settings").catch(() => [] as SettingItem[]),
+  ]);
+
+  const pendingRaw = pendingRes?.purchases ?? [];
+  const historyRows = histRes?.purchases ?? [];
+  const nextCursor = histRes?.nextCursor ?? null;
+  const settlements = settlementsRes?.settlements ?? [];
+
   const blikSetting = (settings ?? []).find((s) => s.key === "blik_enabled");
   const blikEnabled = blikSetting ? (blikSetting.value === true || blikSetting.value === "true") : true;
 
+  if (!meId) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-2">{t("creditPurchases")}</h1>
+        <p className="text-muted-foreground text-sm">Session required.</p>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">{t("creditPurchases")}</h1>
-      <AdminPaymentsList purchases={pendingPurchases} initialBlikEnabled={blikEnabled} highlightId={highlightId} />
-    </div>
+    <Suspense
+      fallback={
+        <div className="p-6 animate-pulse space-y-4">
+          <div className="h-8 w-48 rounded-lg bg-white/10" />
+          <div className="h-40 rounded-2xl bg-white/5" />
+        </div>
+      }
+    >
+      <PaymentsDashboard
+        pendingPurchases={pendingRaw}
+        initialHistory={historyRows}
+        historyNextCursor={nextCursor}
+        statsToday={statsToday}
+        stats7d={stats7d}
+        stats30d={stats30d}
+        statsSince={statsSince}
+        settlements={settlements}
+        currentUserId={meId}
+        highlightId={highlightId}
+        initialBlikEnabled={blikEnabled}
+      />
+    </Suspense>
   );
 }

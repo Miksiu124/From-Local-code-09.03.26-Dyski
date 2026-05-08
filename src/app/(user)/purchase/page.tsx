@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { CreditPurchaseFlow } from "@/components/payments/credit-purchase-flow";
 import { CreditPricingPreview } from "@/components/payments/credit-pricing-preview";
 import { fetchApi } from "@/lib/api-client";
@@ -43,18 +44,20 @@ export default async function PurchasePage() {
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
-      <CreditPurchaseFlow
-        creditBalance={me.creditBalance}
-        priorApprovedCreditPurchases={me.approvedCreditPurchasesCount ?? 0}
-        packages={packages.map((p) => ({
-          id: p.id,
-          name: p.name,
-          credits: p.credits,
-          price: Number(p.price),
-          tier: p.tier,
-        }))}
-        blikEnabled={blikEnabled}
-      />
+      <Suspense fallback={<div className="text-center text-muted-foreground py-12">…</div>}>
+        <CreditPurchaseFlow
+          creditBalance={me.creditBalance}
+          priorApprovedCreditPurchases={me.approvedCreditPurchasesCount ?? 0}
+          packages={packages.map((p) => ({
+            id: p.id,
+            name: p.name,
+            credits: p.credits,
+            price: Number(p.price),
+            tier: p.tier,
+          }))}
+          blikEnabled={blikEnabled}
+        />
+      </Suspense>
     </div>
   );
 }

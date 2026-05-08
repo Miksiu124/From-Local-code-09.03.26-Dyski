@@ -1,19 +1,18 @@
 # Dyskiof — deploy na VPS (PowerShell)
 # Konfiguracja polaczenia: ContentManager/.env.deploy (VPS_HOST, VPS_USER, VPS_PATH) — wczytywane automatycznie.
-# Uzycie: .\scripts\deploy-vps.ps1 [-Pull] [-Build] [-Rebuild] [-RebuildFresh] [-PgUpgrade] [-Billionmail] [-Lgtm]
+# Uzycie: .\scripts\deploy-vps.ps1 [-Pull] [-Build] [-Rebuild] [-RebuildFresh] [-PgUpgrade] [-Lgtm]
 #   -Pull        = zamiast rsync/tar: na VPS git pull (wymaga repo + remote GitHub); gałąź: $env:GIT_BRANCH lub main
 #   -Build       = sync + docker compose build + up
 #   -Rebuild     = sync + pelna przebudowa od zera (zachowuje tylko postgres_data)
 #   -RebuildFresh = sync + przebudowa OD ZERA z baza (zachowuje 4 uzytkownikow + .env)
 #   -PgUpgrade   = sync + upgrade PostgreSQL 16→18 (backup-first, zero utraty danych)
-#   -Billionmail = uzyj docker-compose.billionmail.yml
 #   -Lgtm         = grafana/otel-lgtm (+ docker-compose.lgtm.yml); na pierwszym runie tworzy .env.lgtm z example, jesli brak
 # Wymaga: rsync (z Git Bash lub WSL) albo uzyj scp
 # Wolumen produkcyjny: docker-compose.use3566349.yml (contentvault_postgres_cluster).
 #   Źródła (kolejność): .env.deploy → lokalne .env.vps → $VPS_PATH/.env.vps na serwerze → zmienna procesu (CI) → 0
 #   Na VPS skopiuj .env.vps.example → /opt/contentvault/.env.vps, aby git pull/CI nigdy nie traciły flagi.
 
-param([switch]$Pull, [switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$PgUpgrade, [switch]$PgResume, [switch]$Billionmail, [switch]$Lgtm)
+param([switch]$Pull, [switch]$Build, [switch]$Rebuild, [switch]$RebuildFresh, [switch]$PgUpgrade, [switch]$PgResume, [switch]$Lgtm)
 
 # Laduj .env.deploy jesli istnieje
 $deployEnv = Join-Path (Split-Path -Parent $PSScriptRoot) ".env.deploy"
@@ -152,18 +151,17 @@ Write-Host ""
 Write-Host "Starting on VPS..."
 
 # Zgodnie z deploy-vps.sh: lista plików compose na serwerze (scripts/compose-vps-files.sh)
-$bmArg = if ($Billionmail) { " --billionmail" } else { "" }
 $lgtmF = if ($Lgtm) { " --lgtm" } else { "" }
-$remotePre = "cd $VPS_PATH && sed -i 's/\r`$//' scripts/compose-vps-files.sh 2>/dev/null; source scripts/compose-vps-files.sh && set_compose_vps_files$bmArg$lgtmF && " +
+$remotePre = "cd $VPS_PATH && sed -i 's/\r`$//' scripts/compose-vps-files.sh 2>/dev/null; source scripts/compose-vps-files.sh && set_compose_vps_files$lgtmF && " +
   'if [[ "$COMPOSE_FILES" == *lgtm.yml* ]] && [ ! -f .env.lgtm ]; then cp .env.lgtm.example .env.lgtm; fi && '
 
 if ($RebuildFresh) {
-  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && sed -i 's/`r`$//' scripts/vps-rebuild-fresh.sh 2>/dev/null; bash scripts/vps-rebuild-fresh.sh$bmArg$lgtmF"
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && sed -i 's/`r`$//' scripts/vps-rebuild-fresh.sh 2>/dev/null; bash scripts/vps-rebuild-fresh.sh$lgtmF"
 } elseif ($Rebuild) {
-  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/vps-rebuild.sh$bmArg$lgtmF"
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/vps-rebuild.sh$lgtmF"
 } elseif ($PgUpgrade) {
   $resumeArg = if ($PgResume) { " --resume" } else { "" }
-  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh$resumeArg$bmArg$lgtmF"
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh$resumeArg$lgtmF"
 } elseif ($Build) {
   $remoteTail = 'docker compose $COMPOSE_FILES build && docker compose $COMPOSE_FILES up -d && (docker compose $COMPOSE_FILES up -d --no-deps --force-recreate nginx 2>/dev/null || true)'
   $remoteSsh = $remotePre + $remoteTail

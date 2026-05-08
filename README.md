@@ -225,11 +225,10 @@ TURNSTILE_SECRET_KEY=your_turnstile_secret
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
 
 # E-mail (produkcja: Cloudflare Email Service — patrz docs/EMAIL_VPS_SETUP.md)
-SAASMAIL_SEND_URL=
-SAASMAIL_API_KEY=
 CLOUDFLARE_EMAIL_ACCOUNT_ID=
 CLOUDFLARE_EMAIL_API_TOKEN=
 SMTP_FROM=noreply@dyskiof.net
+# Opcjonalnie: MARKETING_EMAIL_FROM= dla kampanii (wbudowane szablony)
 
 # Frontend (used by docker-compose)
 NEXT_PUBLIC_APP_URL=http://localhost
@@ -362,15 +361,14 @@ Prices are stored in PLN. For English locale, prices are converted to USD at 4:1
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
 | `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key (bot protection) |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | No | Cloudflare Turnstile site key (frontend widget) |
-| `SAASMAIL_SEND_URL` | No* | Pełny URL `POST` do Saasmail, np. `https://…workers.dev/api/send` (wysyłka + widok w panelu) |
-| `SAASMAIL_API_KEY` | No* | Klucz `sk_…` z Saasmail → API (Bearer); wymaga inboxu zgodnego z `SMTP_FROM` |
 | `CLOUDFLARE_EMAIL_ACCOUNT_ID` | No* | Cloudflare account ID (wysyłka przez REST) |
 | `CLOUDFLARE_EMAIL_API_TOKEN` | No* | API token z uprawnieniem Email Sending |
 | `SMTP_FROM` | No | Adres nadawcy (domena musi być w Cloudflare Email → Sending) |
+| `MARKETING_EMAIL_FROM` | No | Opcjonalny nadawca kampanii marketingowych (wbudowane szablony); puste = `SMTP_FROM` |
 | `SMTP_HOST` | No | Opcjonalnie: zewnętrzny SMTP zamiast Cloudflare (np. Mailpit lokalnie) |
 | `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | No | Tylko przy `SMTP_HOST` |
 
-\* Na produkcji ustaw `SAASMAIL_SEND_URL` + `SAASMAIL_API_KEY`, albo parę `CLOUDFLARE_EMAIL_*`, albo `SMTP_HOST`. Gdy ustawione Saasmail, ma pierwszeństwo przed Cloudflare REST.
+\* Na produkcji ustaw parę `CLOUDFLARE_EMAIL_*` (i `SMTP_FROM`) albo `SMTP_HOST` bez Cloudflare.
 | `NGINX_CONFIG` | No | Opcjonalnie: inna ścieżka nginx **tylko lokalnie**. Na VPS użyj **`docker-compose.vps.yml`** zamiast zmiennej w `.env`. |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |

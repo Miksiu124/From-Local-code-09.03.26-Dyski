@@ -12,10 +12,6 @@ set -e
 PROTECTED_EMAILS="dominikql.smurf@gmail.com|puma3850@wp.pl|misi3k124@proton.me|hakpola@gmail.com"
 PROTECTED_EMAILS_SQL="'dominikql.smurf@gmail.com','puma3850@wp.pl','misi3k124@proton.me','hakpola@gmail.com'"
 
-if [[ "$1" == "--billionmail" ]]; then
-  echo "Używam BillionMail + VPS nginx (production)."
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="/tmp/contentvault_rebuild_fresh_backup"

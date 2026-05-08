@@ -1,7 +1,6 @@
 #!/bin/bash
 # Dyskiof — pełna przebudowa kontenerów na VPS (zachowanie tylko bazy PostgreSQL)
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-rebuild.sh
-# Opcja: --billionmail — użyj docker-compose.billionmail.yml (gdy BillionMail jest zainstalowany)
 #
 # Wolumeny: ta sama logika co deploy-vps / vps-up-prod (klaster + LGTM) — patrz scripts/compose-vps-files.sh
 

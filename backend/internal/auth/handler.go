@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -653,6 +654,13 @@ func (h *Handler) ResetPassword(c echo.Context) error {
 
 // ── Discord OAuth ───────────────────────────────────────────────────────────
 
+// discordStateCookie is the name of the HttpOnly cookie that binds an OAuth
+// state value to the browser that initiated the flow. Verified on callback to
+// prevent state-fixation: even if an attacker observes a valid state value
+// (e.g. via referrer leak from Discord), they cannot complete the flow
+// without also being able to set this cookie on the victim's browser.
+const discordStateCookie = "oauth_state_discord"
+
 func (h *Handler) DiscordRedirect(c echo.Context) error {
 	if h.cfg.DiscordClientID == "" {
 		return common.BadRequest(c, "Discord login is not configured")
@@ -664,6 +672,16 @@ func (h *Handler) DiscordRedirect(c echo.Context) error {
 
 	h.redis.Set(c.Request().Context(), "oauth-state:"+state, "1", 10*time.Minute)
 
+	cookie := new(http.Cookie)
+	cookie.Name = discordStateCookie
+	cookie.Value = state
+	cookie.Path = "/"
+	cookie.HttpOnly = true
+	cookie.MaxAge = int((10 * time.Minute).Seconds())
+	cookie.SameSite = http.SameSiteLaxMode
+	cookie.Secure = h.cfg.IsProduction()
+	c.SetCookie(cookie)
+
 	params := url.Values{
 		"client_id":     {h.cfg.DiscordClientID},
 		"redirect_uri":  {h.cfg.DiscordRedirectURI},
@@ -674,6 +692,19 @@ func (h *Handler) DiscordRedirect(c echo.Context) error {
 
 	return c.Redirect(http.StatusTemporaryRedirect,
 		"https://discord.com/api/oauth2/authorize?"+params.Encode())
+}
+
+// clearDiscordStateCookie expires the state-binding cookie set by DiscordRedirect.
+func (h *Handler) clearDiscordStateCookie(c echo.Context) {
+	cookie := new(http.Cookie)
+	cookie.Name = discordStateCookie
+	cookie.Value = ""
+	cookie.Path = "/"
+	cookie.HttpOnly = true
+	cookie.MaxAge = -1
+	cookie.SameSite = http.SameSiteLaxMode
+	cookie.Secure = h.cfg.IsProduction()
+	c.SetCookie(cookie)
 }
 
 type discordTokenResponse struct {
@@ -700,6 +731,21 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	if state == "" {
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
+
+	// Bind state to the browser that initiated the flow. We use crypto/subtle
+	// for the comparison even though state is not directly a secret: it
+	// prevents a leaked state value (referrer, history, IDS logs) from being
+	// replayed by an attacker who can't also set this cookie on the victim's
+	// browser.
+	stateCookie, cookieErr := c.Cookie(discordStateCookie)
+	if cookieErr != nil || stateCookie == nil || stateCookie.Value == "" ||
+		subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(state)) != 1 {
+		h.clearDiscordStateCookie(c)
+		log.Printf("[Discord] OAuth state cookie missing or mismatch")
+		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
+	}
+	h.clearDiscordStateCookie(c)
+
 	stateKey := "oauth-state:" + state
 	if val, err := h.redis.GetDel(c.Request().Context(), stateKey).Result(); err != nil || val == "" {
 		log.Printf("[Discord] Invalid or expired OAuth state parameter")

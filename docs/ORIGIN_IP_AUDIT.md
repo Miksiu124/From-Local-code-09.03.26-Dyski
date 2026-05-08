@@ -46,7 +46,7 @@ v=spf1 include:amazonses.com -all
 ### MX / Email
 
 - `send.dyskiof.net` MX → `feedback-smtp.eu-west-1.amazonses.com`
-- Maile wysyłane przez Resend/SES – nie z VPS
+- Maile wysyłane przez Cloudflare Email API – nie z VPS (brak Postfix na origin)
 
 **Status:** OK – nagłówki Received nie ujawnią IP VPS.
 
@@ -95,12 +95,6 @@ Firewall nie blokuje SSH. Opcje:
 
 ---
 
-### Priorytet 3: Porty 8443, 8880 (BillionMail)
-
-Zgodnie z SECURITY_AUDIT.md – ogranicz w GCP Firewall do zaufanych IP.
-
----
-
 ## 3. Weryfikacja po wdrożeniu
 
 1. **Z zewnątrz (np. telefon bez WiFi):**
@@ -125,7 +119,7 @@ Zgodnie z SECURITY_AUDIT.md – ogranicz w GCP Firewall do zaufanych IP.
 |----------------|--------|-----------|
 | DNS | OK | Proxied |
 | SPF | OK | Brak ip4 |
-| Email | OK | SES/Resend |
+| Email | OK | Cloudflare Email API (bez serwera SMTP na origin) |
 | Kod | OK | Brak IP |
 | **Direct IP + SSL cert** | **KRYTYCZNE** | **Firewall** |
 

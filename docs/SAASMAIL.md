@@ -35,8 +35,18 @@ Subdomena pod UI (np. `mail.dyskiof.net`): w `wrangler.jsonc` sekcja `routes` / 
 
 | System | Rola |
 |--------|------|
-| **Dyskiof (Go)** | Maile transakcyjne → REST `CLOUDFLARE_EMAIL_*` **albo** (gdy ustawione) `SAASMAIL_SEND_URL` + `SAASMAIL_API_KEY` → `POST /api/send` w Saasmail, żeby wysyłka była widoczna w panelu. |
+| **Dyskiof (Go)** | Maile transakcyjne i marketingowe → REST **`CLOUDFLARE_EMAIL_*`** (alternatywnie SMTP). **Nie** przechodzi już przez Worker Saasmail. |
 | **saasmail** | Odbiór routowany do Workera + panel zespołu; własna wysyłka z Workera (`EMAIL` lub Resend). |
+
+### Inbox w panelu vs wysyłka z API (ważne)
+
+Lista konwersacji (**Inbox** → kolumna osób) w UI Saasmail pochodzi z zapytania po tabeli **`emails`** — czyli **wyłącznie wiadomości przychodzące** (Email Routing → worker). **`POST /api/send`** zapisuje rekord w **`sent_emails`**; w wątku danej osoby pojawi się jako „sent” **tylko wtedy**, gdy istnieje wiersz **`people`** z tym samym adresem co `to` **i** otworzysz tę osobę z listy (a na listę trafiają zwykle tylko kontakty z co najmniej jednym **odbieranym** mailem). Dla zimnego adresu (np. pierwszy reset hasła do skrzynki, której nie było w Saasmail) **`person_id` w `sent_emails` może być `null`** — wtedy **w ogóle nie zbudujesz wątku w Inbox**, mimo że mail wyszedł i dotarł do odbiorcy.
+
+**Podsumowanie:** panel Saasmail **nie** jest skrzynką „wszystkich wysłanych transakcyjnie”; to CRM na **przychodzące** + wysłane w kontekście znanej osoby. Potwierdzanie resetów: skrzynka odbiorcy, logi backendu (`[Mailer]` / Loki `log_category="mailer"`), ewentualnie logi / metryki Workera w Cloudflare.
+
+### Opóźnienie od kliknięcia resetu do maila w skrzynce
+
+Typowy łańcuch: **Dyskiof → HTTP do Workera → Cloudflare Email Sending (kolejka) → SMTP odbiorcy (np. Proton)**. Opóźnienie **30 s–kilka minut** po stronie dostawcy poczty nie jest rzadkie; pierwsze żądanie po zimnym starcie workera może dodać sekundy. Przy błędach 429/5xx backend **retry** (kilka prób z backoffem) celowo wydłuża czas przed rezygnacją lub fallbackiem.
 
 Jedna domena w **Email → Sending** może obsługiwać nadawców używanych przez oba systemy — ważne, żeby adresy w `SMTP_FROM` (Dyskiof) i „from” w saasmail były z **zweryfikowanej** domeny.
 
@@ -65,5 +75,7 @@ Albo wg README upstream: skill `/update-saasmail` w Claude Code.
 Migracje D1: plik `0020_emails_fts.sql` w tym forku jest rozdzielony (`0020` + `0021`), a triggery FTS (`emails_fts_ad`, `emails_fts_au`, `emails_fts_ai`) zostały dołożone jednym poleceniem `wrangler d1 execute`, bo D1 w batchu migracji źle traktuje średniki w `BEGIN … END`.
 
 **Email Routing (odbiór):** w Cloudflare **Email → Email Routing** dodaj regułę „Send to Worker” → worker **`saasmail-dyskiof`**. Przy pierwszym użyciu uruchom `npx wrangler login` i dołącz zakresy **email_routing** / **email_sending**, jeśli panel o to poprosi.
+
+**Wysyłka z panelu (Reply / Compose):** worker musi mieć skonfigurowany **binding `EMAIL`** (Cloudflare Email Sending) **albo** `RESEND_API_KEY`. Bez tego `createEmailSender` zwraca błąd — wcześniej API i tak zwracało **HTTP 201** z `status: "failed"`, więc UI wyglądał jak sukces. Od poprawki w tym repozytorium nieudana wysyłka to **HTTP 502** z polem `error` w JSON; w panelu zobaczysz treść błędu zamiast milczącego „nic nie poszło”.
 
 **Pierwsze konto:** wejdź na URL panelu i załóż konto administratora (jak w README saasmail).

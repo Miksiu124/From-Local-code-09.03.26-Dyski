@@ -3,29 +3,10 @@ import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
-const isProd = process.env.NODE_ENV === "production";
+// Content-Security-Policy is set per-request in src/middleware.ts so that
+// each response gets a fresh nonce (instead of relying on 'unsafe-inline').
+// Everything else is static and lives here.
 const securityHeaders = [
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      isProd
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com"
-        : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
-      "script-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com https://files.dyskiof.net",
-      "font-src 'self' data:",
-      "connect-src 'self' https: wss: https://*.r2.cloudflarestorage.com https://challenges.cloudflare.com",
-      "media-src 'self' blob: https:",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "frame-src 'self' https://challenges.cloudflare.com",
-      "worker-src 'self' blob:",
-    ].join("; "),
-  },
   {
     key: "X-Content-Type-Options",
     value: "nosniff",
@@ -40,7 +21,8 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=()",
+    value:
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), gyroscope=(), magnetometer=(), accelerometer=(), interest-cohort=()",
   },
   {
     key: "Strict-Transport-Security",

@@ -3,12 +3,33 @@ package admin
 import (
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"content-platform-backend/internal/links"
+
 	"github.com/labstack/echo/v4"
 )
+
+// slugPattern: lowercase alphanumeric + dash, must start with alphanumeric,
+// 1–64 chars. Restrictive on purpose: slugs are interpolated into URLs and we
+// don't want surprises (case, dots, slashes, percent-escapes, etc.).
+var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+// validateSlug normalizes (trim + lowercase) and validates a custom-link slug.
+// Returns the normalized slug or an error message suitable for the API.
+func validateSlug(raw string) (string, string) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return "", "Slug is required"
+	}
+	if !slugPattern.MatchString(s) {
+		return "", "Slug must be 1–64 chars and contain only lowercase letters, digits, and dashes (must start with a letter or digit)"
+	}
+	return s, ""
+}
 
 // ─── Custom Links ────────────────────────────────────────────────────────────
 
@@ -99,8 +120,19 @@ func (h *Handler) CreateCustomLink(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request payload")
 	}
 
-	if req.Slug == "" || req.Destination == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "Slug and destination are required")
+	slug, slugErr := validateSlug(req.Slug)
+	if slugErr != "" {
+		return echo.NewHTTPError(http.StatusBadRequest, slugErr)
+	}
+
+	dest := strings.TrimSpace(req.Destination)
+	if dest == "" || len(dest) > 2048 {
+		return echo.NewHTTPError(http.StatusBadRequest, "Destination is required and must be at most 2048 characters")
+	}
+	// Defense-in-depth: validate at write time even though TrackAndResolveLink
+	// also re-validates at read time.
+	if !links.IsSafeRedirectDestination(dest, h.cfg.FrontendURL) {
+		return echo.NewHTTPError(http.StatusBadRequest, "Destination must be a relative path, same-origin URL, or HTTPS URL (no javascript:, data:, etc.)")
 	}
 
 	query := `
@@ -110,7 +142,7 @@ func (h *Handler) CreateCustomLink(c echo.Context) error {
 	`
 
 	var l CustomLink
-	err := h.db.QueryRow(ctx, query, req.Slug, req.Destination, req.Description).Scan(
+	err := h.db.QueryRow(ctx, query, slug, dest, req.Description).Scan(
 		&l.ID, &l.Slug, &l.Destination, &l.Description, &l.IsActive, &l.CreatedAt,
 	)
 	if err != nil {
@@ -140,6 +172,26 @@ func (h *Handler) UpdateCustomLink(c echo.Context) error {
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request payload")
+	}
+
+	// Validate (and normalize) before building the UPDATE so we never persist
+	// raw user input that could later become an open-redirect or XSS source.
+	if req.Slug != nil {
+		s, slugErr := validateSlug(*req.Slug)
+		if slugErr != "" {
+			return echo.NewHTTPError(http.StatusBadRequest, slugErr)
+		}
+		req.Slug = &s
+	}
+	if req.Destination != nil {
+		dest := strings.TrimSpace(*req.Destination)
+		if dest == "" || len(dest) > 2048 {
+			return echo.NewHTTPError(http.StatusBadRequest, "Destination must be 1–2048 characters")
+		}
+		if !links.IsSafeRedirectDestination(dest, h.cfg.FrontendURL) {
+			return echo.NewHTTPError(http.StatusBadRequest, "Destination must be a relative path, same-origin URL, or HTTPS URL (no javascript:, data:, etc.)")
+		}
+		req.Destination = &dest
 	}
 
 	// Dynamic update

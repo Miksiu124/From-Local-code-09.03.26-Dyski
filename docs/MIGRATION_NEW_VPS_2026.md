@@ -40,14 +40,15 @@ Token Cloudflare ma ograniczenie IP — nie działa z 138.249.138.60. Aby użyć
 - Zaktualizuj `/opt/contentvault/certbot/cloudflare.ini` na VPS
 - Uruchom certbot, zamień symlinki w nginx/certs
 
-#### 4. SMTP_RELAY_PASSWORD
+#### 4. Cloudflare Email (`CLOUDFLARE_EMAIL_*`)
 
-Jeśli `.env.vps.new` ma placeholder `PASTE_RESEND_API_KEY_FROM_OLD_VPS` — wklej klucz Resend z starego VPS:
+Jeśli `.env.vps.new` ma placeholdery `PASTE_CLOUDFLARE_EMAIL_*` — wklej **Account ID** i **API token** (Email Sending) z Cloudflare, zgodnie z `docs/EMAIL_VPS_SETUP.md`:
 
 ```bash
 ssh deploy@138.249.138.60
-nano /opt/contentvault/.env  # SMTP_RELAY_PASSWORD=re_xxx
-docker compose -f /opt/contentvault/docker-compose.yml restart smtp api
+nano /opt/contentvault/.env
+# CLOUDFLARE_EMAIL_ACCOUNT_ID=...  CLOUDFLARE_EMAIL_API_TOKEN=...
+docker compose -f docker-compose.yml -f docker-compose.vps.yml restart content-api
 ```
 
 ### Weryfikacja prywatności

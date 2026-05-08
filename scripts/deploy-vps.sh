@@ -1,13 +1,12 @@
 #!/bin/bash
 # Dyskiof — deploy na VPS
-# Użycie: ./scripts/deploy-vps.sh [--pull] [--build] [--rebuild] [--rebuild-fresh] [--pg-upgrade] [--billionmail] [--lgtm]
+# Użycie: ./scripts/deploy-vps.sh [--pull] [--build] [--rebuild] [--rebuild-fresh] [--pg-upgrade] [--lgtm]
 #   --pull         = zamiast rsync: na VPS git pull (wymaga repo + remote GitHub); opcjonalnie GIT_BRANCH=main
 #   --build        = (rsync lub --pull) + docker compose build + up
 #   --rebuild      = (rsync lub --pull) + pełna przebudowa od zera (zachowuje tylko postgres_data)
 #   --rebuild-fresh= (rsync lub --pull) + przebudowa OD ZERA z bazą (zachowuje 4 użytkowników + .env)
 #   --pg-upgrade   = (rsync lub --pull) + upgrade PostgreSQL 16→18 (backup-first, zero utraty danych)
 #   --pg-resume   = (rsync lub --pull) + upgrade --resume (gdy poprzedni upgrade się przerwał)
-#   --billionmail  = użyj docker-compose.billionmail.yml
 #   --lgtm         = grafana/otel-lgtm; brak .env.lgtm → kopia z .env.lgtm.example
 # Wymaga: rsync, ssh
 # Polaczenie: domyslnie z ContentManager/.env.deploy (VPS_HOST, VPS_USER, VPS_PATH). Mozesz nadpisac zmienne srodowiskowe.
@@ -35,7 +34,6 @@ REBUILD=false
 REBUILD_FRESH=false
 PG_UPGRADE=false
 PG_RESUME=false
-BILLIONMAIL=""
 LGTM=false
 DO_BUILD=false
 GIT_PULL=false
@@ -45,7 +43,6 @@ for arg in "$@"; do
   [[ "$arg" == "--rebuild-fresh" ]] && REBUILD_FRESH=true
   [[ "$arg" == "--pg-upgrade" ]] && PG_UPGRADE=true
   [[ "$arg" == "--pg-resume" ]] && PG_UPGRADE=true && PG_RESUME=true
-  [[ "$arg" == "--billionmail" ]] && BILLIONMAIL="--billionmail"
   [[ "$arg" == "--lgtm" ]] && LGTM=true
   [[ "$arg" == "--build" ]] && DO_BUILD=true
 done
@@ -92,16 +89,16 @@ LGTM_F=""
 
 # Na serwerze: ta sama lista plików co vps-rebuild (scripts/compose-vps-files.sh)
 REMOTE_COMPOSE='source scripts/compose-vps-files.sh && set_compose_vps_files'
-REMOTE_PREP="${REMOTE_COMPOSE} ${BILLIONMAIL} ${LGTM_F} && if [[ \"\$COMPOSE_FILES\" == *lgtm.yml* ]] && [ ! -f .env.lgtm ]; then cp .env.lgtm.example .env.lgtm; fi"
+REMOTE_PREP="${REMOTE_COMPOSE} ${LGTM_F} && if [[ \"\$COMPOSE_FILES\" == *lgtm.yml* ]] && [ ! -f .env.lgtm ]; then cp .env.lgtm.example .env.lgtm; fi"
 
 if [[ "$REBUILD_FRESH" == true ]]; then
-  ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/vps-rebuild-fresh.sh $BILLIONMAIL $LGTM_F"
+  ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/vps-rebuild-fresh.sh $LGTM_F"
 elif [[ "$REBUILD" == true ]]; then
-  ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/vps-rebuild.sh $BILLIONMAIL $LGTM_F"
+  ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/vps-rebuild.sh $LGTM_F"
 elif [[ "$PG_UPGRADE" == true ]]; then
   RESUME_ARG=""
   [[ "$PG_RESUME" == true ]] && RESUME_ARG="--resume "
-  ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh ${RESUME_ARG}$BILLIONMAIL $LGTM_F"
+  ssh "$VPS_USER@$VPS_HOST" "cd $VPS_PATH && bash scripts/upgrade-postgres-16-to-18.sh ${RESUME_ARG}$LGTM_F"
 elif [[ "$DO_BUILD" == true ]]; then
   # Po sync: bind mount nginx.conf moze wskazywac stary inode — wymus odswiezenie
   # shellcheck disable=SC2029

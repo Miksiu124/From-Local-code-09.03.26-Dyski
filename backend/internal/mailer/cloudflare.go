@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"content-platform-backend/internal/observability"
 )
 
 const cloudflareEmailSendPath = "/email/sending/send"
@@ -62,7 +63,12 @@ func stripHTMLTags(s string) string {
 	return out
 }
 
-func (m *Mailer) sendCloudflareOnce(to, subject, htmlBody string) error {
+func (m *Mailer) sendCloudflareOnce(to, fromAddr, subject, htmlBody string) error {
+	from := m.resolveFrom(fromAddr)
+	if from == "" {
+		return fmt.Errorf("cloudflare email: empty from address")
+	}
+
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s%s", strings.TrimSpace(m.cfAccountID), cloudflareEmailSendPath)
 
 	text := stripHTMLTags(htmlBody)
@@ -72,7 +78,7 @@ func (m *Mailer) sendCloudflareOnce(to, subject, htmlBody string) error {
 
 	payload := cfSendRequest{
 		To:      to,
-		From:    m.from,
+		From:    from,
 		Subject: subject,
 		HTML:    htmlBody,
 		Text:    text,
@@ -126,14 +132,15 @@ func (m *Mailer) sendCloudflareOnce(to, subject, htmlBody string) error {
 		return fmt.Errorf("cloudflare email: permanent bounce for %v", parsed.Result.PermanentBounces)
 	}
 
+	observability.MailerPrintf("[Mailer] Cloudflare Email API accepted to=%s (queued/delivered per CF; recipient inbox may lag)", to)
 	return nil
 }
 
-func (m *Mailer) sendCloudflareWithRetry(to, subject, htmlBody string) error {
+func (m *Mailer) sendCloudflareWithRetry(to, fromAddr, subject, htmlBody string) error {
 	var lastErr error
 	delay := smtpRetryDelay
 	for attempt := 1; attempt <= smtpMaxRetries; attempt++ {
-		lastErr = m.sendCloudflareOnce(to, subject, htmlBody)
+		lastErr = m.sendCloudflareOnce(to, fromAddr, subject, htmlBody)
 		if lastErr == nil {
 			return nil
 		}
@@ -148,7 +155,7 @@ func (m *Mailer) sendCloudflareWithRetry(to, subject, htmlBody string) error {
 			break
 		}
 		if attempt < smtpMaxRetries {
-			log.Printf("[Mailer] Cloudflare send to %s failed (attempt %d/%d): %v; retrying in %v", to, attempt, smtpMaxRetries, lastErr, delay)
+			observability.MailerPrintf("[Mailer] Cloudflare send to %s failed (attempt %d/%d): %v; retrying in %v", to, attempt, smtpMaxRetries, lastErr, delay)
 			time.Sleep(delay)
 			delay = time.Duration(float64(delay) * smtpRetryBackoff)
 		}

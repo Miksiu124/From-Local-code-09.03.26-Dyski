@@ -1,10 +1,9 @@
 # Wysyłka e-mail z VPS (Cloudflare Email Service)
 
-Backend może wysyłać maile na jeden z trzech sposobów (pierwszy dopasowany wygrywa):
+Backend wysyła maile w tej kolejności:
 
-1. **Saasmail** — `POST` na `SAASMAIL_SEND_URL` z `SAASMAIL_API_KEY` (treść trafia do panelu Saasmail).
-2. **Cloudflare Email Service** — HTTPS ([REST API](https://developers.cloudflare.com/email-service/api/send-emails/rest-api/)) przy ustawionej parze `CLOUDFLARE_EMAIL_*`.
-3. **SMTP** — gdy ustawiony `SMTP_HOST`.
+1. **Cloudflare Email Service** — HTTPS ([REST API](https://developers.cloudflare.com/email-service/api/send-emails/rest-api/)) przy ustawionej parze `CLOUDFLARE_EMAIL_*` i `SMTP_FROM`.
+2. **SMTP** — gdy ustawiony `SMTP_HOST` (zwykle lokalnie / Mailpit).
 
 Nie ma kontenera Postfix ani Resend, o ile nie włączysz SMTP.
 
@@ -16,7 +15,13 @@ CLOUDFLARE_EMAIL_API_TOKEN=    # API token z uprawnieniem Email Sending → Send
 SMTP_FROM=noreply@twojadomena.pl   # Adres z domeny dodanej do Email → Sending
 ```
 
-Bez żadnej z powyższych ścieżek (Saasmail / Cloudflare / SMTP) API **pominie** wysyłkę (log: „Email not configured…”).
+Opcjonalnie osobny nadawca dla kampanii marketingowych (wbudowane szablony w API):
+
+```bash
+# MARKETING_EMAIL_FROM=newsletter@twojadomena.pl
+```
+
+Bez **Cloudflare REST** ani **SMTP** API **pominie** wysyłkę (log: „Email not configured…”).
 
 ## Konfiguracja Cloudflare
 
@@ -47,18 +52,6 @@ bash scripts/vps-fix-email.sh .env "$CLOUDFLARE_EMAIL_ACCOUNT_ID" "$CLOUDFLARE_E
 
 Możesz ustawić `SMTP_HOST` (np. Mailpit) **zamiast** pary Cloudflare — wtedy backend użyje ścieżki SMTP. Na produkcji VPS standardem jest Cloudflare.
 
-## Wysyłka przez Saasmail (jedna skrzynka w panelu)
+## Panel zespołowy (opcjonalny submoduł saasmail)
 
-Jeśli chcesz, żeby maile transakcyjne z backendu **pojawiały się w Saasmail** (wątek / „sent”):
-
-```bash
-SAASMAIL_SEND_URL=https://<twój-worker>/api/send
-SAASMAIL_API_KEY=sk_…        # z Saasmail → API (Bearer); użytkownik musi mieć passkey przed wygenerowaniem klucza
-SMTP_FROM=noreply@twojadomena.pl   # ten sam adres musi istnieć jako **Inbox** w Saasmail i być dozwolony dla klucza
-```
-
-Gdy `SAASMAIL_SEND_URL` i `SAASMAIL_API_KEY` są ustawione, backend **nie** woła już `CLOUDFLARE_EMAIL_*` do wysyłki (Saasmail i tak użyje Cloudflare Email Sending po swojej stronie, jeśli worker ma binding `EMAIL`).
-
-## Panel zespołowy (saasmail)
-
-Osobny inbox na Workers — submoduł w repozytorium: **[`docs/SAASMAIL.md`](SAASMAIL.md)**.
+Osobna aplikacja na Workers (tylko jeśli ją utrzymujesz) — **[`docs/SAASMAIL.md`](SAASMAIL.md)**. **Backend Dyskiof nie przekazuje już transakcji przez Saasmail** — tylko `CLOUDFLARE_EMAIL_*` lub SMTP.

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Coins, CreditCard, Bitcoin, ArrowRight, Upload, Clock, ArrowLeft, CheckCircle, XCircle, FileCheck, Loader2, UserPlus, Check } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -70,6 +70,8 @@ export function CreditPurchaseFlow({
 }) {
   const t = useTranslations("credits");
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlPromoPrefilled = useRef(false);
   const [step, setStep] = useState<Step>("select-package");
   const pricingViewLogged = useRef(false);
   const checkoutStartedLogged = useRef(false);
@@ -108,6 +110,15 @@ export function CreditPurchaseFlow({
     paymentResult,
   });
   checkoutStateRef.current = { step, paymentStatus, selectedPackage, selectedMethod, paymentResult };
+
+  useEffect(() => {
+    if (urlPromoPrefilled.current) return;
+    const p = searchParams.get("promo");
+    if (p?.trim()) {
+      setPromoCode(p.trim().toUpperCase());
+      urlPromoPrefilled.current = true;
+    }
+  }, [searchParams]);
 
   function emitPaymentAbandonedOnce(purchaseId: string, trigger: "unmount" | "pagehide") {
     if (paymentAbandonLoggedRef.current === purchaseId) return;

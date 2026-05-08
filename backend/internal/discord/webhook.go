@@ -429,6 +429,50 @@ func (n *Notifier) NotifyPurchaseExpired(ctx context.Context, info PurchaseInfo)
 	})
 }
 
+// DailyRevenueSummary is sent once per calendar day (Warsaw) to the configured Discord webhook.
+type DailyRevenueSummary struct {
+	DateLabel    string
+	TotalAmount  float64
+	Count        int64
+	MethodsLine  string
+	AdminsLine   string
+	HasActivity  bool
+}
+
+// NotifyDailyRevenueReport posts a daily revenue embed (no @role ping).
+func (n *Notifier) NotifyDailyRevenueReport(ctx context.Context, r DailyRevenueSummary) {
+	color := ColorGray
+	if r.HasActivity {
+		color = ColorEmerald
+	}
+	methodsVal := r.MethodsLine
+	if strings.TrimSpace(methodsVal) == "" {
+		methodsVal = "—"
+	}
+	adminsVal := r.AdminsLine
+	if strings.TrimSpace(adminsVal) == "" {
+		adminsVal = "—"
+	}
+
+	fields := []Field{
+		{Name: "\U0001F4C5 Day", Value: r.DateLabel, Inline: false},
+		{Name: "\U0001F4B0 Total (approved)", Value: fmt.Sprintf("`%.2f PLN` · **%d** tx", r.TotalAmount, r.Count), Inline: false},
+		{Name: "By method", Value: methodsVal, Inline: false},
+		{Name: "By approver (admin email)", Value: adminsVal, Inline: false},
+	}
+
+	embed := Embed{
+		Author:    &Author{Name: "Dyskiof · raport dzienny", IconURL: "https://cdn.discordapp.com/emojis/1074657523405832194.webp"},
+		Title:     "\U0001F4CA Revenue — wczoraj",
+		Color:     color,
+		Fields:    fields,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Footer:    &Footer{Text: "Automatyczny raport o północy (PL). Płatności APPROVED wg czasu weryfikacji."},
+	}
+
+	go n.send(WebhookPayload{Embeds: []Embed{embed}})
+}
+
 // ─── Shared Helpers ──────────────────────────────────────────────────────────
 
 // insightFields returns the "Admin Insights" field block appended to every embed.

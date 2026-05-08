@@ -3,7 +3,7 @@
 #
 # KLUCZOWE: Przed usunięciem volume robimy pełny backup. Zero utraty danych.
 #
-# Użycie: cd ContentManager && bash scripts/upgrade-postgres-16-to-18.sh [--resume] [--billionmail]
+# Użycie: cd ContentManager && bash scripts/upgrade-postgres-16-to-18.sh [--resume] [--lgtm]
 #   --resume = kontynuuj od restore (gdy backup już istnieje, np. po timeout)
 # Na VPS:  cd /opt/contentvault && bash scripts/upgrade-postgres-16-to-18.sh
 #
@@ -20,7 +20,6 @@ source "$SCRIPT_DIR/compose-vps-files.sh"
 FLAGS=()
 RESUME=false
 for arg in "$@"; do
-  [[ "$arg" == "--billionmail" ]] && FLAGS+=(--billionmail)
   [[ "$arg" == "--lgtm" ]] && FLAGS+=(--lgtm)
   [[ "$arg" == "--resume" ]] && RESUME=true
 done
