@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ChevronUp, LayoutDashboard } from "lucide-react";
+import { Bell, ChevronDown, ChevronUp, LayoutDashboard, X } from "lucide-react";
 import { AdminPaymentsList } from "@/components/admin/admin-payments-list";
 import { parseReferralReferrer } from "@/lib/referral-referrer";
 import { RevenueKpiCards } from "@/components/admin/revenue-kpi-cards";
@@ -68,9 +68,82 @@ export function PaymentsDashboard({
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedRangeStats, setSelectedRangeStats] = useState<StatsPayload>(null);
   const [selectedRangeLoading, setSelectedRangeLoading] = useState(false);
+  const [incomingPurchasePing, setIncomingPurchasePing] = useState<{
+    count: number;
+    previewEmail: string | null;
+  } | null>(null);
 
   const qKey = useMemo(() => searchParams.toString(), [searchParams]);
   const skipFirst = useRef(true);
+
+  const playPurchasePingTone = useCallback(() => {
+    try {
+      const Ctx = typeof window !== "undefined" && window.AudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      o.connect(g);
+      g.connect(ctx.destination);
+      g.gain.value = 0.05;
+      o.start();
+      o.stop(ctx.currentTime + 0.09);
+      void ctx.close();
+    } catch {
+      // ignore — autoplay policies, missing API, etc.
+    }
+  }, []);
+
+  const handleNewPendingInbound = useCallback(
+    (info: { count: number; previewEmail: string | null }) => {
+      setIncomingPurchasePing(info);
+      setPendingOpen(true);
+      playPurchasePingTone();
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          void new Notification(t("newPurchasePingTitle"), {
+            body:
+              info.count === 1 && info.previewEmail
+                ? t("newPurchasePingBodyOne", { email: info.previewEmail })
+                : t("newPurchasePingBodyMany", { count: info.count }),
+            tag: "admin-credit-purchase-pending",
+          });
+        } catch {
+          // unsupported
+        }
+      }
+    },
+    [playPurchasePingTone, t],
+  );
+
+  type BrowserNotifyGate = NotificationPermission | "unsupported";
+  const [browserNotifyGate, setBrowserNotifyGate] = useState<BrowserNotifyGate>(() => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") return "unsupported";
+    return Notification.permission;
+  });
+
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      setBrowserNotifyGate("unsupported");
+      return;
+    }
+    setBrowserNotifyGate(Notification.permission);
+  }, []);
+
+  const requestBrowserNotifications = useCallback(() => {
+    if (typeof Notification === "undefined") return;
+    void Notification.requestPermission().then((perm) => {
+      setBrowserNotifyGate(perm);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!incomingPurchasePing) return;
+    const id = window.setTimeout(() => setIncomingPurchasePing(null), 14_000);
+    return () => window.clearTimeout(id);
+  }, [incomingPurchasePing]);
 
   const apiPurchaseParams = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -78,9 +151,12 @@ export function PaymentsDashboard({
     params.delete("adminScope");
     params.delete("adminId");
     params.delete("partnerOnly");
-    const scoped = resolvePaymentsAdminScope(scope);
-    if (scoped.adminId) params.set("adminId", scoped.adminId);
-    if (scoped.partnerOnly) params.set("partnerOnly", "1");
+    const scoped = resolvePaymentsAdminScope(scope, currentUserId);
+    if (scoped.adminId) {
+      params.set("adminId", scoped.adminId);
+    } else if (scoped.partnerOnly) {
+      params.set("partnerOnly", "1");
+    }
     params.set("limit", "80");
     params.set("sortBy", "createdAt");
     params.set("sortDir", "desc");
@@ -216,6 +292,49 @@ export function PaymentsDashboard({
         </div>
       </header>
 
+      {browserNotifyGate === "default" && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/[0.08] bg-card/35 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">{t("browserNotifyHint")}</p>
+          <Button type="button" size="sm" variant="secondary" className="shrink-0 rounded-xl" onClick={() => requestBrowserNotifications()}>
+            {t("browserNotifyEnable")}
+          </Button>
+        </div>
+      )}
+
+      {incomingPurchasePing && (
+        <div
+          role="status"
+          className="flex flex-col gap-2 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-200">
+              <Bell className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-100">
+                {incomingPurchasePing.count === 1
+                  ? t("newPurchasePingTitle")
+                  : t("newPurchasePingTitleMany", { count: incomingPurchasePing.count })}
+              </p>
+              {incomingPurchasePing.previewEmail && (
+                <p className="text-xs text-amber-200/80 truncate">{incomingPurchasePing.previewEmail}</p>
+              )}
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="shrink-0 rounded-xl text-amber-100 hover:bg-amber-500/15 hover:text-amber-50"
+            onClick={() => setIncomingPurchasePing(null)}
+            aria-label={t("newPurchasePingDismiss")}
+          >
+            <X className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">{t("newPurchasePingDismiss")}</span>
+          </Button>
+        </div>
+      )}
+
       <section className="rounded-2xl border border-white/[0.08] bg-card/40 overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
         <button
           type="button"
@@ -244,6 +363,7 @@ export function PaymentsDashboard({
                   purchases={mapPending}
                   initialBlikEnabled={initialBlikEnabled}
                   highlightId={highlightId}
+                  onNewPendingInbound={handleNewPendingInbound}
                 />
               </div>
             </motion.div>
@@ -257,7 +377,7 @@ export function PaymentsDashboard({
 
       <RevenueCanvasChart stats={stats7d} />
 
-      <PaymentsFilters key={qKey} onApply={() => void refetchHistory()} />
+      <PaymentsFilters key={qKey} currentUserId={currentUserId} onApply={() => void refetchHistory()} />
       {(selectedRangeLoading || selectedRangeSummary) && (
         <section className="rounded-xl border border-white/[0.08] bg-card/40 px-3 py-2 text-sm">
           {selectedRangeLoading ? (

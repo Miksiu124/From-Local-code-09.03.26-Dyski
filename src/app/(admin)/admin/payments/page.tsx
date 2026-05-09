@@ -25,7 +25,7 @@ function isProbablyIsoDateTime(v: string | undefined): v is string {
   return Number.isFinite(t);
 }
 
-function buildHistoryQuery(sp: Record<string, string | undefined>): string {
+function buildHistoryQuery(sp: Record<string, string | undefined>, currentAdminId: string | undefined): string {
   const p = new URLSearchParams();
   if (isProbablyIsoDateTime(sp.from)) p.set("from", sp.from);
   if (isProbablyIsoDateTime(sp.to)) p.set("to", sp.to);
@@ -33,10 +33,15 @@ function buildHistoryQuery(sp: Record<string, string | undefined>): string {
     const v = sp[key];
     if (v) p.set(key, v);
   }
-  const scoped = resolvePaymentsAdminScope(sp.adminScope);
-  if (scoped.adminId) p.set("adminId", scoped.adminId);
-  else if (scoped.partnerOnly) p.set("partnerOnly", "1");
-  if (sp.adminId) p.set("adminId", sp.adminId);
+  const scopeRaw = (sp.adminScope ?? "").trim();
+  const scoped = resolvePaymentsAdminScope(scopeRaw || undefined, currentAdminId);
+  if (scoped.adminId) {
+    p.set("adminId", scoped.adminId);
+  } else if (scoped.partnerOnly) {
+    p.set("partnerOnly", "1");
+  } else if ((!scopeRaw || scopeRaw === "all") && sp.adminId?.trim()) {
+    p.set("adminId", sp.adminId.trim());
+  }
   p.set("limit", "80");
   p.set("sortBy", "createdAt");
   p.set("sortDir", "desc");
@@ -56,7 +61,7 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
   const me = await getServerUser();
   const meId = me?.id;
 
-  const historyQs = buildHistoryQuery(sp);
+  const historyQs = buildHistoryQuery(sp, meId ?? undefined);
 
   const [
     pendingRes,

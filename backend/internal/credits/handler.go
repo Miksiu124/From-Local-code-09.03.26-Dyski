@@ -50,6 +50,61 @@ type CreatePurchaseRequest struct {
 	PromoCodeID     string `json:"promoCodeId,omitempty"`
 }
 
+func (h *Handler) resolveCryptoCurrencyForDB(ctx context.Context, requested string) (string, error) {
+	requested = strings.ToUpper(strings.TrimSpace(requested))
+	if requested == "" {
+		return "", errors.New("crypto currency is required")
+	}
+
+	allowed := map[string]bool{
+		"BTC":  true,
+		"ETH":  true,
+		"LTC":  true,
+		"USDC": true,
+		"USDT": true, // backward-compatible alias for older clients
+	}
+	if !allowed[requested] {
+		return "", errors.New("invalid crypto currency")
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT e.enumlabel
+		FROM pg_enum e
+		JOIN pg_type t ON t.oid = e.enumtypid
+		WHERE t.typname = 'crypto_currency'
+	`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	supported := make(map[string]bool)
+	for rows.Next() {
+		var label string
+		if scanErr := rows.Scan(&label); scanErr != nil {
+			return "", scanErr
+		}
+		supported[strings.ToUpper(strings.TrimSpace(label))] = true
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return "", rowsErr
+	}
+
+	if supported[requested] {
+		return requested, nil
+	}
+
+	aliases := map[string]string{
+		"LTC":  "USDT",
+		"USDT": "LTC",
+	}
+	if alias, ok := aliases[requested]; ok && supported[alias] {
+		return alias, nil
+	}
+
+	return "", errors.New("unsupported crypto currency for current database enum")
+}
+
 func (h *Handler) CreatePurchase(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
@@ -96,6 +151,13 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 			if ch < '0' || ch > '9' {
 				return common.BadRequest(c, "BLIK code must contain only digits")
 			}
+		}
+	}
+
+	if req.PaymentMethod == "CRYPTO" {
+		req.CryptoCurrency = strings.ToUpper(strings.TrimSpace(req.CryptoCurrency))
+		if req.CryptoCurrency == "" {
+			return common.BadRequest(c, "Crypto currency is required")
 		}
 	}
 
@@ -228,9 +290,16 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		trimmed := strings.TrimSpace(req.BlikCode)
 		blikCode = &trimmed
 	}
-	var cryptoCurrencyStr *string
-	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
-		cryptoCurrencyStr = &req.CryptoCurrency
+	var cryptoCurrencyDB *string
+	var cryptoCurrencyDisplay *string
+	if req.PaymentMethod == "CRYPTO" {
+		resolvedCurrency, resolveErr := h.resolveCryptoCurrencyForDB(ctx, req.CryptoCurrency)
+		if resolveErr != nil {
+			return common.BadRequest(c, "Invalid crypto currency")
+		}
+		cryptoCurrencyDB = &resolvedCurrency
+		displayCurrency := req.CryptoCurrency
+		cryptoCurrencyDisplay = &displayCurrency
 	}
 
 	// Custom link attribution: user's link from registration, or ref_link_id cookie as fallback
@@ -277,7 +346,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	`
 	err = tx.QueryRow(ctx, insertQuery,
 		userID, pkgID, pkgCredits, pkgPrice, req.PaymentMethod,
-		txCode, blikCode, cryptoCurrencyStr,
+		txCode, blikCode, cryptoCurrencyDB,
 		strconv.Itoa(expirationMinutes), promoCodeID, customLinkID).Scan(&purchaseID, &expirationTime)
 	if err != nil {
 		log.Printf("[Credits] Failed to insert purchase: %v", err)
@@ -318,12 +387,19 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 
 	// Get crypto wallet if needed
 	var walletAddress *string
-	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
+	if req.PaymentMethod == "CRYPTO" && cryptoCurrencyDisplay != nil {
 		var walletsJSON interface{}
 		if err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'crypto_wallets'`).Scan(&walletsJSON); err == nil {
 			if wallets, ok := walletsJSON.(map[string]interface{}); ok {
-				if addr, ok := wallets[req.CryptoCurrency].(string); ok {
-					walletAddress = &addr
+				candidates := []string{*cryptoCurrencyDisplay}
+				if cryptoCurrencyDB != nil && *cryptoCurrencyDB != *cryptoCurrencyDisplay {
+					candidates = append(candidates, *cryptoCurrencyDB)
+				}
+				for _, key := range candidates {
+					if addr, ok := wallets[key].(string); ok {
+						walletAddress = &addr
+						break
+					}
 				}
 			}
 		}
@@ -363,8 +439,8 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	if blikCode != nil {
 		discordInfo.BlikCode = *blikCode
 	}
-	if cryptoCurrencyStr != nil {
-		discordInfo.CryptoCurrency = *cryptoCurrencyStr
+	if cryptoCurrencyDisplay != nil {
+		discordInfo.CryptoCurrency = *cryptoCurrencyDisplay
 	}
 	var uEmail string
 	var uName *string
@@ -420,7 +496,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"paymentMethod":   req.PaymentMethod,
 		"transactionCode": txCode,
 		"blikCode":        blikCode,
-		"cryptoCurrency":  cryptoCurrencyStr,
+		"cryptoCurrency":  cryptoCurrencyDisplay,
 		"status":          "PENDING",
 		"expirationTime":  expirationTime,
 		"createdAt":       time.Now().UTC().Format(time.RFC3339),
@@ -440,7 +516,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"walletAddress":   walletAddress,
 		"paypalAddress":   paypalAddress,
 		"revolutAddress":  revolutAddress,
-		"cryptoCurrency":  cryptoCurrencyStr,
+		"cryptoCurrency":  cryptoCurrencyDisplay,
 		"amount":          pkgPrice,
 		"credits":         pkgCredits,
 		"expirationTime":  expirationTime,

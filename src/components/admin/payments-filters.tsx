@@ -25,7 +25,13 @@ function localInputToIso(v: string): string {
   return d.toISOString();
 }
 
-export function PaymentsFilters({ onApply }: { onApply: () => void }) {
+export function PaymentsFilters({
+  currentUserId,
+  onApply,
+}: {
+  currentUserId: string;
+  onApply: () => void;
+}) {
   const t = useTranslations("admin.payments");
   const router = useRouter();
   const pathname = usePathname();
@@ -48,7 +54,7 @@ export function PaymentsFilters({ onApply }: { onApply: () => void }) {
     setOrDel("paymentMethod", method);
     p.delete("adminId");
     p.delete("partnerOnly");
-    const scoped = resolvePaymentsAdminScope(adminScope);
+    const scoped = resolvePaymentsAdminScope(adminScope, currentUserId);
     if (scoped.adminId) p.set("adminId", scoped.adminId);
     else if (scoped.partnerOnly) p.set("partnerOnly", "1");
     setOrDel("adminScope", adminScope === "all" ? "" : adminScope);
@@ -58,7 +64,7 @@ export function PaymentsFilters({ onApply }: { onApply: () => void }) {
     p.delete("cursorBeforeId");
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
     onApply();
-  }, [adminScope, from, method, onApply, pathname, q, router, sp, status, to]);
+  }, [adminScope, currentUserId, from, method, onApply, pathname, q, router, sp, status, to]);
 
   const reset = useCallback(() => {
     router.replace(pathname, { scroll: false });

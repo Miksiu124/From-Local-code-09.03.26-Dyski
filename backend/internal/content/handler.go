@@ -759,7 +759,13 @@ func (h *Handler) Playlist(c echo.Context) error {
 				break
 			}
 			if playlistContent == "" {
-				log.Printf("[Playlist] No R2 object for %s (tried %d keys, last err: %v)", contentItemID, len(candidates), fetchErr)
+				if fetchErr != nil && IsS3NotFound(fetchErr) {
+					log.Printf("[Playlist] HLS manifest not in storage for content %s (NoSuchKey, tried %d keys)", contentItemID, len(candidates))
+				} else if fetchErr != nil {
+					log.Printf("[Playlist] No R2 object for %s (tried %d keys, last err: %v)", contentItemID, len(candidates), fetchErr)
+				} else {
+					log.Printf("[Playlist] Empty playlist fetch for content %s (tried %d keys)", contentItemID, len(candidates))
+				}
 				if !repaired && h.tryRepairHLSPathsFromR2(ctx, contentItemID) {
 					repaired = true
 					_ = h.db.QueryRow(ctx, `

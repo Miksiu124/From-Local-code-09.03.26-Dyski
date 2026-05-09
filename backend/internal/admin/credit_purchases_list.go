@@ -28,7 +28,14 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 		discord.NotifyForExpiredPurchaseRows(rows, h.db, h.discord)
 	}
 
-	statusFilter := c.QueryParam("status")
+	statusFilterRaw := ""
+	for _, s := range c.QueryParams()["status"] {
+		if t := strings.TrimSpace(s); t != "" {
+			statusFilterRaw = strings.ToUpper(t)
+		}
+	}
+	statusFilter := statusFilterRaw
+
 	sortBy := c.QueryParam("sortBy")
 	sortDir := c.QueryParam("sortDir")
 	if sortDir != "asc" {
