@@ -1,6 +1,7 @@
-# Postgres: jeden nazwany wolumen z klastrem w PGDATA=/var/lib/postgresql/18/docker.
-# Na VPS produkcja (przychody w credit_purchases) jest w tym wolumenie — domyślny contentvault_postgres_data
-# bywa pusty; skan: scripts/scan-postgres-volumes-revenue.sh
+# Postgres: klastrowy layout (PGDATA=/var/lib/postgresql/18/docker, wolumen contentvault_postgres_cluster).
+# Od wersji z wpisem `postgres:` w docker-compose.vps.yml ten plik jest zbędny przy `base + vps`,
+# ale zostaje dla istniejących wpisów COMPOSE_FILE=...use3566349.yml na serwerach i dla kompatybilności wstecz.
+# Skan wolumenów: scripts/scan-postgres-volumes-revenue.sh
 #   docker compose -f docker-compose.yml -f docker-compose.vps.yml -f docker-compose.lgtm.yml -f docker-compose.use3566349.yml up -d
 #
 # Wolumen Docker: contentvault_postgres_cluster (external — tworzysz ręcznie / skryptem migracji).

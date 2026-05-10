@@ -1,5 +1,17 @@
 # VPS / produkcja — zawsze łącz z bazowym plikiem:
 #   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
+#
+# Postgres: ten plik montuje zewnętrzny wolumen contentvault_postgres_cluster (PGDATA=.../18/docker),
+# nie domyślny postgres_data. Bez tego na serwerze z danymi w klastrze kontener postgres często
+# zostaje „unhealthy” albo widzisz pustą bazę.
+# Pierwszy raz na hoście: docker volume create contentvault_postgres_cluster
+# Albo: bash scripts/vps-up-prod.sh (tworzy wolumen i ustawia COMPOSE_FILE w .env).
+#
+# Ważne: docker compose -f ... -f ... pomija zmienną COMPOSE_FILE z .env — z bazą + vps.yml
+# i tak dostajesz właściwy mount; jeśli dodatkowo masz COMPOSE_FILE z use3566349.yml, merge jest nieszkodliwy.
+#
+# Przywracanie po pomyłce: sprawdź wolumeny (docker volume ls), dane produkcyjne szukaj w
+# contentvault_postgres_cluster; skan: bash scripts/scan-postgres-volumes-revenue.sh
 # Observability (Grafana + OTel + Loki + Tempo, jeden obraz grafana/otel-lgtm):
 #   + -f docker-compose.lgtm.yml
 #   Na VPS: utwórz .env.lgtm z .env.lgtm.example, potem: ten sam `up -d` z tym trzecim -f
@@ -36,6 +48,13 @@ services:
       - ./nginx/nginx.conf.production:/etc/nginx/nginx.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./nginx/certs/security:/etc/nginx/certs/security:ro
+
+  postgres:
+    environment:
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes: !override
+      - contentvault_postgres_cluster:/var/lib/postgresql
+      - ./backend/migrations:/docker-entrypoint-initdb.d
 
   # ── PostgreSQL — codzienne kopie (pg_dump, rotacja daily/weekly/monthly) ──
   # Domyślnie obraz chce user postgres — na named volume często brak zapisu (UID ≠ właściciel wolumenu).
@@ -107,3 +126,5 @@ services:
 
 volumes:
   postgres_backups:
+  contentvault_postgres_cluster:
+    external: true
