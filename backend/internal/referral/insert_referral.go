@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // InsertReferralRowIdempotent creates a referrals row when referee_id is still free.
@@ -19,7 +18,7 @@ func InsertReferralRowIdempotentTx(ctx context.Context, tx pgx.Tx, referrerID, r
 }
 
 // InsertReferralRowIdempotentPool is the pool variant (e.g. registration without an outer transaction).
-func InsertReferralRowIdempotentPool(ctx context.Context, db *pgxpool.Pool, referrerID, refereeID string) error {
+func InsertReferralRowIdempotentPool(ctx context.Context, db PoolConn, referrerID, refereeID string) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO referrals (id, referrer_id, referee_id)
 		VALUES (gen_random_uuid()::text, $1, $2)

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ErrInvalidEventName is returned when the funnel label does not match ValidEventName.
@@ -21,8 +21,13 @@ func ValidEventName(name string) bool {
 	return eventNameRe.MatchString(name)
 }
 
+// ExecPool is satisfied by *pgxpool.Pool and other types that can run Exec.
+type ExecPool interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
 // InsertEvent persists a funnel event. No raw email/password/tokens in props (sanitized).
-func InsertEvent(ctx context.Context, db *pgxpool.Pool, eventName string, userID *string, props map[string]interface{}) error {
+func InsertEvent(ctx context.Context, db ExecPool, eventName string, userID *string, props map[string]interface{}) error {
 	if db == nil {
 		return nil
 	}

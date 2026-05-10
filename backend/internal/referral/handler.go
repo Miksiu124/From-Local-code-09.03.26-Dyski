@@ -286,7 +286,7 @@ func (h *Handler) TrackAndRedirect(c echo.Context) error {
 }
 
 // SaveReferralFromCode creates a Referral record when a new user registers with a ref code
-func SaveReferralFromCode(ctx context.Context, db *pgxpool.Pool, refereeID, refCode string) error {
+func SaveReferralFromCode(ctx context.Context, db PoolConn, refereeID, refCode string) error {
 	if refCode == "" || refereeID == "" {
 		return nil
 	}

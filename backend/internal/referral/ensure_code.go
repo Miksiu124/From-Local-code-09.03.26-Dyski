@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // EnsureReferralCodeForUser sets users.referral_code when it is still empty.
 // This is the same logic as GET /referral/me, but runs at account creation so every user has a code in DB.
-func EnsureReferralCodeForUser(ctx context.Context, db *pgxpool.Pool, userID string) error {
+func EnsureReferralCodeForUser(ctx context.Context, db PoolConn, userID string) error {
 	if userID == "" {
 		return nil
 	}
