@@ -7,9 +7,6 @@
 # Wymusza nginx.conf.production (HTTPS, Cloudflare, BFF /api → frontend).
 # Lokalnie: samo `docker-compose.yml` → nginx/nginx.conf (HTTP, prosty proxy).
 #
-# Z BillionMail:
-#   docker compose -f docker-compose.yml -f docker-compose.billionmail.yml -f docker-compose.vps.yml up -d
-#
 # Kopie PostgreSQL: kontener content-postgres-backup (harmonogram @daily domyślnie).
 #   docker exec content-postgres-backup /backup.sh
 #   docker exec content-postgres-backup ls -la /backups/daily
@@ -28,6 +25,11 @@ services:
       - postgres_backups:/backups:ro
     environment:
       POSTGRES_BACKUP_DIR: /backups
+      # Kampanie marketingowe (cron API): domyślnie włączone na stosie VPS; wyłącz w .env: WINBACK_EMAIL_ENABLED=0 itd.
+      WINBACK_EMAIL_ENABLED: ${WINBACK_EMAIL_ENABLED:-1}
+      SOCIAL_PROOF_EMAIL_ENABLED: ${SOCIAL_PROOF_EMAIL_ENABLED:-1}
+      # Nudge po pierwszym ulubionym — wymaga FAVORITE_NUDGE_TEMPLATE_SLUG w .env; bez sluga zostaje wyłączone w kodzie.
+      FAVORITE_NUDGE_EMAIL_ENABLED: ${FAVORITE_NUDGE_EMAIL_ENABLED:-0}
 
   nginx:
     volumes:

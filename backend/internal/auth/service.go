@@ -60,6 +60,40 @@ func (s *Service) StoreSessionIP(ctx context.Context, userID, ip string, ttlSecs
 	s.redis.Set(ctx, key, ip, time.Duration(ttlSecs)*time.Second)
 }
 
+// TryBackfillCustomLinkFromCookie sets users.custom_link_id when empty and the cookie references an active campaign link.
+func (s *Service) TryBackfillCustomLinkFromCookie(ctx context.Context, userID, linkID string) error {
+	linkID = strings.TrimSpace(linkID)
+	if linkID == "" || userID == "" {
+		return nil
+	}
+	var exists bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM custom_links WHERE id = $1 AND is_active = true)`, linkID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	_, err := s.db.Exec(ctx, `UPDATE users SET custom_link_id = $1 WHERE id = $2 AND custom_link_id IS NULL`, linkID, userID)
+	return err
+}
+
+// TryAttachReferralFromCookieAfterLogin attaches referral from ref_code when the user has no referrals row yet.
+func (s *Service) TryAttachReferralFromCookieAfterLogin(ctx context.Context, userID, refCode, refereeIP string) error {
+	refCode = strings.TrimSpace(refCode)
+	if refCode == "" || userID == "" {
+		return nil
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := referral.TryAttachReferralFromCodeAtCheckout(ctx, tx, s.redis, userID, refCode, refereeIP); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // Register creates a new user with hashed password and optionally saves referral and custom link attribution.
 // refereeIP is used for anti-gaming: if referrer and referee share the same IP, referral is rejected.
 // Returns the new user's id on success (for first-party funnel events with user_id).
@@ -186,6 +220,39 @@ func (s *Service) Login(ctx context.Context, email, password string, rememberMe 
 func (s *Service) Logout(ctx context.Context, userID string) error {
 	sessionKey := fmt.Sprintf("session:%s", userID)
 	return s.redis.Del(ctx, sessionKey).Err()
+}
+
+// RotateSession issues a fresh JWT + sessionID for the user and overwrites the
+// Redis session. Any previously issued JWT for this user becomes invalid (the
+// auth middleware compares jti against the stored sessionID). Use after
+// sensitive account changes (password/email update) so a stolen cookie cannot
+// continue to access the account.
+//
+// Returns the new signed token and the cookie MaxAge (seconds).
+func (s *Service) RotateSession(ctx context.Context, userID string) (string, int, error) {
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return "", 0, err
+	}
+
+	role := user.Role
+	if s.cfg.IsAdmin(user.Email) {
+		role = "ADMIN"
+	}
+
+	sessionID := generateSessionID()
+	ttlSecs := s.cfg.JWTExpirySecs
+
+	token, err := s.generateJWT(user.ID, user.Email, role, sessionID, ttlSecs)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	sessionKey := fmt.Sprintf("session:%s", user.ID)
+	if err := s.redis.Set(ctx, sessionKey, sessionID, time.Duration(ttlSecs)*time.Second).Err(); err != nil {
+		return "", 0, fmt.Errorf("failed to store session: %w", err)
+	}
+	return token, ttlSecs, nil
 }
 
 // GetUser retrieves user info by ID

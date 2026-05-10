@@ -611,10 +611,11 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "description": "**User** = ruch aplikacji (`/api/*` poza adminem): content, zakupy, auth, modele. **client_ip** = źródło (Nginx → `X-Real-IP`). Filtr: `| json | log_category=\"user\"` — jeśli 0 wyników, w Explore spróbuj `| logfmt` lub pokaż surową linię.",
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "description": "**User** = ruch aplikacji (`/api/*` poza adminem): content, zakupy, auth, modele. **client_ip** w JSON wiersza. Zapytanie: `{service_name=\"content-api\"} | json | log_category=\"user\"` (Explore: ten sam wzorzec).",
       "gridPos": { "h": 9, "w": 8, "x": 0, "y": 66 },
       "id": 27,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -627,18 +628,24 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"content-api\"} | json | log_category=\"user\"",
-          "refId": "A"
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "{service_name=\"content-api\"} | json | __error__ = \"\" | log_category=\"user\"",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 500
         }
       ],
+      "transformations": [],
       "title": "Loki — user (app, z client_ip)",
       "type": "logs"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
       "description": "**Server** = panel admina / operacje: sync R2, import, moderacja, akceptacja proofów (`/api/admin/*`).",
       "gridPos": { "h": 9, "w": 8, "x": 8, "y": 66 },
       "id": 33,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -651,18 +658,24 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"content-api\"} | json | log_category=\"server\"",
-          "refId": "A"
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "{service_name=\"content-api\"} | json | __error__ = \"\" | log_category=\"server\"",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 500
         }
       ],
+      "transformations": [],
       "title": "Loki — server (admin / ops)",
       "type": "logs"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
       "description": "**Misc** = `/health`, nietypiczne ścieżki, telemetria (`/api/public/client-errors`), itp. Cron [Jobs] idzie w standardowy log, nie w wierszu `http` — szukaj po tekście w *Wszystkie* w Explore albo w logu kontenera.",
       "gridPos": { "h": 9, "w": 8, "x": 16, "y": 66 },
       "id": 34,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -675,17 +688,23 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"content-api\"} | json | log_category=\"misc\"",
-          "refId": "A"
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "{service_name=\"content-api\"} | json | __error__ = \"\" | log_category=\"misc\"",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 500
         }
       ],
+      "transformations": [],
       "title": "Loki — misc",
       "type": "logs"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 75 },
       "id": 28,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -695,10 +714,15 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"content-api\"} |~ \"(?i)(error|fatal|panic)\"",
-          "refId": "A"
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "{service_name=\"content-api\"} |~ \"(?i)(error|fatal|panic|\\\"status\\\":5[0-9][0-9])\"",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 500
         }
       ],
+      "transformations": [],
       "title": "Podejrzane: error / fatal / panic / kody 5xx w tekście (heurystyka na logach)",
       "type": "logs"
     },
@@ -715,7 +739,7 @@
       "id": 30,
       "options": {
         "code": { "language": "markdown", "showLineNumbers": false, "showMiniMap": false },
-        "content": "| **Cel** | Wstajesz, user pisze: „o 3:00 wszystko lagowało”. Chcesz zobaczyć, czy to był serwer i co to było. |\n|:---|:---|\n| **Czas w Grafanie** | Prawy górny róg → **Time range** → **Absolute** → wybierz *dzień* i przedział, np. **02:15–04:00** (albo wokół wskazanej godziny). Upewnij się, że strefa czasowa w ustawieniach (lub w selektorze) jest taka sama jak w relacji usera. |\n| **Metryki poniżej (okno 1 min)** | Krócej wygładzają niż wykresy z sekcji *API — HTTP* (`[5m]`), więc łatwiej zobaczyć wąskie skoki (np. backup, burst RPS, GC). Gdy nic nie widać — problem mógł być tylko po stronie sieci/klienta. |\n| **Loki** | Panel *Wolne żądania API* używa pola `latency_ms` z logu. Jeśli brak wyników, dopracuj w **Explore → Loki** (parsowanie `json` zależy od wersji pipeline’u Loki). |\n| **Ślady** | W logu jest `trace_id` → **Explore → Tempo** — wyszukaj po ID i zobacz, które spanu/y trwały. |\n| **Host** | Równolegle: sekcja *Host (VPS) — w czasie* i *Docker* — czy w tym samym oknie nie poszło CPU, RAM, dysk. |\n",
+        "content": "| **Cel** | Wstajesz, user pisze: „o 3:00 wszystko lagowało”. Chcesz zobaczyć, czy to był serwer i co to było. |\n|:---|:---|\n| **Czas w Grafanie** | Prawy górny róg → **Time range** → **Absolute** → wybierz *dzień* i przedział, np. **02:15–04:00** (albo wokół wskazanej godziny). Upewnij się, że strefa czasowa w ustawieniach (lub w selektorze) jest taka sama jak w relacji usera. |\n| **Metryki poniżej (okno 1 min)** | Krócej wygładzają niż wykresy z sekcji *API — HTTP* (`[5m]`), więc łatwiej zobaczyć wąskie skoki (np. backup, burst RPS, GC). Gdy nic nie widać — problem mógł być tylko po stronie sieci/klienta. |\n| **Loki** | Panel *Wolne żądania API* używa pola `latency_ms` z logu. W JSON logu HTTP są też `user_id` (gdy była ważna sesja JWT) i `trace_id` — w **Explore → Loki** np. `{service_name=\"content-api\"} | json | user_id != \"\"`. |\n| **Ślady (Tempo)** | **Po użytkowniku:** w Explore → Tempo spróbuj TraceQL z filtrem tagu spanu `enduser.id` (wartość = UUID z panelu admin / bazy). **Po żądaniu:** skopiuj `trace_id` z logu Loki i wyszukaj trace po tym ID. |\n| **Host** | Równolegle: sekcja *Host (VPS) — w czasie* i *Docker* — czy w tym samym oknie nie poszło CPU, RAM, dysk. |\n",
         "mode": "markdown"
       },
       "title": "ℹ️ Odtwarzanie incydentu",
@@ -760,10 +784,11 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "description": "Wymaga pola `latency_ms` w logu API (slog/OTLP). Gdy 0 wyników, w Explore spróbuj: `{service_name=\"content-api\"} |= \"http\"` i filtr po polu latency_ms, albo użyj wariantu | json zgodnie z formatem w Loki.",
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "description": "Wymaga `latency_ms` w JSON-ie wiersza (slog/OTLP). Filtro regex na wartości 4+ cyfr (>= ~1000 ms). W Explore: `{service_name=\"content-api\"} |~ \"latency_ms\"`.",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 97 },
       "id": 32,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -776,10 +801,15 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"content-api\"} | json | latency_ms > 1000",
-          "refId": "A"
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "{service_name=\"content-api\"} |~ \"latency_ms\\\":([0-9]{4,})\"",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 500
         }
       ],
+      "transformations": [],
       "title": "Loki — żądania wolniejsze niż ~1 s (latency_ms > 1000)",
       "type": "logs"
     }
@@ -790,6 +820,20 @@
   "tags": ["dyskiof", "lgtm", "content-platform", "beginner"],
   "templating": {
     "list": [
+      {
+        "current": { "selected": true, "text": "Loki", "value": "loki" },
+        "hide": 2,
+        "includeAll": false,
+        "label": "",
+        "multi": false,
+        "name": "DS_LOKI",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
       {
         "allValue": ".*",
         "current": { "text": "All", "value": "$__all" },
@@ -806,11 +850,11 @@
       }
     ]
   },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": { "from": "now-6h", "to": "now" },
   "timepicker": { "hidden": false, "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "1h", "1d"] },
   "timezone": "browser",
   "title": "Dyskiof — pulpit operacyjny",
   "uid": "dyskiof-control-room",
-  "version": 4,
+  "version": 10,
   "weekStart": ""
 }

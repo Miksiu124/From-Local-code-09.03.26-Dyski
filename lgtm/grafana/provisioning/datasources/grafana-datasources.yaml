@@ -1,6 +1,6 @@
-# Nadpisuje plik z obrazu grafana/otel-lgtm — ten sam URL / UID, plus dodatkowe
-# Loki → Tempo „derived fields”, żeby klik zadziałał gdy trace_id jest w JSON / tekście,
-# a nie tylko jako etykieta (domyślnie w obrazie: tylko label trace_id).
+# Nadpisuje plik z obrazu grafana/otel-lgtm — ten sam URL / UID.
+# Uwaga: Loki `derivedFields` (regex → Tempo) potrafią powodować „No data” na panelach logów
+# mimo działającego Loki — linki Trace zostaw przez Explore / Tempo (trace id w JSON przy sampled).
 # https://grafana.com/docs/grafana/latest/datasources/loki/configure-loki-data-source/
 apiVersion: 1
 
@@ -45,27 +45,6 @@ datasources:
     uid: loki
     url: http://127.0.0.1:3100
     editable: true
-    jsonData:
-      derivedFields:
-        # Oryginał z obrazu: klik, gdy trace_id jest etykietą strumienia
-        - name: "trace_id"
-          matcherType: "label"
-          matcherRegex: "trace_id"
-          url: "$${__value.raw}"
-          datasourceUid: "tempo"
-          urlDisplayLabel: "Trace: $${__value.raw}"
-        # JSON w treści wiersza (m.in. slog/OTel, camelCase w SDK)
-        - name: "Trace (JSON: trace_id / traceId)"
-          matcherRegex: '(?:"trace_id"|"traceId")"\s*:\s*"(?P<value>[a-fA-F0-9]{32})'
-          url: "$${__value.raw}"
-          datasourceUid: "tempo"
-          urlDisplayLabel: "Trace (JSON): $${__value.raw}"
-        # Np. tekstowy format trace_id=abcdef0123...
-        - name: "Trace (tekst trace_id=…)"
-          matcherRegex: "trace_id=(?P<value>[a-fA-F0-9]{32})"
-          url: "$${__value.raw}"
-          datasourceUid: "tempo"
-          urlDisplayLabel: "Trace: $${__value.raw}"
 
   - name: Pyroscope
     type: grafana-pyroscope-datasource

@@ -42,28 +42,22 @@ func generateReferralCode() string {
 	return string(code)
 }
 
-// GetMe returns the user's referral code, link, and stats
-func (h *Handler) GetMe(c echo.Context) error {
-	ctx := c.Request().Context()
-	userID := middleware.GetUserID(c)
-	if userID == "" {
-		return common.Unauthorized(c)
-	}
-
+// referralPayload returns referral code, links, stats, and bonus settings for a user (same JSON as GET /referral/me).
+func (h *Handler) referralPayload(ctx context.Context, userID string) (map[string]interface{}, error) {
 	var referralCode *string
 	err := h.db.QueryRow(ctx, `SELECT referral_code FROM users WHERE id = $1`, userID).Scan(&referralCode)
 	if err != nil {
-		return common.InternalError(c)
+		return nil, err
 	}
 
 	if referralCode == nil || *referralCode == "" {
 		if err := EnsureReferralCodeForUser(ctx, h.db, userID); err != nil {
-			log.Printf("[Referral] EnsureReferralCodeForUser in GetMe: %v", err)
-			return common.InternalError(c)
+			log.Printf("[Referral] EnsureReferralCodeForUser in referralPayload: %v", err)
+			return nil, err
 		}
 		err = h.db.QueryRow(ctx, `SELECT referral_code FROM users WHERE id = $1`, userID).Scan(&referralCode)
 		if err != nil || referralCode == nil || *referralCode == "" {
-			return common.InternalError(c)
+			return nil, err
 		}
 	}
 
@@ -169,24 +163,60 @@ func (h *Handler) GetMe(c echo.Context) error {
 		}
 	}
 
-	return common.Success(c, map[string]interface{}{
-		"referralCode":  *referralCode,
-		"referralLink":  referralLink,
+	return map[string]interface{}{
+		"referralCode": *referralCode,
+		"referralLink": referralLink,
 		"legacyLink":   legacyLink,
 		"stats": map[string]interface{}{
-			"totalReferred":       totalReferred,
-			"totalPurchased":      totalPurchased,
-			"totalCreditsEarned":  totalCreditsEarned,
-			"clicks":              clicks,
-			"revenue":             revenue,
+			"totalReferred":      totalReferred,
+			"totalPurchased":     totalPurchased,
+			"totalCreditsEarned": totalCreditsEarned,
+			"clicks":             clicks,
+			"revenue":            revenue,
 		},
-		"dailyClicks":  dailyClicks,
+		"dailyClicks":   dailyClicks,
 		"recentCredits": recentCredits,
 		"bonuses": map[string]interface{}{
-			"creditsReferrer":    creditsReferrer,
+			"creditsReferrer":     creditsReferrer,
 			"bonusPercentReferee": bonusPercentReferee,
 		},
-	})
+	}, nil
+}
+
+// GetMe returns the user's referral code, link, and stats
+func (h *Handler) GetMe(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		return common.Unauthorized(c)
+	}
+	payload, err := h.referralPayload(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "User not found")
+		}
+		log.Printf("[Referral] GetMe referralPayload: %v", err)
+		return common.InternalError(c)
+	}
+	return common.Success(c, payload)
+}
+
+// GetAdminUserReferral returns the same referral snapshot as GET /referral/me for any user (admin only).
+func (h *Handler) GetAdminUserReferral(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := strings.TrimSpace(c.Param("id"))
+	if !common.IsValidUUID(userID) {
+		return common.BadRequest(c, "Invalid user ID format")
+	}
+	payload, err := h.referralPayload(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.NotFound(c, "User not found")
+		}
+		log.Printf("[Referral] GetAdminUserReferral referralPayload: %v", err)
+		return common.InternalError(c)
+	}
+	return common.Success(c, payload)
 }
 
 // TrackAndRedirect validates referral code, records visit, returns redirect URL for /r/[code]
@@ -269,10 +299,5 @@ func SaveReferralFromCode(ctx context.Context, db *pgxpool.Pool, refereeID, refC
 		}
 		return err
 	}
-	_, err = db.Exec(ctx, `
-		INSERT INTO referrals (id, referrer_id, referee_id)
-		SELECT gen_random_uuid()::text, $1, $2
-		WHERE NOT EXISTS (SELECT 1 FROM referrals WHERE referee_id = $2)
-	`, referrerID, refereeID)
-	return err
+	return InsertReferralRowIdempotentPool(ctx, db, referrerID, refereeID)
 }

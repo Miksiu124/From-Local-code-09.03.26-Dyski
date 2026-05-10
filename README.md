@@ -4,7 +4,7 @@
 
 [![Dyskiof.net](https://img.shields.io/badge/Dyskiof.net-VPS%20Ready-success)](https://dyskiof.net)
 
-> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`).
+> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`). Wolumin produkcyjny Postgresa i LGTM: ta sama reguła w `scripts/compose-vps-files.sh` (stosuje ją m.in. `vps-rebuild.sh` i `deploy-vps` po stronie serwera).
 
 ---
 
@@ -19,7 +19,7 @@
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
 | Bot Protection | Cloudflare Turnstile (CAPTCHA on registration) |
-| SMTP | Postfix relay (boky/postfix) or BillionMail (see `docs/BILLIONMAIL_SETUP.md`) |
+| Email | [Resend](https://resend.com) (HTTPS API); optional SMTP for local dev — `docs/EMAIL_VPS_SETUP.md` |
 | Proxy | Nginx 1.28 (reverse proxy, rate limiting, Cloudflare IP trust) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
@@ -77,7 +77,7 @@
 - Admin role enforcement
 - User banning
 - IP extraction via CF-Connecting-IP (Nginx forwards real client IP)
-- SMTP retry with exponential backoff (4 attempts)
+- Outbound email: Resend API or optional SMTP, with retry and exponential backoff (4 attempts)
 - Security email notifications on password and email changes
 - API data minimization (only essential fields returned)
 - Log sanitization (no PII or tokens in logs)
@@ -105,7 +105,7 @@
 │   │   ├── purchases/          # Model access purchases
 │   │   ├── referral/           # Referral system
 │   │   ├── notifications/      # Notifications
-│   │   ├── mailer/             # SMTP with retry + email templates
+│   │   ├── mailer/             # Resend API or SMTP + templates
 │   │   ├── middleware/         # Auth, admin, email verification
 │   │   └── jobs/              # Cron jobs (R2 sync)
 │   ├── migrations/             # SQL migrations (auto-run on init)
@@ -153,7 +153,6 @@
 │
 ├── docker-compose.yml          # All services (lokalnie: nginx → nginx.conf)
 ├── docker-compose.vps.yml      # VPS: wymusza nginx.conf.production (łącz z -f przy deploy)
-├── docker-compose.billionmail.yml  # BillionMail SMTP override
 ├── Dockerfile.frontend         # Next.js container (with Turnstile build-arg)
 ├── next.config.ts              # CSP headers, Turnstile domain allowlisting
 ├── package.json
@@ -224,12 +223,10 @@ BLIK_EXPIRATION_MINUTES=2
 TURNSTILE_SECRET_KEY=your_turnstile_secret
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
 
-# SMTP (self-hosted Postfix relay, no external provider needed)
-SMTP_HOST=smtp
-SMTP_PORT=587
+# E-mail (produkcja: Resend — patrz docs/EMAIL_VPS_SETUP.md)
+RESEND_API_KEY=
 SMTP_FROM=noreply@dyskiof.net
-SMTP_HOSTNAME=mail.dyskiof.net
-SMTP_ALLOWED_DOMAINS=dyskiof.net
+# Opcjonalnie: MARKETING_EMAIL_FROM= dla kampanii (wbudowane szablony)
 
 # Frontend (used by docker-compose)
 NEXT_PUBLIC_APP_URL=http://localhost
@@ -241,7 +238,7 @@ NEXT_PUBLIC_APP_URL=http://localhost
 docker compose up -d --build
 ```
 
-This starts 6 containers:
+This starts 5 containers:
 
 | Service | Port | Description |
 |---|---|---|
@@ -250,7 +247,6 @@ This starts 6 containers:
 | api | 8080 (localhost only) | Go API |
 | postgres | 5432 (localhost only) | Database |
 | redis | 6379 (localhost only) | Cache and PubSub |
-| smtp | 587 (internal only) | Postfix mail relay ([boky/postfix](https://github.com/bokysan/docker-postfix)) |
 
 ### 4. Seed the database
 
@@ -363,13 +359,14 @@ Prices are stored in PLN. For English locale, prices are converted to USD at 4:1
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
 | `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key (bot protection) |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | No | Cloudflare Turnstile site key (frontend widget) |
-| `SMTP_HOST` | No | SMTP server hostname (default: `smtp`) |
-| `SMTP_PORT` | No | SMTP port (default: `587`) |
-| `SMTP_USER` | No | SMTP username (empty for local Postfix relay) |
-| `SMTP_PASSWORD` | No | SMTP password (empty for local Postfix relay) |
-| `SMTP_FROM` | No | Sender address (default: `noreply@dyskiof.net`) |
-| `SMTP_HOSTNAME` | No | Mail server hostname for DNS records |
-| `SMTP_ALLOWED_DOMAINS` | No | Domains allowed to send mail |
+| `RESEND_API_KEY` | No* | Klucz API Resend (wysyłka HTTPS); razem z `SMTP_FROM` |
+| `SMTP_FROM` | No* | Adres nadawcy — domena zweryfikowana w Resend |
+| `MARKETING_EMAIL_FROM` | No | Opcjonalny nadawca kampanii marketingowych (wbudowane szablony); puste = `SMTP_FROM` |
+| `SMTP_HOST` | No | Opcjonalnie: zewnętrzny SMTP zamiast Resend (np. Mailpit); **`RESEND_API_KEY` pusty** |
+| `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | No | Tylko przy `SMTP_HOST` |
+
+\* Na produkcji ustaw `RESEND_API_KEY` i `SMTP_FROM`, albo sam `SMTP_HOST` (bez Resend).
+
 | `NGINX_CONFIG` | No | Opcjonalnie: inna ścieżka nginx **tylko lokalnie**. Na VPS użyj **`docker-compose.vps.yml`** zamiast zmiennej w `.env`. |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |

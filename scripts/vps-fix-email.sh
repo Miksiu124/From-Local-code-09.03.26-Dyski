@@ -1,18 +1,18 @@
 #!/bin/bash
-# Dyskiof — dodaj brakujące zmienne SMTP do .env na VPS
+# Dyskiof — dopisz / nadpisz RESEND_API_KEY w .env na VPS
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-fix-email.sh
-# Przed: ustaw RESEND_API_KEY w env lub podaj jako arg: bash vps-fix-email.sh re_xxx
+# Lub: bash scripts/vps-fix-email.sh .env "$RESEND_API_KEY"
 
 set -e
 
 ENV_FILE="${1:-.env}"
-API_KEY="${2:-$RESEND_API_KEY}"
+RESEND_KEY="${2:-$RESEND_API_KEY}"
 
-if [[ -z "$API_KEY" ]]; then
+if [[ -z "$RESEND_KEY" ]]; then
   echo "Użycie: bash scripts/vps-fix-email.sh [.env] [RESEND_API_KEY]"
-  echo "  lub:  export RESEND_API_KEY=re_xxx && bash scripts/vps-fix-email.sh"
+  echo "  lub:  export RESEND_API_KEY=re_... && bash scripts/vps-fix-email.sh"
   echo ""
-  echo "Klucz Resend: resend.com → API Keys → Create API Key"
+  echo "Klucz: Resend → API Keys (Sending). SPF/DKIM: zweryfikuj domenę w Resend."
   exit 1
 fi
 
@@ -21,29 +21,18 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Sprawdź czy już są ustawione
-if grep -q '^SMTP_RELAY_PASSWORD=' "$ENV_FILE" 2>/dev/null; then
-  RELAY_VAL=$(grep '^SMTP_RELAY_PASSWORD=' "$ENV_FILE" | cut -d= -f2)
-  if [[ -n "$RELAY_VAL" && "$RELAY_VAL" != "re_"* ]]; then
-    echo "SMTP_RELAY_PASSWORD już ustawiony w .env (niepusty)"
-    exit 0
-  fi
+tmp="$(mktemp)"
+grep -v '^RESEND_API_KEY=' "$ENV_FILE" > "$tmp"
+mv "$tmp" "$ENV_FILE"
+
+echo "RESEND_API_KEY=$RESEND_KEY" >> "$ENV_FILE"
+
+if ! grep -q '^SMTP_FROM=' "$ENV_FILE" 2>/dev/null; then
+  echo "SMTP_FROM=noreply@twojadomena.pl" >> "$ENV_FILE"
+  echo "Dodano SMTP_FROM=noreply@twojadomena.pl (dostosuj domenę do Resend!)"
 fi
 
-# Dodaj lub zaktualizuj
-for VAR in "SMTP_RELAYHOST=[smtp.resend.com]:587" "SMTP_RELAY_USERNAME=resend" "SMTP_RELAY_PASSWORD=$API_KEY"; do
-  KEY="${VAR%%=*}"
-  if grep -q "^${KEY}=" "$ENV_FILE" 2>/dev/null; then
-    sed -i.bak "s|^${KEY}=.*|${VAR}|" "$ENV_FILE"
-    echo "Zaktualizowano $KEY"
-  else
-    echo "Dodano $KEY"
-    echo "$VAR" >> "$ENV_FILE"
-  fi
-done
-
-# Usuń duplikat backupu jeśli sed go stworzył
-rm -f "${ENV_FILE}.bak" 2>/dev/null || true
-
+echo "Zapisano RESEND_API_KEY w $ENV_FILE"
 echo ""
-echo "Zrestartuj kontenery: docker compose restart content-smtp content-api"
+echo "Zrestartuj API (ścieżka compose jak na VPS), np.:"
+echo "  docker compose -f docker-compose.yml -f docker-compose.vps.yml restart content-api"

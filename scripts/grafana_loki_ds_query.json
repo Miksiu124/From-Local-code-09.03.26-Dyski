@@ -1,0 +1,13 @@
+{
+  "queries": [
+    {
+      "refId": "A",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "expr": "{service_name=\"content-api\"} |~ \"\\\"log_category\\\":\\\"user\\\"\"",
+      "queryType": "range",
+      "maxLines": 500
+    }
+  ],
+  "from": "now-6h",
+  "to": "now"
+}

@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"math"
 	"mime"
 	"net"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/observability"
 )
 
 const (
@@ -25,25 +25,109 @@ const (
 )
 
 type Mailer struct {
-	host     string
-	port     int
-	user     string
-	password string
-	from     string
+	host          string
+	port          int
+	user          string
+	password      string
+	from          string
+	marketingFrom string // MARKETING_EMAIL_FROM — optional From for marketing templates
+	resendKey     string
 }
 
 func New(cfg *config.Config) *Mailer {
 	return &Mailer{
-		host:     cfg.SMTPHost,
-		port:     cfg.SMTPPort,
-		user:     cfg.SMTPUser,
-		password: cfg.SMTPPassword,
-		from:     cfg.SMTPFrom,
+		host:          cfg.SMTPHost,
+		port:          cfg.SMTPPort,
+		user:          cfg.SMTPUser,
+		password:      cfg.SMTPPassword,
+		from:          cfg.SMTPFrom,
+		marketingFrom: cfg.MarketingEmailFrom,
+		resendKey:     cfg.ResendAPIKey,
 	}
 }
 
 func (m *Mailer) IsConfigured() bool {
+	if m.useResend() && strings.TrimSpace(m.from) != "" {
+		return true
+	}
 	return m.host != ""
+}
+
+func (m *Mailer) resolveFrom(fromAddr string) string {
+	s := strings.TrimSpace(fromAddr)
+	if s != "" {
+		return s
+	}
+	return strings.TrimSpace(m.from)
+}
+
+func (m *Mailer) messageIDDomainFrom(from string) string {
+	f := strings.TrimSpace(from)
+	if idx := strings.LastIndex(f, "@"); idx >= 0 && idx+1 < len(f) {
+		return f[idx+1:]
+	}
+	return m.messageIDDomain()
+}
+
+func (m *Mailer) generateMessageIDForFrom(from string) string {
+	domain := m.messageIDDomainFrom(from)
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d@%s", time.Now().UnixNano(), domain)
+	}
+	return fmt.Sprintf("%d.%s@%s", time.Now().UnixNano(), hex.EncodeToString(b), domain)
+}
+
+// sendEmailWithFrom sends via Resend or SMTP using resolveFrom(fromAddr) when fromAddr is empty.
+func (m *Mailer) sendEmailWithFrom(to, fromAddr, subject, htmlBody string) error {
+	if !m.IsConfigured() {
+		return fmt.Errorf("mailer: not configured")
+	}
+	from := m.resolveFrom(fromAddr)
+	if from == "" {
+		return fmt.Errorf("mailer: empty From address")
+	}
+	if m.useResend() {
+		return m.sendResendWithRetry(to, fromAddr, subject, htmlBody)
+	}
+	if m.host == "" {
+		return fmt.Errorf("mailer: SMTP_HOST not set")
+	}
+	headers := map[string]string{
+		"From":         from,
+		"To":           to,
+		"Subject":      encodeSubjectMIME(subject),
+		"Message-ID":   "<" + m.generateMessageIDForFrom(from) + ">",
+		"Date":         time.Now().Format(time.RFC1123Z),
+		"MIME-Version": "1.0",
+		"Content-Type": "text/html; charset=UTF-8",
+	}
+	var msg strings.Builder
+	for k, v := range headers {
+		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+	}
+	msg.WriteString("\r\n")
+	msg.WriteString(htmlBody)
+	addr := fmt.Sprintf("%s:%d", m.host, m.port)
+	msgBytes := []byte(msg.String())
+	var auth smtp.Auth
+	if m.needsAuth() {
+		auth = smtp.PlainAuth("", m.user, m.password, m.host)
+	}
+	var lastErr error
+	delay := smtpRetryDelay
+	for attempt := 1; attempt <= smtpMaxRetries; attempt++ {
+		lastErr = m.sendOnce(to, from, msgBytes, addr, auth)
+		if lastErr == nil {
+			return nil
+		}
+		if attempt < smtpMaxRetries {
+			observability.MailerPrintf("[Mailer] Send to %s failed (attempt %d/%d): %v; retrying in %v", to, attempt, smtpMaxRetries, lastErr, delay)
+			time.Sleep(delay)
+			delay = time.Duration(float64(delay) * smtpRetryBackoff)
+		}
+	}
+	return lastErr
 }
 
 func (m *Mailer) needsAuth() bool {
@@ -51,13 +135,13 @@ func (m *Mailer) needsAuth() bool {
 }
 
 // isLocalRelay returns true when connecting to internal Docker relay (smtp, postfix, localhost)
-// which often has self-signed certs not matching the hostname. Includes BillionMail's postfix.
+// which often has self-signed certs not matching the hostname.
 func (m *Mailer) isLocalRelay() bool {
 	h := strings.ToLower(m.host)
 	return h == "smtp" || h == "postfix" || h == "localhost" || h == "127.0.0.1" || strings.HasPrefix(h, "mail.")
 }
 
-func (m *Mailer) sendViaStartTLS(addr string, auth smtp.Auth, to string, msg []byte) error {
+func (m *Mailer) sendViaStartTLS(addr string, auth smtp.Auth, from string, to string, msg []byte) error {
 	conn, err := net.DialTimeout("tcp", addr, smtpDialTimeout)
 	if err != nil {
 		return err
@@ -82,7 +166,7 @@ func (m *Mailer) sendViaStartTLS(addr string, auth smtp.Auth, to string, msg []b
 			return err
 		}
 	}
-	if err = client.Mail(m.from); err != nil {
+	if err = client.Mail(from); err != nil {
 		return err
 	}
 	if err = client.Rcpt(to); err != nil {
@@ -113,15 +197,19 @@ func (m *Mailer) generateMessageID() string {
 	return fmt.Sprintf("%d.%s@%s", time.Now().UnixNano(), hex.EncodeToString(b), m.messageIDDomain())
 }
 
-func (m *Mailer) sendOnce(to string, msgBody []byte, addr string, auth smtp.Auth) error {
+func (m *Mailer) sendOnce(to string, from string, msgBody []byte, addr string, auth smtp.Auth) error {
+	fromAddr := strings.TrimSpace(from)
+	if fromAddr == "" {
+		fromAddr = m.from
+	}
 	// Port 25: plain SMTP (typical for local/Docker relay)
 	if m.port == 25 {
-		return smtp.SendMail(addr, auth, m.from, []string{to}, msgBody)
+		return smtp.SendMail(addr, auth, fromAddr, []string{to}, msgBody)
 	}
 
 	// Port 587: STARTTLS. For local relay (smtp, localhost), skip cert verification.
 	if m.port == 587 && m.isLocalRelay() {
-		return m.sendViaStartTLS(addr, auth, to, msgBody)
+		return m.sendViaStartTLS(addr, auth, fromAddr, to, msgBody)
 	}
 
 	// Port 465: implicit TLS
@@ -133,7 +221,7 @@ func (m *Mailer) sendOnce(to string, msgBody []byte, addr string, auth smtp.Auth
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: smtpDialTimeout}, "tcp", addr, tlsConfig)
 	if err != nil {
 		// Fallback to STARTTLS (port 587 or misconfigured 465)
-		return m.sendViaStartTLS(addr, auth, to, msgBody)
+		return m.sendViaStartTLS(addr, auth, fromAddr, to, msgBody)
 	}
 	defer conn.Close()
 
@@ -148,7 +236,7 @@ func (m *Mailer) sendOnce(to string, msgBody []byte, addr string, auth smtp.Auth
 			return err
 		}
 	}
-	if err = client.Mail(m.from); err != nil {
+	if err = client.Mail(fromAddr); err != nil {
 		return err
 	}
 	if err = client.Rcpt(to); err != nil {
@@ -167,8 +255,12 @@ func (m *Mailer) sendOnce(to string, msgBody []byte, addr string, auth smtp.Auth
 
 func (m *Mailer) Send(to, subject, htmlBody string) error {
 	if !m.IsConfigured() {
-		log.Printf("[Mailer] SMTP not configured, skipping email")
+		observability.MailerPrintf("[Mailer] Email not configured (set RESEND_API_KEY and SMTP_FROM or SMTP_HOST), skipping email")
 		return nil
+	}
+
+	if m.useResend() {
+		return m.sendResendWithRetry(to, "", subject, htmlBody)
 	}
 
 	headers := map[string]string{
@@ -196,21 +288,20 @@ func (m *Mailer) Send(to, subject, htmlBody string) error {
 		auth = smtp.PlainAuth("", m.user, m.password, m.host)
 	}
 
-	// Retry with exponential backoff for transient failures
 	var lastErr error
 	delay := smtpRetryDelay
 	for attempt := 1; attempt <= smtpMaxRetries; attempt++ {
-		lastErr = m.sendOnce(to, msgBytes, addr, auth)
+		lastErr = m.sendOnce(to, m.from, msgBytes, addr, auth)
 		if lastErr == nil {
 			return nil
 		}
 		if attempt < smtpMaxRetries {
-			log.Printf("[Mailer] Send to %s failed (attempt %d/%d): %v; retrying in %v", to, attempt, smtpMaxRetries, lastErr, delay)
+			observability.MailerPrintf("[Mailer] Send to %s failed (attempt %d/%d): %v; retrying in %v", to, attempt, smtpMaxRetries, lastErr, delay)
 			time.Sleep(delay)
 			delay = time.Duration(float64(delay) * smtpRetryBackoff)
 		}
 	}
-	log.Printf("[Mailer] Send to %s failed after %d attempts: %v", to, smtpMaxRetries, lastErr)
+	observability.MailerPrintf("[Mailer] Send to %s failed after %d attempts: %v", to, smtpMaxRetries, lastErr)
 	return lastErr
 }
 

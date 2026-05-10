@@ -3,12 +3,14 @@ package admin
 import (
 	"archive/zip"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	stdurl "net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -28,6 +30,57 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 )
+
+// settingValidator validates a value being written for a particular settings
+// key. It receives the JSON-decoded value and returns a non-empty error
+// message to reject the write. This is in addition to allowedSettingsKeys
+// (which only gates the key, not the shape of the value) and exists so URL
+// settings (webhooks etc.) can't be pointed at arbitrary internal hosts —
+// that would turn the settings API into an SSRF primitive for any future
+// code path that POSTs to the configured URL.
+type settingValidator func(value interface{}) string
+
+// settingValidators is keyed by settings key. Missing entries mean "no extra
+// validation beyond the key whitelist".
+var settingValidators = map[string]settingValidator{
+	"discord_webhook_url": validateDiscordWebhookURL,
+}
+
+// validateDiscordWebhookURL only accepts https://discord.com/api/webhooks/...
+// or https://discordapp.com/api/webhooks/... so a compromised admin (or a
+// future SSRF bug in the settings endpoint) can't repoint outbound webhook
+// posts at internal hosts (169.254.169.254, redis, postgres, etc.).
+func validateDiscordWebhookURL(value interface{}) string {
+	// Allow clearing the webhook with empty string / null
+	if value == nil {
+		return ""
+	}
+	s, ok := value.(string)
+	if !ok {
+		return "Webhook URL must be a string"
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	u, err := stdurl.Parse(s)
+	if err != nil || u == nil {
+		return "Webhook URL is invalid"
+	}
+	if u.Scheme != "https" {
+		return "Webhook URL must use https://"
+	}
+	host := strings.ToLower(u.Hostname())
+	allowed := host == "discord.com" || host == "discordapp.com" ||
+		strings.HasSuffix(host, ".discord.com") || strings.HasSuffix(host, ".discordapp.com")
+	if !allowed {
+		return "Webhook URL must point to discord.com / discordapp.com"
+	}
+	if !strings.HasPrefix(u.Path, "/api/webhooks/") {
+		return "Webhook URL must be a Discord webhook path (/api/webhooks/...)"
+	}
+	return ""
+}
 
 // allowedSettingsKeys — whitelist for UpdateSettings (security: prevent arbitrary key injection)
 var allowedSettingsKeys = map[string]bool{
@@ -72,143 +125,7 @@ func NewHandler(db *pgxpool.Pool, r2 *content.R2Client, r2Proof *content.R2Clien
 }
 
 // ═══ Credit Purchases ════════════════════════════════════════════════════════
-
-func (h *Handler) ListCreditPurchases(c echo.Context) error {
-	ctx := c.Request().Context()
-
-	// Auto-expire old pending purchases (skip BLIK with retries remaining)
-	if rows, qerr := h.db.Query(ctx, `
-		UPDATE credit_purchases SET status = 'EXPIRED'
-		WHERE status = 'PENDING' AND expiration_time < now()
-			AND (payment_method != 'BLIK' OR retry_count >= 5)
-		RETURNING id
-	`); qerr == nil {
-		discord.NotifyForExpiredPurchaseRows(rows, h.db, h.discord)
-	}
-
-	statusFilter := c.QueryParam("status")
-	sortBy := c.QueryParam("sortBy")
-	sortDir := c.QueryParam("sortDir")
-
-	if sortDir != "asc" {
-		sortDir = "desc"
-	}
-
-	validSorts := map[string]string{
-		"createdAt": "cp.created_at",
-		"amount":    "cp.amount",
-		"credits":   "cp.credits",
-	}
-	orderCol := "cp.created_at"
-	if col, ok := validSorts[sortBy]; ok {
-		orderCol = col
-	}
-
-	query := `
-		SELECT cp.id, cp.credits, cp.amount, cp.payment_method, cp.transaction_code,
-			   cp.blik_code, cp.crypto_currency, cp.tx_id, cp.status,
-			   cp.payment_proof_url, cp.admin_notes, cp.retry_count,
-			   cp.expiration_time::text, cp.created_at::text, cp.updated_at::text,
-			   u.id AS user_id, u.email, u.name,
-			   pkg.name AS pkg_name, pkg.credits AS pkg_credits, pkg.price AS pkg_price,
-			   COALESCE(cp.custom_link_id, u.custom_link_id)::text AS effective_custom_link_id,
-			   cl_eff.slug,
-			   (r.id IS NOT NULL) AS from_user_referral,
-			   referrer.id::text AS ref_referrer_id, referrer.email AS ref_referrer_email, referrer.name AS ref_referrer_name
-		FROM credit_purchases cp
-		JOIN users u ON u.id = cp.user_id
-		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		LEFT JOIN custom_links cl_eff ON cl_eff.id = COALESCE(cp.custom_link_id, u.custom_link_id)
-		LEFT JOIN referrals r ON r.referee_id = u.id
-		LEFT JOIN users referrer ON referrer.id = r.referrer_id
-	`
-	args := []interface{}{}
-	argIdx := 1
-
-	validStatuses := map[string]bool{"PENDING": true, "APPROVED": true, "REJECTED": true, "EXPIRED": true}
-	if statusFilter != "" && validStatuses[statusFilter] {
-		query += ` WHERE cp.status = $` + strconv.Itoa(argIdx) + `::credit_purchase_status`
-		args = append(args, statusFilter)
-		argIdx++
-	}
-
-	query += ` ORDER BY ` + orderCol + ` ` + sortDir + ` LIMIT 100`
-
-	rows, err := h.db.Query(ctx, query, args...)
-	if err != nil {
-		return common.InternalError(c)
-	}
-	defer rows.Close()
-
-	var purchases []map[string]interface{}
-	for rows.Next() {
-		var (
-			id, credits              string
-			amount                   float64
-			paymentMethod, txCode    string
-			blikCode, crypto, txId   *string
-			status                   string
-			proofUrl, adminNotes     *string
-			retryCount               int
-			expiration, created, upd string
-			uid, email               string
-			uname                    *string
-			pkgName                  string
-			pkgCredits               int
-			pkgPrice                 float64
-			effectiveCustomLinkID, customSlug *string
-			fromUserReferral         bool
-			refReferrerID, refReferrerEmail *string
-			refReferrerName          *string
-		)
-
-		if err := rows.Scan(&id, &credits, &amount, &paymentMethod, &txCode,
-			&blikCode, &crypto, &txId, &status,
-			&proofUrl, &adminNotes, &retryCount,
-			&expiration, &created, &upd,
-			&uid, &email, &uname,
-			&pkgName, &pkgCredits, &pkgPrice,
-			&effectiveCustomLinkID, &customSlug, &fromUserReferral,
-			&refReferrerID, &refReferrerEmail, &refReferrerName); err != nil {
-			continue
-		}
-
-		creditsInt, _ := strconv.Atoi(credits)
-		fromCustomLink := effectiveCustomLinkID != nil && *effectiveCustomLinkID != ""
-		var referralReferrer interface{}
-		if fromUserReferral && refReferrerID != nil && *refReferrerID != "" {
-			rr := map[string]interface{}{"id": *refReferrerID}
-			if refReferrerEmail != nil {
-				rr["email"] = *refReferrerEmail
-			} else {
-				rr["email"] = ""
-			}
-			rr["name"] = refReferrerName
-			referralReferrer = rr
-		}
-		purchases = append(purchases, map[string]interface{}{
-			"id": id, "credits": creditsInt, "amount": amount,
-			"paymentMethod": paymentMethod, "transactionCode": txCode,
-			"blikCode": blikCode, "cryptoCurrency": crypto, "txId": txId,
-			"status": status, "paymentProofUrl": proofUrl, "adminNotes": adminNotes,
-			"retryCount": retryCount, "expirationTime": expiration,
-			"createdAt": created, "updatedAt": upd,
-			"fromCustomLink":   fromCustomLink,
-			"customLinkSlug":   customSlug,
-			"fromUserReferral": fromUserReferral,
-			"referralReferrer": referralReferrer,
-			"user":             map[string]interface{}{"id": uid, "email": email, "name": uname},
-			"creditPackage":    map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
-		})
-	}
-	if purchases == nil {
-		purchases = []map[string]interface{}{}
-	}
-
-	return common.Success(c, map[string]interface{}{
-		"purchases": purchases,
-	})
-}
+// ListCreditPurchases: see credit_purchases_list.go
 
 func (h *Handler) ApprovePurchase(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -1125,7 +1042,7 @@ func (h *Handler) DeletePackage(c echo.Context) error {
 func (h *Handler) ListPromoCodes(c echo.Context) error {
 	ctx := c.Request().Context()
 	rows, err := h.db.Query(ctx, `
-		SELECT id, code, discount_type, discount_value, min_purchase_credits, max_uses, used_count, expires_at, is_active, once_per_user, first_purchase_only, created_at::text
+		SELECT id, code, discount_type, discount_value, min_purchase_credits, min_purchase_amount, max_uses, used_count, expires_at, is_active, once_per_user, first_purchase_only, created_at::text
 		FROM promo_codes ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -1137,10 +1054,11 @@ func (h *Handler) ListPromoCodes(c echo.Context) error {
 	for rows.Next() {
 		var id, code, discountType, createdAt string
 		var discountValue, minCredits, usedCount int
+		var minPurchaseAmt sql.NullFloat64
 		var maxUses *int
 		var expiresAt *time.Time
 		var isActive, oncePerUser, firstPurchaseOnly bool
-		if err := rows.Scan(&id, &code, &discountType, &discountValue, &minCredits, &maxUses, &usedCount, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly, &createdAt); err != nil {
+		if err := rows.Scan(&id, &code, &discountType, &discountValue, &minCredits, &minPurchaseAmt, &maxUses, &usedCount, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly, &createdAt); err != nil {
 			continue
 		}
 		item := map[string]interface{}{
@@ -1154,6 +1072,11 @@ func (h *Handler) ListPromoCodes(c echo.Context) error {
 			"oncePerUser":        oncePerUser,
 			"firstPurchaseOnly":  firstPurchaseOnly,
 			"createdAt":          createdAt,
+		}
+		if minPurchaseAmt.Valid {
+			item["minPurchaseAmount"] = minPurchaseAmt.Float64
+		} else {
+			item["minPurchaseAmount"] = nil
 		}
 		if maxUses != nil {
 			item["maxUses"] = *maxUses
@@ -1176,14 +1099,15 @@ func (h *Handler) ListPromoCodes(c echo.Context) error {
 func (h *Handler) CreatePromoCode(c echo.Context) error {
 	ctx := c.Request().Context()
 	var req struct {
-		Code               string  `json:"code"`
-		DiscountType       string  `json:"discountType"`
-		DiscountValue      int     `json:"discountValue"`
-		MinPurchaseCredits int     `json:"minPurchaseCredits"`
-		MaxUses            *int    `json:"maxUses"`
-		ExpiresAt          *string `json:"expiresAt"`
-		OncePerUser        bool    `json:"oncePerUser"`
-		FirstPurchaseOnly  bool    `json:"firstPurchaseOnly"`
+		Code                string   `json:"code"`
+		DiscountType        string   `json:"discountType"`
+		DiscountValue         int      `json:"discountValue"`
+		MinPurchaseCredits    int      `json:"minPurchaseCredits"`
+		MinPurchaseAmount     *float64 `json:"minPurchaseAmount"`
+		MaxUses               *int     `json:"maxUses"`
+		ExpiresAt             *string  `json:"expiresAt"`
+		OncePerUser           bool     `json:"oncePerUser"`
+		FirstPurchaseOnly     bool     `json:"firstPurchaseOnly"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return common.BadRequest(c, "Invalid request body")
@@ -1217,11 +1141,16 @@ func (h *Handler) CreatePromoCode(c echo.Context) error {
 		expiresAt = nil
 	}
 
+	var minAmt interface{}
+	if req.MinPurchaseAmount != nil && *req.MinPurchaseAmount > 0 {
+		minAmt = *req.MinPurchaseAmount
+	}
+
 	var id string
 	err := h.db.QueryRow(ctx, `
-		INSERT INTO promo_codes (id, code, discount_type, discount_value, min_purchase_credits, max_uses, expires_at, once_per_user, first_purchase_only)
-		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
-	`, code, req.DiscountType, req.DiscountValue, req.MinPurchaseCredits, req.MaxUses, expiresAt, req.OncePerUser, req.FirstPurchaseOnly).Scan(&id)
+		INSERT INTO promo_codes (id, code, discount_type, discount_value, min_purchase_credits, min_purchase_amount, max_uses, expires_at, once_per_user, first_purchase_only)
+		VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+	`, code, req.DiscountType, req.DiscountValue, req.MinPurchaseCredits, minAmt, req.MaxUses, expiresAt, req.OncePerUser, req.FirstPurchaseOnly).Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
 			return common.BadRequest(c, "Promo code already exists")
@@ -1238,15 +1167,16 @@ func (h *Handler) UpdatePromoCode(c echo.Context) error {
 	ctx := c.Request().Context()
 	promoID := c.Param("id")
 	var req struct {
-		Code               *string `json:"code"`
-		DiscountType       *string `json:"discountType"`
-		DiscountValue      *int    `json:"discountValue"`
-		MinPurchaseCredits *int    `json:"minPurchaseCredits"`
-		MaxUses            *int    `json:"maxUses"`
-		ExpiresAt          *string `json:"expiresAt"`
-		IsActive           *bool   `json:"isActive"`
-		OncePerUser        *bool   `json:"oncePerUser"`
-		FirstPurchaseOnly  *bool   `json:"firstPurchaseOnly"`
+		Code                *string  `json:"code"`
+		DiscountType        *string  `json:"discountType"`
+		DiscountValue       *int     `json:"discountValue"`
+		MinPurchaseCredits  *int     `json:"minPurchaseCredits"`
+		MinPurchaseAmount   *float64 `json:"minPurchaseAmount"`
+		MaxUses             *int     `json:"maxUses"`
+		ExpiresAt           *string  `json:"expiresAt"`
+		IsActive            *bool    `json:"isActive"`
+		OncePerUser         *bool    `json:"oncePerUser"`
+		FirstPurchaseOnly   *bool    `json:"firstPurchaseOnly"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return common.BadRequest(c, "Invalid request body")
@@ -1288,6 +1218,15 @@ func (h *Handler) UpdatePromoCode(c echo.Context) error {
 		setClauses = append(setClauses, fmt.Sprintf("min_purchase_credits=$%d", argIdx))
 		args = append(args, *req.MinPurchaseCredits)
 		argIdx++
+	}
+	if req.MinPurchaseAmount != nil {
+		if *req.MinPurchaseAmount <= 0 {
+			setClauses = append(setClauses, "min_purchase_amount=NULL")
+		} else {
+			setClauses = append(setClauses, fmt.Sprintf("min_purchase_amount=$%d", argIdx))
+			args = append(args, *req.MinPurchaseAmount)
+			argIdx++
+		}
 	}
 	if req.MaxUses != nil {
 		setClauses = append(setClauses, fmt.Sprintf("max_uses=$%d", argIdx))
@@ -1430,6 +1369,13 @@ func (h *Handler) UpdateSettings(c echo.Context) error {
 		if !allowedSettingsKeys[entry.Key] {
 			log.Printf("[UpdateSettings] Skipping unknown key (not in whitelist): %s", entry.Key)
 			continue
+		}
+		// Per-key value validation (URL hosts, scheme, etc.) — defense against
+		// SSRF / open-redirect on settings that get fetched/posted by the server.
+		if v, ok := settingValidators[entry.Key]; ok {
+			if msg := v(entry.Value); msg != "" {
+				return common.BadRequest(c, fmt.Sprintf("%s: %s", entry.Key, msg))
+			}
 		}
 		valJSON, err := json.Marshal(entry.Value)
 		if err != nil {
@@ -1839,9 +1785,16 @@ func (h *Handler) resolveAdminDisplayName(ctx context.Context, adminID string) s
 func (h *Handler) GetAnalytics(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Users
-	var totalUsers, newUsers7d, newUsers30d int
+	// Users (newToday: registrations since midnight Europe/Warsaw, same calendar as daily jobs)
+	var totalUsers, newUsersToday, newUsers7d, newUsers30d int
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&totalUsers)
+	_ = h.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users
+		WHERE created_at >= (
+			((CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Warsaw')::date)::timestamp
+			AT TIME ZONE 'Europe/Warsaw'
+		)
+	`).Scan(&newUsersToday)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE created_at > now() - interval '7 days'`).Scan(&newUsers7d)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE created_at > now() - interval '30 days'`).Scan(&newUsers30d)
 
@@ -1944,8 +1897,9 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 	}
 
 	// Model purchases (spending credits)
-	var totalPurchases, bundlePurchases, individualPurchases int
+	var totalPurchases, bundlePurchases, individualPurchases, usersWithPurchase int
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM purchases`).Scan(&totalPurchases)
+	_ = h.db.QueryRow(ctx, `SELECT COUNT(DISTINCT user_id) FROM purchases`).Scan(&usersWithPurchase)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM purchases WHERE purchase_type = 'BUNDLE'`).Scan(&bundlePurchases)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM purchases WHERE purchase_type = 'INDIVIDUAL_MODEL'`).Scan(&individualPurchases)
 
@@ -1994,9 +1948,10 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 
 	return common.Success(c, map[string]interface{}{
 		"users": map[string]int{
-			"total": totalUsers,
-			"new7d": newUsers7d,
-			"new30d": newUsers30d,
+			"total":    totalUsers,
+			"newToday": newUsersToday,
+			"new7d":    newUsers7d,
+			"new30d":   newUsers30d,
 		},
 		"content": map[string]int{
 			"totalModels":       totalModels,
@@ -2018,9 +1973,10 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 			"recent":   recent,
 		},
 		"purchases": map[string]int{
-			"total":      totalPurchases,
-			"bundles":    bundlePurchases,
-			"individual": individualPurchases,
+			"total":               totalPurchases,
+			"usersWithPurchase":   usersWithPurchase,
+			"bundles":             bundlePurchases,
+			"individual":          individualPurchases,
 		},
 		"topSellers": topSellers,
 		"referral": map[string]interface{}{

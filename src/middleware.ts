@@ -70,60 +70,176 @@ function isSafeOrigin(request: NextRequest) {
   return false;
 }
 
+const isProd = process.env.NODE_ENV === "production";
+
+/**
+ * Origins that must appear in connect-src besides 'self':
+ * - HLS segment URLs often hit the public CDN host (NEXT_PUBLIC_MEDIA_HOST), not R2 API.
+ * - resolveApiPathForBrowser() may call NEXT_PUBLIC_APP_URL while the user is on www
+ *   (or the reverse) — those are different origins than 'self'.
+ */
+function connectSrcOrigins(): string[] {
+  const origins = new Set<string>();
+
+  const tryAddUrlOrigin = (raw: string | undefined) => {
+    const s = raw?.trim();
+    if (!s) return;
+    try {
+      const u = new URL(s);
+      origins.add(`${u.protocol}//${u.host}`);
+    } catch {
+      /* ignore invalid env */
+    }
+  };
+
+  tryAddUrlOrigin(process.env.NEXT_PUBLIC_APP_URL);
+  tryAddUrlOrigin(process.env.NEXT_PUBLIC_BASE_URL);
+
+  const mediaHosts = (process.env.NEXT_PUBLIC_MEDIA_HOST || "files.dyskiof.net")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  for (const h of mediaHosts) {
+    origins.add(`https://${h}`);
+  }
+
+  return [...origins];
+}
+
+/** Build a per-request nonce-based Content-Security-Policy header. */
+function buildCSP(nonce: string): string {
+  // 'strict-dynamic' lets nonced scripts load further scripts without explicit
+  // host allowlisting in modern browsers; the host fallback below is for
+  // browsers that don't yet honor strict-dynamic.
+  // Dev keeps 'unsafe-eval' because Next.js dev server uses eval for HMR.
+  const scriptSrc = [
+    "'self'",
+    `'nonce-${nonce}'`,
+    "'strict-dynamic'",
+    "https://challenges.cloudflare.com",
+    isProd ? "" : "'unsafe-eval'",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    `script-src-elem ${scriptSrc}`,
+    // Tailwind / next-intl / runtime style injection still need 'unsafe-inline'.
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com https://files.dyskiof.net",
+    "font-src 'self' data:",
+    // connect-src: include CDN + canonical app URL(s) so HLS.js XHR to presigned
+    // URLs and cross-subdomain API playlists is not blocked (see connectSrcOrigins).
+    [
+      "connect-src 'self'",
+      ...connectSrcOrigins(),
+      "https://*.r2.cloudflarestorage.com",
+      "https://challenges.cloudflare.com",
+    ].join(" "),
+    "media-src 'self' blob: https://*.r2.cloudflarestorage.com https://files.dyskiof.net",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "frame-src 'self' https://challenges.cloudflare.com",
+    "worker-src 'self' blob:",
+    isProd ? "upgrade-insecure-requests" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** Edge-runtime-safe nonce: 16 random bytes as base64. */
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  // btoa is available in the Edge runtime
+  return btoa(bin);
+}
+
 export async function middleware(request: NextRequest) {
   const method = request.method.toUpperCase();
   const isSafeMethod = method === "GET" || method === "HEAD" || method === "OPTIONS";
   const pathname = request.nextUrl.pathname;
-
-  const isAuthRoute = pathname.startsWith("/api/auth/");
-  const safeOrigin = isSafeOrigin(request);
+  const isApi = pathname.startsWith("/api/");
   const ip = getClientIp(request);
 
-  if (!isSafeMethod && !isAuthRoute && !safeOrigin) {
-    const origin = request.headers.get("origin");
-    const expected = request.nextUrl.origin;
-    emitSecurityEvent("csrf.blocked", ip, pathname, {
-      origin: origin ?? "(missing)",
-      expected,
-    });
-    return new NextResponse("Invalid origin", { status: 403 });
+  // ── API routes: CSRF check + rate limiting ────────────────────────────────
+  if (isApi) {
+    const safeOrigin = isSafeOrigin(request);
+
+    // Auth endpoints used to bypass the origin check — that left /login,
+    // /logout, /register, /forgot-password, /reset-password vulnerable to
+    // forced-action CSRF that SameSite=Lax doesn't fully cover (e.g. iframe
+    // top-nav). Apply the same check uniformly. The Discord OAuth callback is
+    // a GET (handled by the safe-method branch) and is unaffected.
+    if (!isSafeMethod && !safeOrigin) {
+      const origin = request.headers.get("origin");
+      const expected = request.nextUrl.origin;
+      emitSecurityEvent("csrf.blocked", ip, pathname, {
+        origin: origin ?? "(missing)",
+        expected,
+      });
+      return new NextResponse("Invalid origin", { status: 403 });
+    }
+
+    const isOptions = method === "OPTIONS";
+    const key = `${ip}:${pathname}`;
+    const result = await checkRateLimit(key, isOptions ? 500 : 400, 60_000);
+
+    if (!result.allowed) {
+      emitSecurityEvent("ratelimit.hit", ip, pathname, {
+        limit: result.limit,
+        remaining: 0,
+        reset_at: result.resetAt,
+      });
+      const retryAfterSecs = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
+      return new NextResponse("Too Many Requests", {
+        status: 429,
+        headers: {
+          "Retry-After": retryAfterSecs.toString(),
+          "X-RateLimit-Limit": result.limit.toString(),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": result.resetAt.toString(),
+        },
+      });
+    }
+
+    const response = NextResponse.next();
+    response.headers.set("X-RateLimit-Limit", result.limit.toString());
+    response.headers.set("X-RateLimit-Remaining", result.remaining.toString());
+    response.headers.set("X-RateLimit-Reset", result.resetAt.toString());
+    return response;
   }
 
-  // OPTIONS still gets rate-limited, but with a higher ceiling (300/min)
-  // to avoid blocking legitimate CORS pre-flights while preventing abuse.
-  const isOptions = request.method === "OPTIONS";
-  const key = `${ip}:${request.nextUrl.pathname}`;
-  const result = await checkRateLimit(
-    key,
-    isOptions ? 500 : 400,
-    60_000
-  );
+  // ── HTML routes: per-request CSP nonce ────────────────────────────────────
+  // Next.js automatically reads `x-nonce` from the request headers and
+  // applies it to inline framework scripts. Third-party <Script> components
+  // pick it up via `headers().get('x-nonce')` in layouts.
+  const nonce = generateNonce();
+  const csp = buildCSP(nonce);
 
-  if (!result.allowed) {
-    emitSecurityEvent("ratelimit.hit", ip, pathname, {
-      limit: result.limit,
-      remaining: 0,
-      reset_at: result.resetAt,
-    });
-    const retryAfterSecs = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
-    return new NextResponse("Too Many Requests", {
-      status: 429,
-      headers: {
-        "Retry-After": retryAfterSecs.toString(),
-        "X-RateLimit-Limit": result.limit.toString(),
-        "X-RateLimit-Remaining": "0",
-        "X-RateLimit-Reset": result.resetAt.toString(),
-      },
-    });
-  }
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  // Forward the CSP on the request as well so server components can mirror it
+  // when rendering streaming HTML.
+  requestHeaders.set("content-security-policy", csp);
 
-  const response = NextResponse.next();
-  response.headers.set("X-RateLimit-Limit", result.limit.toString());
-  response.headers.set("X-RateLimit-Remaining", result.remaining.toString());
-  response.headers.set("X-RateLimit-Reset", result.resetAt.toString());
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+  response.headers.set("Content-Security-Policy", csp);
   return response;
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: [
+    // Skip Next internals and obvious static assets so we don't waste cycles
+    // generating nonces for files that don't need a CSP.
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|avif|woff|woff2|ttf|otf|css|js|map)$).*)",
+  ],
 };

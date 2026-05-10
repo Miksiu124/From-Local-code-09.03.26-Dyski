@@ -21,7 +21,7 @@ import { logger } from "@/lib/logger";
 import { formatPrice } from "@/lib/utils";
 
 interface Analytics {
-  users: { total: number; new7d: number; new30d: number };
+  users: { total: number; newToday?: number; new7d: number; new30d: number };
   content: { totalModels: number; activeModels: number; totalContentItems: number };
   credits: { totalIssued: number; totalSpent: number };
   revenue: { total: number; last30d: number; last7d: number };
@@ -29,7 +29,7 @@ interface Analytics {
     byStatus: { status: string; count: number; amount: number }[];
     byMethod: { method: string; count: number; amount: number }[];
   };
-  purchases: { total: number; bundles: number; individual: number };
+  purchases: { total: number; usersWithPurchase: number; bundles: number; individual: number };
   topSellers: {
     modelId: string;
     modelName: string;
@@ -166,11 +166,32 @@ export default function AdminAnalyticsPage() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <StatCard icon={DollarSign} label="Total Revenue" value={fmtCurrency(data.revenue.total)} sub={`Last 7d: ${fmtCurrency(data.revenue.last7d)}`} />
         <StatCard icon={DollarSign} label="Revenue (30d)" value={fmtCurrency(data.revenue.last30d)} />
-        <StatCard icon={Users} label="Total Users" value={data.users.total} sub={`+${data.users.new7d} (7d), +${data.users.new30d} (30d)`} />
+        <StatCard
+          icon={Users}
+          label={t("totalUsers")}
+          value={data.users.total}
+          sub={t("analyticsUsersSub", {
+            newToday: data.users.newToday ?? 0,
+            today: t("analyticsUsersPeriodToday"),
+            new7d: data.users.new7d,
+            label7d: t("analyticsUsersPeriod7d"),
+            new30d: data.users.new30d,
+            label30d: t("analyticsUsersPeriod30d"),
+          })}
+        />
         <StatCard icon={Coins} label="Credits Issued" value={data.credits.totalIssued} sub={`Spent: ${data.credits.totalSpent}`} />
         <StatCard icon={FolderOpen} label="Models" value={`${data.content.activeModels} / ${data.content.totalModels}`} sub={`${data.content.totalContentItems} content items`} />
         <StatCard icon={ShoppingCart} label="Model Purchases" value={data.purchases.total} sub={`${data.purchases.bundles} bundles, ${data.purchases.individual} individual`} />
-        <StatCard icon={TrendingUp} label="Conversion" value={data.users.total > 0 ? `${Math.round((data.purchases.total / data.users.total) * 100)}%` : "0%"} sub="Users who purchased" />
+        <StatCard
+          icon={TrendingUp}
+          label="Conversion"
+          value={
+            data.users.total > 0
+              ? `${Math.round(((data.purchases.usersWithPurchase ?? 0) / data.users.total) * 100)}%`
+              : "0%"
+          }
+          sub="Users who purchased"
+        />
         <StatCard icon={Package} label="Avg Purchase" value={data.purchases.total > 0 ? fmtCurrency(data.revenue.total / data.purchases.total) : fmtCurrency(0)} />
         {data.referral && (
           <div className="bg-card rounded-xl border border-border p-5 col-span-2 md:col-span-1">

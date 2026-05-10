@@ -2,6 +2,10 @@
 package observability
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	stdlog "log"
 	"log/slog"
 	"net"
 	"strings"
@@ -15,6 +19,48 @@ import (
 // otlpLogsOn jest true po udanym InitOpenTelemetry z niepustym endpointem.
 var otlpLogsOn atomic.Bool
 
+// otlechoSlog: jawny *slog.Logger z otelslog (nie slog.SetDefault) — unika martwego punktu przy rejestracji otelecho / startcie HTTP.
+var otlechoSlog *slog.Logger
+
+// echoUserIDKey must match middleware.UserIDKey string value ("userId") so we can attach
+// user_id to Loki JSON without importing middleware (import cycle).
+const echoUserIDKey = "userId"
+
+// httpLogLoki: jeden JSON w treści wiersza (Loki/Explore: `| json`); mapuje pola z paneli Grafany (log_category, latency_ms, …).
+type httpLogLoki struct {
+	Msg         string `json:"msg"`
+	Method      string `json:"method"`
+	Path        string `json:"path"`
+	Status      int    `json:"status"`
+	LatencyMS   int64  `json:"latency_ms"`
+	LogCategory string `json:"log_category"`
+	ClientIP    string `json:"client_ip"`
+	ReqID       string `json:"req_id"`
+	UserID      string `json:"user_id,omitempty"`
+	TraceID     string `json:"trace_id,omitempty"`
+	SpanID      string `json:"span_id,omitempty"`
+}
+
+// mailerLogLoki: ta sama konwencja co http (jeden JSON w treści rekordu → Loki `| json`).
+type mailerLogLoki struct {
+	Msg         string `json:"msg"`
+	LogCategory string `json:"log_category"`
+}
+
+// MailerPrintf zawsze pisze na stderr (docker logs); gdy włączone są logi OTLP, duplikuje do Loki/Grafany jak linie HTTP.
+func MailerPrintf(format string, args ...any) {
+	stdlog.Printf(format, args...)
+	if !otlpLogsOn.Load() || otlechoSlog == nil {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	line, err := json.Marshal(mailerLogLoki{Msg: msg, LogCategory: "mailer"})
+	if err != nil {
+		return
+	}
+	otlechoSlog.Log(context.Background(), slog.LevelInfo, string(line))
+}
+
 // EchoSlogOTLP opcjonalnie: jedna linia slog na żądanie (→ Loki), tylko gdy InitOpenTelemetry włączył logi.
 // Ustaw po RequestID i po otelecho, żeby w logu były request_id i trace_id.
 func EchoSlogOTLP() echo.MiddlewareFunc {
@@ -22,7 +68,7 @@ func EchoSlogOTLP() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			start := time.Now()
 			err := next(c)
-			if !otlpLogsOn.Load() {
+			if !otlpLogsOn.Load() || otlechoSlog == nil {
 				return err
 			}
 			rid := c.Response().Header().Get(echo.HeaderXRequestID)
@@ -30,9 +76,17 @@ func EchoSlogOTLP() echo.MiddlewareFunc {
 				rid = c.Request().Header.Get(echo.HeaderXRequestID)
 			}
 			var traceID, spanID string
+			// Zawsze gdy jest span w kontekście — widoczność trace_id w Loki (korelacja, kopiowanie do Tempo).
+			// Uwaga: przy OTEL_TRACES_SAMPLE_RATIO < 1 część ID nie będzie w Tempo; wtedy wyszukaj w Tempo / zwiększ ratio.
 			if sc := trace.SpanContextFromContext(c.Request().Context()); sc.IsValid() {
 				traceID = sc.TraceID().String()
 				spanID = sc.SpanID().String()
+			}
+			var userID string
+			if v := c.Get(echoUserIDKey); v != nil {
+				if s, ok := v.(string); ok {
+					userID = s
+				}
 			}
 			clientIP := c.RealIP()
 			if clientIP == "" {
@@ -42,17 +96,23 @@ func EchoSlogOTLP() echo.MiddlewareFunc {
 					clientIP = c.Request().RemoteAddr
 				}
 			}
-			slog.Info("http",
-				"method", c.Request().Method,
-				"path", c.Path(),
-				"status", c.Response().Status,
-				"latency_ms", time.Since(start).Milliseconds(),
-				"log_category", HTTPLogCategory(c.Path()),
-				"client_ip", clientIP,
-				"req_id", rid,
-				"trace_id", traceID,
-				"span_id", spanID,
-			)
+			line, errJ := json.Marshal(httpLogLoki{
+				Msg:         "http",
+				Method:      c.Request().Method,
+				Path:        c.Path(),
+				Status:      c.Response().Status,
+				LatencyMS:   time.Since(start).Milliseconds(),
+				LogCategory: HTTPLogCategory(c.Path()),
+				ClientIP:    clientIP,
+				ReqID:       rid,
+				UserID:      userID,
+				TraceID:     traceID,
+				SpanID:      spanID,
+			})
+			if errJ == nil {
+				lg := otlechoSlog
+				lg.Log(c.Request().Context(), slog.LevelInfo, string(line))
+			}
 			return err
 		}
 	}

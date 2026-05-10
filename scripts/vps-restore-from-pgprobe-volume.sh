@@ -3,7 +3,10 @@
 # Uruchom na VPS: cd /opt/contentvault && bash scripts/vps-restore-from-pgprobe-volume.sh
 set -euo pipefail
 cd /opt/contentvault
-COMPOSE=( -f docker-compose.yml -f docker-compose.vps.yml )
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=compose-vps-files.sh
+source "$SCRIPT_DIR/compose-vps-files.sh"
+set_compose_vps_files
 PW="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | tr -d '\r\n"' | head -1)"
 export PGPASSWORD="$PW"
 
@@ -26,21 +29,21 @@ docker cp pgold:/tmp/from_pgprobe.dump /tmp/from_pgprobe.dump
 ls -lh /tmp/from_pgprobe.dump
 
 echo "=== Stop api/frontend, restore ==="
-docker compose "${COMPOSE[@]}" stop api frontend
+docker compose $COMPOSE_FILES stop api frontend
 docker cp /tmp/from_pgprobe.dump content-postgres:/tmp/restore.dump
 set +e
-docker compose "${COMPOSE[@]}" exec -T postgres pg_restore -U platform -d content_platform --clean --if-exists --no-owner --no-acl /tmp/restore.dump
+docker compose $COMPOSE_FILES exec -T postgres pg_restore -U platform -d content_platform --clean --if-exists --no-owner --no-acl /tmp/restore.dump
 RV=$?
 set -e
 echo "pg_restore exit: $RV (1 = drobne ostrzeżenia — OK)"
 
-docker compose "${COMPOSE[@]}" exec -T postgres rm -f /tmp/restore.dump
+docker compose $COMPOSE_FILES exec -T postgres rm -f /tmp/restore.dump
 rm -f /tmp/from_pgprobe.dump
 docker rm -f pgold
 
 echo "=== Start api/frontend ==="
-docker compose "${COMPOSE[@]}" up -d api frontend
+docker compose $COMPOSE_FILES up -d api frontend
 
 echo "=== Weryfikacja ==="
-docker compose "${COMPOSE[@]}" exec -T postgres psql -U platform -d content_platform -c "SELECT count(*) AS models FROM models; SELECT count(*) AS content_items FROM content_items;"
+docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -c "SELECT count(*) AS models FROM models; SELECT count(*) AS content_items FROM content_items;"
 echo "Gotowe."

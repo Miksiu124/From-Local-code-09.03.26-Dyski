@@ -22,7 +22,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-COMPOSE_FILES=( -f docker-compose.yml -f docker-compose.vps.yml )
+# shellcheck source=compose-vps-files.sh
+source "$SCRIPT_DIR/compose-vps-files.sh"
+set_compose_vps_files
 BACKUP_ROOT="${REPO_ROOT}/backups"
 TS="$(date +%Y%m%d_%H%M%S)"
 RUN_DIR="${BACKUP_ROOT}/safe_pg_${TS}"
@@ -63,10 +65,10 @@ done < <(docker volume ls -q) | tee "$RUN_DIR/docker_volumes_sizes.txt"
 echo ""
 echo "[3] pg_dump działającej bazy (format custom -Fc):"
 DUMP_CUR="${RUN_DIR}/content_platform_running_${TS}.dump"
-if docker compose "${COMPOSE_FILES[@]}" exec -T postgres pg_isready -U platform -d content_platform -q 2>/dev/null; then
-  docker compose "${COMPOSE_FILES[@]}" exec -T postgres pg_dump -U platform content_platform -Fc -f /tmp/cur.dump
-  docker compose "${COMPOSE_FILES[@]}" cp postgres:/tmp/cur.dump "$DUMP_CUR"
-  docker compose "${COMPOSE_FILES[@]}" exec -T postgres rm -f /tmp/cur.dump
+if docker compose $COMPOSE_FILES exec -T postgres pg_isready -U platform -d content_platform -q 2>/dev/null; then
+  docker compose $COMPOSE_FILES exec -T postgres pg_dump -U platform content_platform -Fc -f /tmp/cur.dump
+  docker compose $COMPOSE_FILES cp postgres:/tmp/cur.dump "$DUMP_CUR"
+  docker compose $COMPOSE_FILES exec -T postgres rm -f /tmp/cur.dump
   ls -lh "$DUMP_CUR"
   echo "   OK: $DUMP_CUR"
 else
@@ -147,21 +149,21 @@ cleanup
 
 echo ""
 echo "[6] Krótki stop api + frontend; restore do głównego Postgresa..."
-docker compose "${COMPOSE_FILES[@]}" stop api frontend 2>/dev/null || true
+docker compose $COMPOSE_FILES stop api frontend 2>/dev/null || true
 
 docker cp "$DUMP_SRC" content-postgres:/tmp/restore.dump
-docker compose "${COMPOSE_FILES[@]}" exec -T postgres \
+docker compose $COMPOSE_FILES exec -T postgres \
   pg_restore -U platform -d content_platform --clean --if-exists --no-owner --no-acl -v /tmp/restore.dump 2>/dev/null \
-  || docker compose "${COMPOSE_FILES[@]}" exec -T postgres \
+  || docker compose $COMPOSE_FILES exec -T postgres \
     pg_restore -U platform -d content_platform --if-exists --no-owner --no-acl /tmp/restore.dump || true
 
-docker compose "${COMPOSE_FILES[@]}" exec -T postgres rm -f /tmp/restore.dump
+docker compose $COMPOSE_FILES exec -T postgres rm -f /tmp/restore.dump
 
-docker compose "${COMPOSE_FILES[@]}" up -d api frontend
+docker compose $COMPOSE_FILES up -d api frontend
 
 echo ""
 echo "[7] Weryfikacja (liczby wierszy):"
-docker compose "${COMPOSE_FILES[@]}" exec -T postgres psql -U platform -d content_platform -c \
+docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -c \
   "SELECT (SELECT count(*) FROM models) AS models, (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM content_items) AS content_items;" || true
 
 echo ""

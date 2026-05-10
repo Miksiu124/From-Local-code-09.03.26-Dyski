@@ -1,12 +1,14 @@
 package user
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"content-platform-backend/internal/common"
+	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 
@@ -14,6 +16,13 @@ import (
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// SessionRotator issues a new session token for the given user and invalidates
+// any previously issued one. Implemented by *auth.Service. Decoupled here so
+// the user package does not need to depend on the entire auth package.
+type SessionRotator interface {
+	RotateSession(ctx context.Context, userID string) (token string, ttlSecs int, err error)
+}
 
 var (
 	emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
@@ -23,12 +32,39 @@ var (
 )
 
 type Handler struct {
-	db     *pgxpool.Pool
-	mailer *mailer.Mailer
+	db        *pgxpool.Pool
+	mailer    *mailer.Mailer
+	cfg       *config.Config
+	rotator   SessionRotator
 }
 
-func NewHandler(db *pgxpool.Pool, m *mailer.Mailer) *Handler {
-	return &Handler{db: db, mailer: m}
+func NewHandler(db *pgxpool.Pool, m *mailer.Mailer, cfg *config.Config, rotator SessionRotator) *Handler {
+	return &Handler{db: db, mailer: m, cfg: cfg, rotator: rotator}
+}
+
+// rotateSessionCookie rotates the user's session and writes the new
+// session_token cookie on the response. Logs but does not abort the response
+// on rotation failure (the underlying credential change has already
+// succeeded; failing the request would mislead the user into thinking the
+// change didn't take).
+func (h *Handler) rotateSessionCookie(c echo.Context, userID string) {
+	if h.rotator == nil || h.cfg == nil {
+		return
+	}
+	token, ttlSecs, err := h.rotator.RotateSession(c.Request().Context(), userID)
+	if err != nil {
+		log.Printf("[user] RotateSession failed for %s: %v", userID, err)
+		return
+	}
+	cookie := new(http.Cookie)
+	cookie.Name = "session_token"
+	cookie.Value = token
+	cookie.Path = "/"
+	cookie.HttpOnly = true
+	cookie.MaxAge = ttlSecs
+	cookie.SameSite = http.SameSiteLaxMode
+	cookie.Secure = h.cfg.IsProduction()
+	c.SetCookie(cookie)
 }
 
 func (h *Handler) GetBalance(c echo.Context) error {
@@ -158,6 +194,11 @@ func (h *Handler) UpdateEmail(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	// Security: rotate session so any concurrent stolen cookie is invalidated.
+	// This also re-issues a fresh JWT for the current request so the user
+	// stays logged in on the device that just changed the email.
+	h.rotateSessionCookie(c, userID)
+
 	// Security: notify both old and new email addresses
 	if h.mailer != nil && h.mailer.IsConfigured() {
 		go func() {
@@ -229,6 +270,10 @@ func (h *Handler) UpdatePassword(c echo.Context) error {
 	if err != nil {
 		return common.InternalError(c)
 	}
+
+	// Security: rotate session so any other device with a stolen cookie is
+	// signed out, and re-issue a fresh JWT on this response.
+	h.rotateSessionCookie(c, userID)
 
 	// Security: notify user that password was changed
 	if h.mailer != nil && h.mailer.IsConfigured() && userEmail != "" {

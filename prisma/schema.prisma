@@ -98,6 +98,7 @@ model User {
   isBanned      Boolean   @default(false) @map("is_banned")
   autoplay      Boolean   @default(false)
   emailVerified Boolean   @default(false) @map("email_verified")
+  marketingEmailOptIn Boolean @default(true) @map("marketing_email_opt_in")
   referralCode  String?   @unique @map("referral_code")
   customLinkId  String?   @map("custom_link_id")
   country       String?   @map("country") // User locale (from geo/IP); used by Go backend
@@ -305,6 +306,8 @@ model PromoCode {
   discountType       PromoDiscountType @map("discount_type")
   discountValue      Int               @map("discount_value") // percent (1-100) or fixed credits
   minPurchaseCredits Int               @default(0) @map("min_purchase_credits")
+  /// Minimum package list price (same unit as CreditPackage.price); null = no monetary floor
+  minPurchaseAmount  Float?            @map("min_purchase_amount")
   maxUses            Int?              @map("max_uses") // null = unlimited
   usedCount          Int               @default(0) @map("used_count")
   expiresAt          DateTime?         @map("expires_at") // null = never

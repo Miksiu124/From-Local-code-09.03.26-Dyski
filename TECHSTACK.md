@@ -94,8 +94,7 @@ Kompletne zestawienie technologii wykorzystanych w projekcie Dyskiof.
 
 | Technologia | Opis |
 |-------------|------|
-| **Postfix** | Relay SMTP (image: boky/postfix) |
-| **BillionMail** | Alternatywa — patrz `docs/BILLIONMAIL_SETUP.md` |
+| **E-mail** | Resend (HTTPS z backendu Go); opcjonalnie SMTP (np. Mailpit) |
 
 ---
 
@@ -129,7 +128,6 @@ Kompletne zestawienie technologii wykorzystanych w projekcie Dyskiof.
 | api | 8080 | Custom (backend/Dockerfile) |
 | postgres | 5432 | postgres:16-alpine |
 | redis | 6379 | redis:7-alpine |
-| smtp | 587 | boky/postfix |
 
 ---
 

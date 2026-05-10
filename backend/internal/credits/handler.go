@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,9 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/discord"
+	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/middleware"
+	"content-platform-backend/internal/referral"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,6 +48,61 @@ type CreatePurchaseRequest struct {
 	CryptoCurrency  string `json:"cryptoCurrency,omitempty"`
 	BlikCode        string `json:"blikCode,omitempty"`
 	PromoCodeID     string `json:"promoCodeId,omitempty"`
+}
+
+func (h *Handler) resolveCryptoCurrencyForDB(ctx context.Context, requested string) (string, error) {
+	requested = strings.ToUpper(strings.TrimSpace(requested))
+	if requested == "" {
+		return "", errors.New("crypto currency is required")
+	}
+
+	allowed := map[string]bool{
+		"BTC":  true,
+		"ETH":  true,
+		"LTC":  true,
+		"USDC": true,
+		"USDT": true, // backward-compatible alias for older clients
+	}
+	if !allowed[requested] {
+		return "", errors.New("invalid crypto currency")
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT e.enumlabel
+		FROM pg_enum e
+		JOIN pg_type t ON t.oid = e.enumtypid
+		WHERE t.typname = 'crypto_currency'
+	`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	supported := make(map[string]bool)
+	for rows.Next() {
+		var label string
+		if scanErr := rows.Scan(&label); scanErr != nil {
+			return "", scanErr
+		}
+		supported[strings.ToUpper(strings.TrimSpace(label))] = true
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return "", rowsErr
+	}
+
+	if supported[requested] {
+		return requested, nil
+	}
+
+	aliases := map[string]string{
+		"LTC":  "USDT",
+		"USDT": "LTC",
+	}
+	if alias, ok := aliases[requested]; ok && supported[alias] {
+		return alias, nil
+	}
+
+	return "", errors.New("unsupported crypto currency for current database enum")
 }
 
 func (h *Handler) CreatePurchase(c echo.Context) error {
@@ -96,6 +154,13 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
+	if req.PaymentMethod == "CRYPTO" {
+		req.CryptoCurrency = strings.ToUpper(strings.TrimSpace(req.CryptoCurrency))
+		if req.CryptoCurrency == "" {
+			return common.BadRequest(c, "Crypto currency is required")
+		}
+	}
+
 	// Get credit package
 	var pkgID, pkgName string
 	var pkgCredits int
@@ -117,10 +182,11 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		var maxUses *int
 		var expiresAt *time.Time
 		var isActive, oncePerUser, firstPurchaseOnly bool
+		var minPurchaseAmount sql.NullFloat64
 		err := h.db.QueryRow(ctx, `
-			SELECT id, discount_type, discount_value, min_purchase_credits, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
+			SELECT id, discount_type, discount_value, min_purchase_credits, min_purchase_amount, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
 			FROM promo_codes WHERE id = $1
-		`, req.PromoCodeID).Scan(&promoID, &discountType, &discountValue, &minCredits, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
+		`, req.PromoCodeID).Scan(&promoID, &discountType, &discountValue, &minCredits, &minPurchaseAmount, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
 		if err != nil || !isActive {
 			return common.BadRequest(c, "Invalid or expired promo code")
 		}
@@ -132,6 +198,9 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 		if pkgCredits < minCredits {
 			return common.BadRequest(c, fmt.Sprintf("Minimum %d credits required for this promo", minCredits))
+		}
+		if minPurchaseAmount.Valid && minPurchaseAmount.Float64 > 0 && pkgPrice < minPurchaseAmount.Float64 {
+			return common.BadRequest(c, fmt.Sprintf("Minimum package price %.2f required for this promo", minPurchaseAmount.Float64))
 		}
 		if oncePerUser {
 			var alreadyUsed int
@@ -221,9 +290,16 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		trimmed := strings.TrimSpace(req.BlikCode)
 		blikCode = &trimmed
 	}
-	var cryptoCurrencyStr *string
-	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
-		cryptoCurrencyStr = &req.CryptoCurrency
+	var cryptoCurrencyDB *string
+	var cryptoCurrencyDisplay *string
+	if req.PaymentMethod == "CRYPTO" {
+		resolvedCurrency, resolveErr := h.resolveCryptoCurrencyForDB(ctx, req.CryptoCurrency)
+		if resolveErr != nil {
+			return common.BadRequest(c, "Invalid crypto currency")
+		}
+		cryptoCurrencyDB = &resolvedCurrency
+		displayCurrency := req.CryptoCurrency
+		cryptoCurrencyDisplay = &displayCurrency
 	}
 
 	// Custom link attribution: user's link from registration, or ref_link_id cookie as fallback
@@ -240,6 +316,25 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
+	// Keep user row aligned with purchase attribution (signup may have missed cookie / OAuth edge cases).
+	if linkIDStr, ok := customLinkID.(string); ok && linkIDStr != "" {
+		if _, err := tx.Exec(ctx, `UPDATE users SET custom_link_id = $1 WHERE id = $2 AND custom_link_id IS NULL`, linkIDStr, userID); err != nil {
+			log.Printf("[Credits] Backfill users.custom_link_id user=%s: %v", userID, err)
+			return common.InternalError(c)
+		}
+	}
+
+	refCode := ""
+	if cookie, err := c.Cookie("ref_code"); err == nil && cookie.Value != "" {
+		refCode = strings.TrimSpace(cookie.Value)
+	}
+	if refCode != "" {
+		if err := referral.TryAttachReferralFromCodeAtCheckout(ctx, tx, h.redis, userID, refCode, c.RealIP()); err != nil {
+			log.Printf("[Credits] Referral attach at checkout user=%s: %v", userID, err)
+			return common.InternalError(c)
+		}
+	}
+
 	insertQuery := `
 		INSERT INTO credit_purchases (
 			user_id, credit_package_id, credits, amount, payment_method,
@@ -251,7 +346,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	`
 	err = tx.QueryRow(ctx, insertQuery,
 		userID, pkgID, pkgCredits, pkgPrice, req.PaymentMethod,
-		txCode, blikCode, cryptoCurrencyStr,
+		txCode, blikCode, cryptoCurrencyDB,
 		strconv.Itoa(expirationMinutes), promoCodeID, customLinkID).Scan(&purchaseID, &expirationTime)
 	if err != nil {
 		log.Printf("[Credits] Failed to insert purchase: %v", err)
@@ -292,12 +387,19 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 
 	// Get crypto wallet if needed
 	var walletAddress *string
-	if req.PaymentMethod == "CRYPTO" && req.CryptoCurrency != "" {
+	if req.PaymentMethod == "CRYPTO" && cryptoCurrencyDisplay != nil {
 		var walletsJSON interface{}
 		if err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'crypto_wallets'`).Scan(&walletsJSON); err == nil {
 			if wallets, ok := walletsJSON.(map[string]interface{}); ok {
-				if addr, ok := wallets[req.CryptoCurrency].(string); ok {
-					walletAddress = &addr
+				candidates := []string{*cryptoCurrencyDisplay}
+				if cryptoCurrencyDB != nil && *cryptoCurrencyDB != *cryptoCurrencyDisplay {
+					candidates = append(candidates, *cryptoCurrencyDB)
+				}
+				for _, key := range candidates {
+					if addr, ok := wallets[key].(string); ok {
+						walletAddress = &addr
+						break
+					}
 				}
 			}
 		}
@@ -337,8 +439,8 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	if blikCode != nil {
 		discordInfo.BlikCode = *blikCode
 	}
-	if cryptoCurrencyStr != nil {
-		discordInfo.CryptoCurrency = *cryptoCurrencyStr
+	if cryptoCurrencyDisplay != nil {
+		discordInfo.CryptoCurrency = *cryptoCurrencyDisplay
 	}
 	var uEmail string
 	var uName *string
@@ -356,6 +458,33 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	if uCountry != nil {
 		discordInfo.UserCountry = *uCountry
 	}
+	// Discord + admin: CF-IPCountry at checkout (Cloudflare); persist when DB empty for later webhooks
+	if strings.TrimSpace(discordInfo.UserCountry) == "" {
+		if cf := geo.CountryFromEcho(c); cf != "" {
+			discordInfo.UserCountry = cf
+			_, _ = h.db.Exec(ctx, `UPDATE users SET country = $1 WHERE id = $2 AND (country IS NULL OR TRIM(country) = '')`, cf, userID)
+		}
+	}
+	discordInfo.FromCustomLink = fromCustomLink
+	discordInfo.FromUserReferral = fromUserReferral
+	if customLinkSlug != nil {
+		discordInfo.CustomLinkSlug = *customLinkSlug
+	}
+	if fromUserReferral {
+		if rr, ok := referralReferrer.(map[string]interface{}); ok {
+			if e, ok := rr["email"].(string); ok {
+				discordInfo.ReferralReferrerEmail = e
+			}
+			switch v := rr["name"].(type) {
+			case *string:
+				if v != nil {
+					discordInfo.ReferralReferrerName = *v
+				}
+			case string:
+				discordInfo.ReferralReferrerName = v
+			}
+		}
+	}
 	h.discord.NotifyNewPurchase(ctx, discordInfo)
 
 	// Notify admin panel in real time via Redis SSE
@@ -367,7 +496,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"paymentMethod":   req.PaymentMethod,
 		"transactionCode": txCode,
 		"blikCode":        blikCode,
-		"cryptoCurrency":  cryptoCurrencyStr,
+		"cryptoCurrency":  cryptoCurrencyDisplay,
 		"status":          "PENDING",
 		"expirationTime":  expirationTime,
 		"createdAt":       time.Now().UTC().Format(time.RFC3339),
@@ -387,7 +516,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"walletAddress":   walletAddress,
 		"paypalAddress":   paypalAddress,
 		"revolutAddress":  revolutAddress,
-		"cryptoCurrency":  cryptoCurrencyStr,
+		"cryptoCurrency":  cryptoCurrencyDisplay,
 		"amount":          pkgPrice,
 		"credits":         pkgCredits,
 		"expirationTime":  expirationTime,
@@ -917,41 +1046,15 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 		return common.NotFound(c, "BLIK purchase not found or not pending")
 	}
 
-	// Discord notification for updated BLIK code
-	var pkgName, uEmail string
-	var uName *string
-	var pkgCredits, retryCount int
-	var amount float64
-	var uCreatedAt time.Time
-	_ = h.db.QueryRow(ctx, `
-		SELECT cp.amount, cp.credits, cp.retry_count, pkg.name,
-		       u.email, u.name, u.created_at
-		FROM credit_purchases cp
-		JOIN credit_packages pkg ON pkg.id = cp.credit_package_id
-		JOIN users u ON u.id = cp.user_id
-		WHERE cp.id = $1
-	`, purchaseID).Scan(&amount, &pkgCredits, &retryCount, &pkgName, &uEmail, &uName, &uCreatedAt)
-
-	discordInfo := discord.PurchaseInfo{
-		PurchaseID:      purchaseID,
-		UserEmail:       uEmail,
-		BlikCode:        strings.TrimSpace(req.BlikCode),
-		PackageName:     pkgName,
-		Credits:         pkgCredits,
-		Amount:          amount,
-		Currency:        "PLN",
-		PaymentAttempts: retryCount,
-		UserCreatedAt:   uCreatedAt,
-		UserAgent:       c.Request().Header.Get("User-Agent"),
-	}
-	if uName != nil {
-		discordInfo.UserName = *uName
-	}
-	// country column may not exist yet if migration hasn't been applied
-	var uCountry *string
-	_ = h.db.QueryRow(ctx, `SELECT country FROM users WHERE id = $1`, userID).Scan(&uCountry)
-	if uCountry != nil {
-		discordInfo.UserCountry = *uCountry
+	// Discord notification for updated BLIK code (full purchase row + attribution)
+	discordInfo := discord.FetchPurchaseInfo(ctx, h.db, purchaseID)
+	discordInfo.BlikCode = strings.TrimSpace(req.BlikCode)
+	discordInfo.UserAgent = c.Request().Header.Get("User-Agent")
+	if strings.TrimSpace(discordInfo.UserCountry) == "" {
+		if cf := geo.CountryFromEcho(c); cf != "" {
+			discordInfo.UserCountry = cf
+			_, _ = h.db.Exec(ctx, `UPDATE users SET country = $1 WHERE id = $2 AND (country IS NULL OR TRIM(country) = '')`, cf, userID)
+		}
 	}
 	h.discord.NotifyBlikCodeUpdated(ctx, discordInfo)
 
@@ -1002,10 +1105,11 @@ func (h *Handler) ValidatePromo(c echo.Context) error {
 	var maxUses *int
 	var expiresAt *time.Time
 	var isActive, oncePerUser, firstPurchaseOnly bool
+	var minPurchaseAmount sql.NullFloat64
 	err := h.db.QueryRow(ctx, `
-		SELECT id, discount_type, discount_value, min_purchase_credits, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
+		SELECT id, discount_type, discount_value, min_purchase_credits, min_purchase_amount, used_count, max_uses, expires_at, is_active, once_per_user, first_purchase_only
 		FROM promo_codes WHERE UPPER(TRIM(code)) = $1
-	`, req.Code).Scan(&promoID, &discountType, &discountValue, &minCredits, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
+	`, req.Code).Scan(&promoID, &discountType, &discountValue, &minCredits, &minPurchaseAmount, &usedCount, &maxUses, &expiresAt, &isActive, &oncePerUser, &firstPurchaseOnly)
 	if err != nil || !isActive {
 		return common.Success(c, map[string]interface{}{"valid": false, "message": "Invalid or expired promo code"})
 	}
@@ -1018,6 +1122,11 @@ func (h *Handler) ValidatePromo(c echo.Context) error {
 	if pkgCredits < minCredits {
 		return common.Success(c, map[string]interface{}{
 			"valid": false, "message": fmt.Sprintf("Minimum %d credits required for this promo", minCredits),
+		})
+	}
+	if minPurchaseAmount.Valid && minPurchaseAmount.Float64 > 0 && pkgPrice < minPurchaseAmount.Float64 {
+		return common.Success(c, map[string]interface{}{
+			"valid": false, "message": fmt.Sprintf("Minimum package price %.2f required for this promo", minPurchaseAmount.Float64),
 		})
 	}
 	if oncePerUser {

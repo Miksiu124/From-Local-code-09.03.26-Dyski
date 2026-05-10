@@ -104,11 +104,11 @@ func InitOpenTelemetry(ctx context.Context, rawEndpoint, serviceName string) (sh
 		return nil, fmt.Errorf("runtime metrics: %w", err)
 	}
 
-	h := otelslog.NewHandler("content-platform-backend", otelslog.WithLoggerProvider(logProvider))
-	slog.SetDefault(slog.New(h))
+	// Zgodny z `service.name` w resource (Grafana: {service_name="content-api"}) i z otelecho.
+	h := otelslog.NewHandler(serviceName, otelslog.WithLoggerProvider(logProvider))
+	otlechoSlog = slog.New(h)
 	otlpLogsOn.Store(true)
 	OtelExportEnabled.Store(true)
-	// NIE używaj slog.Info zaraz po podpięciu otelslog — może deadlock (goroutine init vs mutex log/otel error handler).
 	log.Printf("OpenTelemetry: otel export on (endpoint=%s, service=%s)", strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), serviceName)
 
 	return func(sctx context.Context) error {

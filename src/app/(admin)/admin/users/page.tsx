@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatCredits } from "@/lib/utils";
+import { AdminUserReferralStatus } from "@/components/admin/admin-user-referral-status";
 
 interface UserItem {
   id: string;
@@ -443,7 +444,7 @@ function AdminUsersPageInner() {
               <DialogTitle>{t("userDetails")}</DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-6 max-h-[60vh] overflow-y-auto overscroll-contain pr-1 -mr-1">
+            <div className="space-y-6 max-h-[70vh] overflow-y-auto overscroll-contain pr-1 -mr-1">
               {/* User Info - responsive stack, touch-friendly */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-secondary/80 border border-border/50">
                 <div className="h-14 w-14 shrink-0 rounded-full bg-primary/20 flex items-center justify-center">
@@ -485,6 +486,8 @@ function AdminUsersPageInner() {
                   </div>
                 </div>
               </div>
+
+              <AdminUserReferralStatus userId={selectedUser.id} />
 
               {/* Access History - virtualized-friendly, touch targets */}
               <section aria-labelledby="access-history-heading">

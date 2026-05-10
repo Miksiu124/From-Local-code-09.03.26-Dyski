@@ -94,6 +94,7 @@ interface Props {
   purchases: PurchaseItem[];
   initialBlikEnabled: boolean;
   highlightId?: string;
+  onNewPendingInbound?: (info: { count: number; previewEmail: string | null }) => void;
 }
 
 function methodIcon(method: string) {
@@ -134,7 +135,7 @@ function timeLeft(expirationTime: string, now: number): string {
   return `${formatDuration(diffMs)} left`;
 }
 
-export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }: Props) {
+export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId, onNewPendingInbound }: Props) {
   const t = useTranslations("admin");
   const router = useRouter();
   const [items, setItems] = useState<PurchaseItem[]>(purchases);
@@ -148,6 +149,22 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
   const [now, setNow] = useState<number | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const highlightHandled = useRef(false);
+  const inboundPingedIdsRef = useRef(new Set<string>());
+  const onInboundRef = useRef(onNewPendingInbound);
+
+  useEffect(() => {
+    onInboundRef.current = onNewPendingInbound;
+  }, [onNewPendingInbound]);
+
+  const tryInboundPingRef = useRef<(incomingIds: string[], previewEmail: string | null) => void>(() => {});
+  tryInboundPingRef.current = (incomingIds: string[], previewEmail: string | null) => {
+    const cb = onInboundRef.current;
+    if (!cb || incomingIds.length === 0) return;
+    const fresh = incomingIds.filter((id) => !inboundPingedIdsRef.current.has(id));
+    if (fresh.length === 0) return;
+    fresh.forEach((id) => inboundPingedIdsRef.current.add(id));
+    cb({ count: fresh.length, previewEmail });
+  };
 
   useEffect(() => {
     setItems(purchases);
@@ -208,6 +225,7 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
           });
           setItems((prev) => {
             if (prev.some((p) => p.id === newItem.id)) return prev;
+            tryInboundPingRef.current([newItem.id], newItem.userEmail);
             return [newItem, ...prev];
           });
         }
@@ -295,6 +313,10 @@ export function AdminPaymentsList({ purchases, initialBlikEnabled, highlightId }
             });
             return changed ? updated : prev;
           }
+          tryInboundPingRef.current(
+            newOnes.map((x) => x.id),
+            newOnes[0]?.userEmail ?? null,
+          );
           return [...newOnes, ...prev];
         });
       } catch {

@@ -5,6 +5,8 @@ go 1.25.0
 toolchain go1.25.0
 
 require (
+	github.com/alicebob/miniredis/v2 v2.35.0
+	github.com/pashagolub/pgxmock/v4 v4.9.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.63.0
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.63.0

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"log"
+	"time"
 
 	"github.com/robfig/cron/v3"
 )
@@ -13,6 +14,16 @@ type Scheduler struct {
 func NewScheduler() *Scheduler {
 	return &Scheduler{
 		cron: cron.New(),
+	}
+}
+
+// NewSchedulerWithLocation runs cron specs in the given timezone (e.g. Europe/Warsaw for local midnight jobs).
+func NewSchedulerWithLocation(loc *time.Location) *Scheduler {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return &Scheduler{
+		cron: cron.New(cron.WithLocation(loc)),
 	}
 }
 
