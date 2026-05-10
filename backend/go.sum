@@ -109,8 +109,8 @@ go.opentelemetry.io/contrib/bridges/otelslog v0.18.0 h1:hhPGP3zvvy1xWT9RTy970wln
 go.opentelemetry.io/contrib/bridges/otelslog v0.18.0/go.mod h1:twJF7inoMza6kxMcF8JOdL3mPmtOZu7GEr34CUNE6Dg=
 go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.63.0 h1:6YeICKmGrvgJ5th4+OMNpcuoB6q/Xs8gt0YCO7MUv1k=
 go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.63.0/go.mod h1:ZEA7j2B35siNV0T00aapacNzjz4tvOlNoHp0ncCfwNQ=
-go.opentelemetry.io/contrib/instrumentation/runtime v0.63.0 h1:PeBoRj6af6xMI7qCupwFvTbbnd49V7n5YpG6pg8iDYQ=
-go.opentelemetry.io/contrib/instrumentation/runtime v0.63.0/go.mod h1:ingqBCtMCe8I4vpz/UVzCW6sxoqgZB37nao91mLQ3Bw=
+go.opentelemetry.io/contrib/instrumentation/runtime v0.68.0 h1:jhVIQEprwUTV+KfzzliLidclhoTOoHTgdz96kAyR8mU=
+go.opentelemetry.io/contrib/instrumentation/runtime v0.68.0/go.mod h1:4HsdbLUbernaTnA8CNaNE+1g026SciXb3juRYe3l8EY=
 go.opentelemetry.io/contrib/propagators/b3 v1.38.0 h1:uHsCCOSKl0kLrV2dLkFK+8Ywk9iKa/fptkytc6aFFEo=
 go.opentelemetry.io/contrib/propagators/b3 v1.38.0/go.mod h1:wMRSZJZcY8ya9mApLLhwIMjqmApy2o/Ml+62lhvxyHU=
 go.opentelemetry.io/otel v1.43.0 h1:mYIM03dnh5zfN7HautFE4ieIig9amkNANT+xcVxAj9I=
