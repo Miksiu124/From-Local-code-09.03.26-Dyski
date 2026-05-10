@@ -95,7 +95,7 @@ function Sync-WithTarScp {
     exit $LASTEXITCODE
   }
   Remove-Item $archive -ErrorAction SilentlyContinue
-  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && tar xf contentvault-deploy.tar --no-same-owner --no-same-permissions && rm -f contentvault-deploy.tar"
+  ssh "${VPS_USER}@${VPS_HOST}" "cd $VPS_PATH && tar xf contentvault-deploy.tar --no-same-owner --no-same-permissions && rm -f contentvault-deploy.tar && rm -rf saasmail && rm -f backend/internal/mailer/cloudflare.go"
   if ($LASTEXITCODE -ne 0) {
     Write-Error "Rozpakowanie archiwum na VPS nie powiodlo sie."
     exit $LASTEXITCODE
