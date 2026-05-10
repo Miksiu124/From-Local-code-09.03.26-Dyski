@@ -79,18 +79,17 @@ type Config struct {
 	// BLIK
 	BlikExpirationMinutes int
 
-	// SMTP (optional fallback when Cloudflare Email REST is not configured)
+	// SMTP (optional fallback when Resend is not configured)
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
 
-	// Cloudflare Email Service (REST). When account ID and API token are set, the mailer sends via HTTPS instead of SMTP.
-	CloudflareEmailAccountID string
-	CloudflareEmailAPIToken  string
+	// Resend (HTTPS). When set with SMTP_FROM, the mailer sends via api.resend.com instead of SMTP.
+	ResendAPIKey string
 
-	// MarketingEmailFrom: optional default From for embedded marketing templates (must be allowed in Email Sending). Empty = SMTP_FROM.
+	// MarketingEmailFrom: optional default From for embedded marketing templates (domain verified in Resend). Empty = SMTP_FROM.
 	MarketingEmailFrom string
 
 	// Discord OAuth
@@ -99,7 +98,7 @@ type Config struct {
 	DiscordRedirectURI  string
 	TurnstileSecretKey  string
 
-	// Growth: abandoned checkout reminder (cron). SMTP must be configured.
+	// Growth: abandoned checkout reminder (cron). Mailer must be configured (Resend or SMTP).
 	CheckoutReminderDisabled     bool
 	CheckoutReminderDelayMinutes int
 	CheckoutReminderLookbackDays int
@@ -189,10 +188,9 @@ func Load() (*Config, error) {
 		SMTPPort:                 getEnvOrDefaultInt("SMTP_PORT", 587),
 		SMTPUser:                 getEnvOrDefault("SMTP_USER", ""),
 		SMTPPassword:             getEnvOrDefault("SMTP_PASSWORD", ""),
-		SMTPFrom:                 getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
-		CloudflareEmailAccountID: strings.TrimSpace(getEnvOrDefault("CLOUDFLARE_EMAIL_ACCOUNT_ID", "")),
-		CloudflareEmailAPIToken:  strings.TrimSpace(getEnvOrDefault("CLOUDFLARE_EMAIL_API_TOKEN", "")),
-		MarketingEmailFrom:       firstNonEmpty(getEnvOrDefault("MARKETING_EMAIL_FROM", ""), getEnvOrDefault("SAASMAIL_MARKETING_FROM", "")),
+		SMTPFrom:     getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
+		ResendAPIKey: strings.TrimSpace(getEnvOrDefault("RESEND_API_KEY", "")),
+		MarketingEmailFrom:       strings.TrimSpace(getEnvOrDefault("MARKETING_EMAIL_FROM", "")),
 		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
@@ -454,15 +452,6 @@ func requireEnv(name string) string {
 		return ""
 	}
 	return value
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if s := strings.TrimSpace(v); s != "" {
-			return s
-		}
-	}
-	return ""
 }
 
 func getEnvOrDefault(name, defaultVal string) string {

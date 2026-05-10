@@ -46,7 +46,7 @@ v=spf1 include:amazonses.com -all
 ### MX / Email
 
 - `send.dyskiof.net` MX → `feedback-smtp.eu-west-1.amazonses.com`
-- Maile wysyłane przez Cloudflare Email API – nie z VPS (brak Postfix na origin)
+- Maile transakcyjne przez **Resend** (API) — nie z VPS (brak Postfix na origin)
 
 **Status:** OK – nagłówki Received nie ujawnią IP VPS.
 
@@ -119,7 +119,7 @@ Firewall nie blokuje SSH. Opcje:
 |----------------|--------|-----------|
 | DNS | OK | Proxied |
 | SPF | OK | Brak ip4 |
-| Email | OK | Cloudflare Email API (bez serwera SMTP na origin) |
+| Email | OK | Resend API (bez własnego SMTP na origin) |
 | Kod | OK | Brak IP |
 | **Direct IP + SSL cert** | **KRYTYCZNE** | **Firewall** |
 

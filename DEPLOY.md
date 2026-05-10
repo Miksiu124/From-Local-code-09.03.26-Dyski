@@ -285,9 +285,8 @@ ADMIN_EMAILS=your-admin@email.com
 # ── BLIK ──────────────────────────────────────────────────────
 BLIK_EXPIRATION_MINUTES=2
 
-# ── E-mail (Cloudflare Email Service REST) ───────────────────
-CLOUDFLARE_EMAIL_ACCOUNT_ID=
-CLOUDFLARE_EMAIL_API_TOKEN=
+# ── E-mail (Resend) ───────────────────────────────────────────
+RESEND_API_KEY=
 SMTP_FROM=noreply@yourdomain.com
 
 # ── Nginx (produkcja) ─────────────────────────────────────────
@@ -553,8 +552,7 @@ docker compose -f docker-compose.yml -f docker-compose.vps.yml logs --tail=50 ap
 - [ ] SSL certificate issued and auto-renewal configured
 - [ ] Nginx HTTPS config updated with your domain name
 - [ ] All API secrets are 64+ random character strings
-- [ ] `CLOUDFLARE_EMAIL_ACCOUNT_ID` and `CLOUDFLARE_EMAIL_API_TOKEN` set; sending domain onboarded in Cloudflare Email → Sending
-- [ ] DNS dla wysyłki zgodnie z kreatorem Cloudflare (SPF/DKIM)
+- [ ] `RESEND_API_KEY` set; sending domain verified in Resend (SPF/DKIM)
 - [ ] Nginx produkcja: deploy / ręczne `docker compose` z **`-f docker-compose.vps.yml`** (montuje `nginx.conf.production`)
 
 ### Recommended Additions (Post-Launch)
@@ -578,8 +576,8 @@ docker compose -f docker-compose.yml -f docker-compose.vps.yml logs --tail=50 ap
 | Redis connection errors | Verify `REDIS_URL` doesn't have a password if Redis has none |
 | 502 Bad Gateway | Check if `api` or `frontend` containers are healthy: `docker compose -f docker-compose.yml -f docker-compose.vps.yml ps` |
 | BLIK WebSocket fails | Ensure nginx WebSocket config is correct; check `FRONTEND_URL` env var |
-| Emails not sending | Sprawdź `CLOUDFLARE_EMAIL_*` i logi API: `docker compose ... logs content-api \| grep -i Mailer` — `docs/EMAIL_VPS_SETUP.md` |
-| Emails going to spam | Zweryfikuj domenę w Cloudflare Email → Sending oraz rekordy SPF/DKIM z panelu |
+| Emails not sending | Sprawdź `RESEND_API_KEY`, `SMTP_FROM` i logi API: `docker compose ... logs content-api \| grep -i Mailer` — `docs/EMAIL_VPS_SETUP.md` |
+| Emails going to spam | Zweryfikuj domenę w Resend oraz rekordy SPF/DKIM z panelu |
 
 ---
 

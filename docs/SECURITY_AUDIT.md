@@ -19,7 +19,7 @@ Ostatni przegląd: 2025-02-27
 
 ### SPF – krytyczne
 - SPF w TXT dla `dyskiof.net` **nie może** zawierać `ip4:XXX.XXX.XXX.XXX` (IP twojego VPS) – to publiczny wyciek.
-- Wysyłka przez **Cloudflare Email Service** — rekordy SPF/DKIM z kreatora w panelu (bez `ip4` na VPS).
+- Wysyłka przez **Resend** — rekordy SPF/DKIM z instrukcji Resend (bez `ip4` na VPS, o ile nie używasz własnego egress).
 - Sprawdź: `dig TXT dyskiof.net` – nie powinno być tam IP VPS
 
 ### Repo
@@ -27,7 +27,7 @@ Ostatni przegląd: 2025-02-27
 - README: brak hosta/IP
 
 ### MX
-- Jeśli MX wskazuje na hosta na twoim VPS – `dig MX dyskiof.net` może ujawnić IP. Dla odbioru/wysyłki trzymaj rekordy zgodnie z dostawcą (np. Cloudflare Email, Google Workspace); unikaj MX na IP originu.
+- Jeśli MX wskazuje na hosta na twoim VPS – `dig MX dyskiof.net` może ujawnić IP. Dla odbioru/wysyłki trzymaj rekordy zgodnie z dostawcą (np. Resend, Google Workspace); unikaj MX na IP originu.
 
 ---
 
@@ -43,7 +43,7 @@ Ostatni przegląd: 2025-02-27
 
 ### DNS/Email
 - SPF, DKIM, DMARC dla domeny (dyskiof.net)
-- Port 25 zablokowany na GCP – wysyłka transakcyjna przez **Cloudflare Email API** z backendu (bez Postfix na VPS)
+- Port 25 zablokowany na GCP – wysyłka transakcyjna przez **Resend** z backendu (bez Postfix na VPS)
 
 ---
 

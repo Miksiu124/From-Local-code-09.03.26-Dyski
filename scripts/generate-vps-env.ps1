@@ -16,7 +16,7 @@ if (-not (Test-Path $envFile)) {
     exit 1
 }
 
-# Wczytaj stare wartosci (R2, Discord, Redis, Admin, e-mail Cloudflare)
+# Wczytaj stare wartosci (R2, Discord, Redis, Admin, e-mail Resend)
 $oldEnv = @{}
 Get-Content $envFile | ForEach-Object {
     if ($_ -match '^([^#=]+)=(.*)$') {
@@ -31,10 +31,8 @@ $authSecret = -join ((1..64) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum
 $chars = [char[]]'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 $pgPassword = -join (1..40 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
 
-$cfAcct = $oldEnv['CLOUDFLARE_EMAIL_ACCOUNT_ID']
-$cfTok = $oldEnv['CLOUDFLARE_EMAIL_API_TOKEN']
-if (-not $cfAcct) { $cfAcct = "PASTE_CLOUDFLARE_EMAIL_ACCOUNT_ID" }
-if (-not $cfTok) { $cfTok = "PASTE_CLOUDFLARE_EMAIL_API_TOKEN" }
+$resend = $oldEnv['RESEND_API_KEY']
+if (-not $resend) { $resend = "PASTE_RESEND_API_KEY" }
 
 $content = @"
 # Dyskiof - Production (new VPS 138.249.138.60)
@@ -75,8 +73,7 @@ ADMIN_EMAILS=$($oldEnv['ADMIN_EMAILS'])
 BLIK_EXPIRATION_MINUTES=2
 
 SMTP_FROM=noreply@dyskiof.net
-CLOUDFLARE_EMAIL_ACCOUNT_ID=$cfAcct
-CLOUDFLARE_EMAIL_API_TOKEN=$cfTok
+RESEND_API_KEY=$resend
 
 NGINX_CONFIG=./nginx/nginx.conf.production
 NEXT_PUBLIC_APP_URL=https://dyskiof.net

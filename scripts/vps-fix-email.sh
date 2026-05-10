@@ -1,20 +1,18 @@
 #!/bin/bash
-# Dyskiof — dopisz brakujące zmienne Cloudflare Email do .env na VPS
+# Dyskiof — dopisz / nadpisz RESEND_API_KEY w .env na VPS
 # Uruchom NA VPS: cd /opt/contentvault && bash scripts/vps-fix-email.sh
-# Lub: bash scripts/vps-fix-email.sh .env "$CLOUDFLARE_EMAIL_ACCOUNT_ID" "$CLOUDFLARE_EMAIL_API_TOKEN"
+# Lub: bash scripts/vps-fix-email.sh .env "$RESEND_API_KEY"
 
 set -e
 
 ENV_FILE="${1:-.env}"
-CF_ACCOUNT="${2:-$CLOUDFLARE_EMAIL_ACCOUNT_ID}"
-CF_TOKEN="${3:-$CLOUDFLARE_EMAIL_API_TOKEN}"
+RESEND_KEY="${2:-$RESEND_API_KEY}"
 
-if [[ -z "$CF_ACCOUNT" || -z "$CF_TOKEN" ]]; then
-  echo "Użycie: bash scripts/vps-fix-email.sh [.env] [CLOUDFLARE_EMAIL_ACCOUNT_ID] [CLOUDFLARE_EMAIL_API_TOKEN]"
-  echo "  lub:  export CLOUDFLARE_EMAIL_ACCOUNT_ID=... CLOUDFLARE_EMAIL_API_TOKEN=... && bash scripts/vps-fix-email.sh"
+if [[ -z "$RESEND_KEY" ]]; then
+  echo "Użycie: bash scripts/vps-fix-email.sh [.env] [RESEND_API_KEY]"
+  echo "  lub:  export RESEND_API_KEY=re_... && bash scripts/vps-fix-email.sh"
   echo ""
-  echo "Token: Cloudflare Dashboard → Manage Account → API Tokens (Email Sending: Send)."
-  echo "Account ID: prawy panel Overview."
+  echo "Klucz: Resend → API Keys (Sending). SPF/DKIM: zweryfikuj domenę w Resend."
   exit 1
 fi
 
@@ -24,20 +22,17 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 tmp="$(mktemp)"
-grep -v '^CLOUDFLARE_EMAIL_ACCOUNT_ID=' "$ENV_FILE" | grep -v '^CLOUDFLARE_EMAIL_API_TOKEN=' > "$tmp"
+grep -v '^RESEND_API_KEY=' "$ENV_FILE" > "$tmp"
 mv "$tmp" "$ENV_FILE"
 
-{
-  echo "CLOUDFLARE_EMAIL_ACCOUNT_ID=$CF_ACCOUNT"
-  echo "CLOUDFLARE_EMAIL_API_TOKEN=$CF_TOKEN"
-} >> "$ENV_FILE"
+echo "RESEND_API_KEY=$RESEND_KEY" >> "$ENV_FILE"
 
 if ! grep -q '^SMTP_FROM=' "$ENV_FILE" 2>/dev/null; then
   echo "SMTP_FROM=noreply@twojadomena.pl" >> "$ENV_FILE"
-  echo "Dodano SMTP_FROM=noreply@twojadomena.pl (dostosuj domenę!)"
+  echo "Dodano SMTP_FROM=noreply@twojadomena.pl (dostosuj domenę do Resend!)"
 fi
 
-echo "Zapisano CLOUDFLARE_EMAIL_* w $ENV_FILE"
+echo "Zapisano RESEND_API_KEY w $ENV_FILE"
 echo ""
 echo "Zrestartuj API (ścieżka compose jak na VPS), np.:"
 echo "  docker compose -f docker-compose.yml -f docker-compose.vps.yml restart content-api"

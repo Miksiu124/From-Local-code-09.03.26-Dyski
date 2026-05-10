@@ -14,7 +14,7 @@ import (
 // RunMarketingCron runs all enabled marketing batch campaigns once (same as scheduled job).
 func (h *Handler) RunMarketingCron(c echo.Context) error {
 	if h.mailer == nil || !h.mailer.MarketingEmailConfigured() {
-		return common.JSONError(c, http.StatusBadRequest, "not_configured", "Outbound email (CLOUDFLARE_EMAIL_* or SMTP) is not configured")
+		return common.JSONError(c, http.StatusBadRequest, "not_configured", "Outbound email (RESEND_API_KEY + SMTP_FROM or SMTP) is not configured")
 	}
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 14*time.Minute)
 	defer cancel()

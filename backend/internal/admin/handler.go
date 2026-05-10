@@ -1785,9 +1785,16 @@ func (h *Handler) resolveAdminDisplayName(ctx context.Context, adminID string) s
 func (h *Handler) GetAnalytics(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Users
-	var totalUsers, newUsers7d, newUsers30d int
+	// Users (newToday: registrations since midnight Europe/Warsaw, same calendar as daily jobs)
+	var totalUsers, newUsersToday, newUsers7d, newUsers30d int
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&totalUsers)
+	_ = h.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users
+		WHERE created_at >= (
+			((CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Warsaw')::date)::timestamp
+			AT TIME ZONE 'Europe/Warsaw'
+		)
+	`).Scan(&newUsersToday)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE created_at > now() - interval '7 days'`).Scan(&newUsers7d)
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE created_at > now() - interval '30 days'`).Scan(&newUsers30d)
 
@@ -1941,9 +1948,10 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 
 	return common.Success(c, map[string]interface{}{
 		"users": map[string]int{
-			"total": totalUsers,
-			"new7d": newUsers7d,
-			"new30d": newUsers30d,
+			"total":    totalUsers,
+			"newToday": newUsersToday,
+			"new7d":    newUsers7d,
+			"new30d":   newUsers30d,
 		},
 		"content": map[string]int{
 			"totalModels":       totalModels,

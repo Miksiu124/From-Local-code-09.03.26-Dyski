@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS marketing_campaign_sends (
 CREATE INDEX IF NOT EXISTS idx_marketing_campaign_sends_user_campaign_sent
   ON marketing_campaign_sends (user_id, campaign, sent_at DESC);
 
-COMMENT ON TABLE marketing_campaign_sends IS 'Audit + cooldown for automated Saasmail template campaigns (e.g. winback).';
+COMMENT ON TABLE marketing_campaign_sends IS 'Audit + cooldown for automated marketing template campaigns (e.g. winback).';

@@ -11,8 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: recursive
       - name: Ensure .env (secrets) is not tracked
         run: |
           TRACKED=$(git ls-files | grep '\.env' | grep -v '\.example' || true)
@@ -26,8 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -51,8 +47,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

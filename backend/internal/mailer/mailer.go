@@ -31,8 +31,7 @@ type Mailer struct {
 	password      string
 	from          string
 	marketingFrom string // MARKETING_EMAIL_FROM — optional From for marketing templates
-	cfAccountID   string
-	cfToken       string
+	resendKey     string
 }
 
 func New(cfg *config.Config) *Mailer {
@@ -43,13 +42,12 @@ func New(cfg *config.Config) *Mailer {
 		password:      cfg.SMTPPassword,
 		from:          cfg.SMTPFrom,
 		marketingFrom: cfg.MarketingEmailFrom,
-		cfAccountID:   cfg.CloudflareEmailAccountID,
-		cfToken:       cfg.CloudflareEmailAPIToken,
+		resendKey:     cfg.ResendAPIKey,
 	}
 }
 
 func (m *Mailer) IsConfigured() bool {
-	if m.useCloudflare() && strings.TrimSpace(m.from) != "" {
+	if m.useResend() && strings.TrimSpace(m.from) != "" {
 		return true
 	}
 	return m.host != ""
@@ -80,7 +78,7 @@ func (m *Mailer) generateMessageIDForFrom(from string) string {
 	return fmt.Sprintf("%d.%s@%s", time.Now().UnixNano(), hex.EncodeToString(b), domain)
 }
 
-// sendEmailWithFrom sends via Cloudflare REST or SMTP using resolveFrom(fromAddr) when fromAddr is empty.
+// sendEmailWithFrom sends via Resend or SMTP using resolveFrom(fromAddr) when fromAddr is empty.
 func (m *Mailer) sendEmailWithFrom(to, fromAddr, subject, htmlBody string) error {
 	if !m.IsConfigured() {
 		return fmt.Errorf("mailer: not configured")
@@ -89,8 +87,8 @@ func (m *Mailer) sendEmailWithFrom(to, fromAddr, subject, htmlBody string) error
 	if from == "" {
 		return fmt.Errorf("mailer: empty From address")
 	}
-	if m.useCloudflare() {
-		return m.sendCloudflareWithRetry(to, fromAddr, subject, htmlBody)
+	if m.useResend() {
+		return m.sendResendWithRetry(to, fromAddr, subject, htmlBody)
 	}
 	if m.host == "" {
 		return fmt.Errorf("mailer: SMTP_HOST not set")
@@ -257,12 +255,12 @@ func (m *Mailer) sendOnce(to string, from string, msgBody []byte, addr string, a
 
 func (m *Mailer) Send(to, subject, htmlBody string) error {
 	if !m.IsConfigured() {
-		observability.MailerPrintf("[Mailer] Email not configured (set CLOUDFLARE_EMAIL_* or SMTP_HOST), skipping email")
+		observability.MailerPrintf("[Mailer] Email not configured (set RESEND_API_KEY and SMTP_FROM or SMTP_HOST), skipping email")
 		return nil
 	}
 
-	if m.useCloudflare() {
-		return m.sendCloudflareWithRetry(to, "", subject, htmlBody)
+	if m.useResend() {
+		return m.sendResendWithRetry(to, "", subject, htmlBody)
 	}
 
 	headers := map[string]string{

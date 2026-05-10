@@ -1,6 +1,6 @@
 package mailer
 
-// Embedded marketing templates (same HTML as former Saasmail seed). Slug must match *_TEMPLATE_SLUG env.
+// Embedded marketing templates for Mailer.SendMarketingTemplate. Slug must match *_TEMPLATE_SLUG env.
 var embeddedMarketingTemplates = []struct {
 	Slug, Subject, BodyHTML string
 }{

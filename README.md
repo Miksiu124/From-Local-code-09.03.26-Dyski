@@ -4,7 +4,7 @@
 
 [![Dyskiof.net](https://img.shields.io/badge/Dyskiof.net-VPS%20Ready-success)](https://dyskiof.net)
 
-> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`). Wolumin produkcyjny Postgresa i LGTM: ta sama reguła w `scripts/compose-vps-files.sh` (stosuje ją m.in. `vps-rebuild.sh` i `deploy-vps` po stronie serwera). **Submoduł saasmail:** po klonowaniu `git submodule update --init --recursive`; panel zespołu — [docs/SAASMAIL.md](docs/SAASMAIL.md).
+> **Deploy:** See [DEPLOY.md](DEPLOY.md) for full VPS deployment instructions. Quick deploy: `./scripts/deploy-vps.sh --build` (kod na VPS z GitHub: `--pull --build` / PowerShell `-Pull -Build`). Wolumin produkcyjny Postgresa i LGTM: ta sama reguła w `scripts/compose-vps-files.sh` (stosuje ją m.in. `vps-rebuild.sh` i `deploy-vps` po stronie serwera).
 
 ---
 
@@ -19,8 +19,7 @@
 | Object Storage | Cloudflare R2 (S3-compatible) |
 | Video Streaming | HLS with token-secured segments |
 | Bot Protection | Cloudflare Turnstile (CAPTCHA on registration) |
-| Email | Cloudflare Email Service (HTTPS from API); optional SMTP for local dev — `docs/EMAIL_VPS_SETUP.md` |
-| Team inbox (optional) | **[saasmail](https://github.com/choyiny/saasmail)** w podkatalogu [`saasmail/`](./saasmail) (git submodule) — `docs/SAASMAIL.md` |
+| Email | [Resend](https://resend.com) (HTTPS API); optional SMTP for local dev — `docs/EMAIL_VPS_SETUP.md` |
 | Proxy | Nginx 1.28 (reverse proxy, rate limiting, Cloudflare IP trust) |
 | Containerization | Docker and Docker Compose |
 | i18n | next-intl (English, Polish) |
@@ -78,7 +77,7 @@
 - Admin role enforcement
 - User banning
 - IP extraction via CF-Connecting-IP (Nginx forwards real client IP)
-- Outbound email: Cloudflare REST or optional SMTP, with retry and exponential backoff (4 attempts)
+- Outbound email: Resend API or optional SMTP, with retry and exponential backoff (4 attempts)
 - Security email notifications on password and email changes
 - API data minimization (only essential fields returned)
 - Log sanitization (no PII or tokens in logs)
@@ -106,7 +105,7 @@
 │   │   ├── purchases/          # Model access purchases
 │   │   ├── referral/           # Referral system
 │   │   ├── notifications/      # Notifications
-│   │   ├── mailer/             # Cloudflare Email REST or SMTP + templates
+│   │   ├── mailer/             # Resend API or SMTP + templates
 │   │   ├── middleware/         # Auth, admin, email verification
 │   │   └── jobs/              # Cron jobs (R2 sync)
 │   ├── migrations/             # SQL migrations (auto-run on init)
@@ -224,9 +223,8 @@ BLIK_EXPIRATION_MINUTES=2
 TURNSTILE_SECRET_KEY=your_turnstile_secret
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
 
-# E-mail (produkcja: Cloudflare Email Service — patrz docs/EMAIL_VPS_SETUP.md)
-CLOUDFLARE_EMAIL_ACCOUNT_ID=
-CLOUDFLARE_EMAIL_API_TOKEN=
+# E-mail (produkcja: Resend — patrz docs/EMAIL_VPS_SETUP.md)
+RESEND_API_KEY=
 SMTP_FROM=noreply@dyskiof.net
 # Opcjonalnie: MARKETING_EMAIL_FROM= dla kampanii (wbudowane szablony)
 
@@ -361,14 +359,14 @@ Prices are stored in PLN. For English locale, prices are converted to USD at 4:1
 | `BLIK_EXPIRATION_MINUTES` | No | BLIK code expiry (default: 2) |
 | `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key (bot protection) |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | No | Cloudflare Turnstile site key (frontend widget) |
-| `CLOUDFLARE_EMAIL_ACCOUNT_ID` | No* | Cloudflare account ID (wysyłka przez REST) |
-| `CLOUDFLARE_EMAIL_API_TOKEN` | No* | API token z uprawnieniem Email Sending |
-| `SMTP_FROM` | No | Adres nadawcy (domena musi być w Cloudflare Email → Sending) |
+| `RESEND_API_KEY` | No* | Klucz API Resend (wysyłka HTTPS); razem z `SMTP_FROM` |
+| `SMTP_FROM` | No* | Adres nadawcy — domena zweryfikowana w Resend |
 | `MARKETING_EMAIL_FROM` | No | Opcjonalny nadawca kampanii marketingowych (wbudowane szablony); puste = `SMTP_FROM` |
-| `SMTP_HOST` | No | Opcjonalnie: zewnętrzny SMTP zamiast Cloudflare (np. Mailpit lokalnie) |
+| `SMTP_HOST` | No | Opcjonalnie: zewnętrzny SMTP zamiast Resend (np. Mailpit); **`RESEND_API_KEY` pusty** |
 | `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | No | Tylko przy `SMTP_HOST` |
 
-\* Na produkcji ustaw parę `CLOUDFLARE_EMAIL_*` (i `SMTP_FROM`) albo `SMTP_HOST` bez Cloudflare.
+\* Na produkcji ustaw `RESEND_API_KEY` i `SMTP_FROM`, albo sam `SMTP_HOST` (bez Resend).
+
 | `NGINX_CONFIG` | No | Opcjonalnie: inna ścieżka nginx **tylko lokalnie**. Na VPS użyj **`docker-compose.vps.yml`** zamiast zmiennej w `.env`. |
 | `FRONTEND_URL` | No | Frontend URL (default: http://localhost:3000) |
 | `NEXT_PUBLIC_APP_URL` | No | Public app URL |

@@ -94,7 +94,7 @@ Kompletne zestawienie technologii wykorzystanych w projekcie Dyskiof.
 
 | Technologia | Opis |
 |-------------|------|
-| **E-mail** | Cloudflare Email Service (REST z backendu Go) |
+| **E-mail** | Resend (HTTPS z backendu Go); opcjonalnie SMTP (np. Mailpit) |
 
 ---
 

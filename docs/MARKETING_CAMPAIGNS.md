@@ -6,12 +6,12 @@
 
 | Warstwa | Rola |
 |--------|------|
-| **`internal/marketing/campaigns`** | Segmenty SQL, składanie zmiennych Saasmail, cron `RunCronMarketing`, hook `GrowthHookAsync` po zapisie zdarzenia |
+| **`internal/marketing/campaigns`** | Segmenty SQL, składanie zmiennych szablonu, cron `RunCronMarketing`, hook `GrowthHookAsync` po zapisie zdarzenia |
 | **`marketing_campaign_sends`** | Cooldown / audyt wysyłek „batch” (winback, social proof, repeat buyer) |
 | **`marketing_trigger_fires`** | Idempotencja triggerów zdarzeniowych (`UNIQUE(user_id, trigger_key)`) — np. jednorazowy e-mail po pierwszym ulubionym |
 | **Redis** | Tokeny jednorazowe do linku wypisu (`/api/public/marketing-unsubscribe`) |
 
-Wysyłka zawsze przez **`Mailer.SendSaasmailMarketingTemplate`** (ten sam worker co transakcje).
+Wysyłka przez **`Mailer.SendMarketingTemplate`** (szablony wbudowane w backendzie, Resend lub SMTP — patrz `docs/EMAIL_VPS_SETUP.md`).
 
 ## Harmonogram (cron)
 
@@ -40,7 +40,7 @@ Wysyłka zawsze przez **`Mailer.SendSaasmailMarketingTemplate`** (ten sam worker
 - **Jednorazowo na konto:** wpis w `marketing_campaign_sends` pod kampanią `repeat_buyer_promo_v1` (brak cooldownu — nie wysyłamy ponownie).
 - **Kod / minimum:** domyślny kod z migracji `DYSKIOF10BK` (10%, `min_purchase_amount` = 50, `once_per_user`). Dostosuj w panelu **Kody rabatowe** lub env `REPEAT_BUYER_PROMO_CODE`.
 - **A/B/C klików:** w mailu `ctaUrl` wskazuje na `https://…/l/{slug}` — trzy slugi (`vip10-a` / `vip10-b` / `vip10-c` z migracji) zapisują wizyty w `link_visits` i atrybut `utm_email_ab` w query na `/purchase`.
-- **Szablon:** `REPEAT_BUYER_TEMPLATE_SLUG` (domyślnie `repeat-buyer-10`). Wymagane zmienne Saasmail: `firstName`, `hookLine`, `ctaUrl`, `promoCode`, `promoTerms`, `unsubscribeUrl`, `siteName` (+ opcjonalnie `stat1` itd. przez `REPEAT_BUYER_TEMPLATE_DEFAULTS_JSON`).
+- **Szablon:** `REPEAT_BUYER_TEMPLATE_SLUG` (domyślnie `repeat-buyer-10`). Wymagane zmienne w szablonie: `firstName`, `hookLine`, `ctaUrl`, `promoCode`, `promoTerms`, `unsubscribeUrl`, `siteName` (+ opcjonalnie `stat1` itd. przez `REPEAT_BUYER_TEMPLATE_DEFAULTS_JSON`).
 
 ## Kampanie po zdarzeniu (hook po `InsertEvent`)
 
@@ -51,16 +51,16 @@ Po udanym zapisie wiersza w `growth_events` wywoływany jest hook (goroutine, ti
 - Zdarzenie: `favorite_toggled` z `favorited: true` (frontend: `trackFavoriteToggled`).
 - Wymaga zalogowanego użytkownika (`user_id` w zdarzeniu).
 - **Jednorazowo na konto:** `marketing_trigger_fires` z kluczem `favorite_nudge_v1`.
-- **Szablon:** obowiązkowy **`FAVORITE_NUDGE_TEMPLATE_SLUG`** (np. własny krótki szablon w Saasmail lub ten sam co winback — wtedy dopasuj zmienne przez `FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON`).
+- **Szablon:** obowiązkowy **`FAVORITE_NUDGE_TEMPLATE_SLUG`** (np. krótki szablon w `marketing_templates_data.go` lub ten sam co winback — dopasuj zmienne przez `FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON`).
 
 ## Zgoda i e-mail
 
 - Wysyłki respektują **`users.marketing_email_opt_in`** (wypis: link z maila).
 - **Nie** wysyłamy na podstawie samego adresu z propsów lejka (props są sanitizowane — brak e-maila w `growth_events`).
-- Dalsze kampanie (np. „model X w katalogu”): ten sam wzorzec — segment SQL + `marketing_campaign_sends` / trigger + szablon Saasmail.
+- Dalsze kampanie (np. „model X w katalogu”): ten sam wzorzec — segment SQL + `marketing_campaign_sends` / trigger + wbudowany szablon.
 
 ## Pliki w repo
 
 - Implementacja: `ContentManager/backend/internal/marketing/campaigns/`
 - Konfiguracja: `ContentManager/.env.production.example` (sekcja kampanii)
-- Szablony HTML / slugi: `docs/MARKETING_EMAIL_TEMPLATES_SASMAIL.md`
+- Szablony HTML / slugi: `docs/MARKETING_EMAIL_TEMPLATES.md`

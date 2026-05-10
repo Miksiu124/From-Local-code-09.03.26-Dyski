@@ -29,7 +29,7 @@ func lookupMarketingTemplate(slug string) (subject, body string, ok bool) {
 	return "", "", false
 }
 
-// MarketingEmailConfigured is true when transactional mail can send (Cloudflare REST or SMTP).
+// MarketingEmailConfigured is true when transactional mail can send (Resend or SMTP).
 func (m *Mailer) MarketingEmailConfigured() bool {
 	return m.IsConfigured()
 }
@@ -55,11 +55,11 @@ func (m *Mailer) MarketingTemplateVariableNames(slug string) ([]string, error) {
 	return out, nil
 }
 
-// SendMarketingTemplate renders an embedded HTML template and sends via Cloudflare Email REST or SMTP.
+// SendMarketingTemplate renders an embedded HTML template and sends via Resend or SMTP.
 // fromAddressOverride: optional; otherwise MarketingEmailFrom then SMTP_FROM (see config).
 func (m *Mailer) SendMarketingTemplate(to, slug, fromAddressOverride string, vars map[string]string) error {
 	if !m.IsConfigured() {
-		return fmt.Errorf("mailer: email not configured (CLOUDFLARE_EMAIL_* or SMTP_HOST)")
+		return fmt.Errorf("mailer: email not configured (RESEND_API_KEY + SMTP_FROM or SMTP_HOST)")
 	}
 	subjectTpl, bodyTpl, ok := lookupMarketingTemplate(slug)
 	if !ok {
