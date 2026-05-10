@@ -3,6 +3,8 @@ name: Tests
 on:
   push:
   pull_request:
+  # Lets branch protection "Add checks" populate after a run without a new commit.
+  workflow_dispatch:
 
 # One run per branch/PR; newer commits cancel superseded workflows (fewer flaky races on rapid pushes).
 concurrency:
