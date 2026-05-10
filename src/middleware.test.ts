@@ -37,7 +37,7 @@ describe("API Middleware Security", () => {
       expect(res.status).toBe(200);
     });
 
-    it("allows auth routes without strict origin check (login/register)", async () => {
+    it("blocks cross-site POST on auth routes (same CSRF rules as other APIs)", async () => {
       const req = new NextRequest(`${baseUrl}/api/auth/login`, {
         method: "POST",
         headers: {
@@ -47,8 +47,8 @@ describe("API Middleware Security", () => {
       });
 
       const res = await middleware(req);
-      // Auth routes are exempt from CSRF - request passes middleware
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
+      expect(await res.text()).toContain("Invalid origin");
     });
 
     it("allows GET requests without Origin", async () => {

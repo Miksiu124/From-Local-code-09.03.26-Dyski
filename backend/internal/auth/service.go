@@ -24,7 +24,7 @@ import (
 
 type Service struct {
 	cfg   *config.Config
-	db    *pgxpool.Pool
+	db    referral.PoolConn
 	redis *redis.Client
 }
 
