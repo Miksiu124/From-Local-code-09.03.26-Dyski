@@ -417,13 +417,16 @@ npm run db:studio      # Open Prisma Studio GUI
 
 ## Tests
 
-Tests run automatically on push and pull requests via GitHub Actions (workflow **Tests**, plus **CodeQL** on PRs/branches configured in `codeql.yml`). **DAST** is manual/cron-only.
+**CI workflows:** **`Tests`** (Go `gofmt` + `vet` + tests + Node audit + Vitest + ESLint + **Next.js production build** + `.env` guard), **`CodeQL`** (Go + TS on `main` / PR). **Deploy (VPS rolling)** runs **after successful `Tests` on pushes to `main`**, gated by **`workflow_run`**.
 
-To ensure nothing reaches `main` until CI is green—and so **Deploy (VPS rolling)** runs after **`Tests`** succeeds on pushes to **`main`**—enable branch protection:
+**Production guardrails (current `main` setup):**
 
-1. Repo **Settings → Rules → Rulesets** (or **Branches → Branch protection**) for **`main`**.
-2. Require status checks **before merge**: enable **GitHub Actions** and select the **`Tests`** workflow jobs you care about (e.g. `Go Backend`, `Frontend`, `No secrets in repo`). Optionally require **CodeQL** matrix jobs (`Analyze (go)`, `Analyze (javascript-typescript)`).
-3. Prefer **Require branches to be up to date before merging** so merges are tested against the latest `main`.
+- **`main`** is protected via GitHub Branch protection (**strict** checks, **enforce admins** enabled so checks apply to admins too — break-glass: temporarily relax in **Settings → Branches**).
+- Required checks **`Tests`** job names (`Go Backend`, `Frontend`, `No secrets in repo`) plus **`CodeQL`** (`Analyze (go)`, `Analyze (javascript-typescript)`). The **`deploy`** check is intentionally **not** required (delivery can flake independently of correctness).
+- **Dependabot** bumps npm, GitHub Actions, and **Go** (`gomod`).
+- **`CODEOWNERS`** (`.github/CODEOWNERS`) tags you as owner for tooling that reads it — **still require reviews** stays off unless you enable it alongside review count.
+
+Operational flow: **`development`** → PR → **`main`**, wait for CI green → merge → auto **Tests** + **Deploy**.
 
 ```bash
 # Backend (Go)
