@@ -32,10 +32,11 @@ echo "Branch: $BRANCH"
 echo "Compose: docker compose $COMPOSE_FILES"
 
 if [[ "${SKIP_GIT_PULL:-0}" != "1" ]]; then
-	git fetch origin
-	git checkout "$BRANCH"
+	# Align the VPS working tree exactly to origin (discards stray local edits on tracked files —
+	# avoids "would be overwritten by merge" failures during automated deploy).
+	git fetch origin "$BRANCH"
+	git checkout -B "$BRANCH" "origin/$BRANCH"
 	echo "HEAD: $(git rev-parse HEAD)"
-	git pull --ff-only origin "$BRANCH"
 else
 	echo "SKIP_GIT_PULL=1 — using working tree as-is"
 fi
