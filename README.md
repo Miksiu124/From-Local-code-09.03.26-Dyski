@@ -417,7 +417,13 @@ npm run db:studio      # Open Prisma Studio GUI
 
 ## Tests
 
-Tests run automatically on push and pull requests via GitHub Actions (tests, DAST, CodeQL).
+Tests run automatically on push and pull requests via GitHub Actions (workflow **Tests**, plus **CodeQL** on PRs/branches configured in `codeql.yml`). **DAST** is manual/cron-only.
+
+To ensure nothing reaches `main` until CI is green—and so **Deploy (VPS rolling)** runs after **`Tests`** succeeds on pushes to **`main`**—enable branch protection:
+
+1. Repo **Settings → Rules → Rulesets** (or **Branches → Branch protection**) for **`main`**.
+2. Require status checks **before merge**: enable **GitHub Actions** and select the **`Tests`** workflow jobs you care about (e.g. `Go Backend`, `Frontend`, `No secrets in repo`). Optionally require **CodeQL** matrix jobs (`Analyze (go)`, `Analyze (javascript-typescript)`).
+3. Prefer **Require branches to be up to date before merging** so merges are tested against the latest `main`.
 
 ```bash
 # Backend (Go)

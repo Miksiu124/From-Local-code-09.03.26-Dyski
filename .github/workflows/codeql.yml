@@ -11,8 +11,9 @@ on:
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       security-events: write
       actions: read
@@ -25,6 +26,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -32,12 +35,16 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.language == 'go' && 'autobuild' || 'none' }}
           source-root: ${{ matrix.language == 'go' && 'backend' || '.' }}
+          # Ignore bundled agent/live-browser artefacts (megabyte JS blobs) — not app surface for SAST.
+          config: |
+            paths-ignore:
+              - ".agents/**"
 
       - name: Set up Go
         if: matrix.language == 'go'
         uses: actions/setup-go@v6
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Set up Node.js
         if: matrix.language == 'javascript-typescript'
