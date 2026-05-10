@@ -22,7 +22,7 @@ type Config struct {
 	DatabaseURL string
 
 	// Observability: local pg_dump volume (Docker) — optional
-	PostgresBackupDir   string // POSTGRES_BACKUP_DIR e.g. /backups; empty = admin UI hides backup status
+	PostgresBackupDir    string // POSTGRES_BACKUP_DIR e.g. /backups; empty = admin UI hides backup status
 	PostgresBackupDBName string // POSTGRES_BACKUP_DB_NAME — must match postgres-backup-local POSTGRES_DB (symlink name)
 
 	// OpenTelemetry: OTLP HTTP — logi (Loki), trace (Tempo), metryki (Prometheus/Mimir). Puste = wyłączone.
@@ -40,7 +40,7 @@ type Config struct {
 	RememberMeSessionTTLSecs int // seconds for password login with rememberMe (default 30d)
 
 	// One-time email links (Redis TTL, seconds)
-	PasswordResetTokenTTLSecs      int // forgot-password link; default 3600
+	PasswordResetTokenTTLSecs     int // forgot-password link; default 3600
 	EmailVerificationTokenTTLSecs int // verify-email link; default 86400
 
 	// Security (optional, see SECURITY_AUDIT.md)
@@ -49,16 +49,16 @@ type Config struct {
 	// R2 / S3
 	R2AccountID       string
 	R2AccessKeyID     string
-	R2SecretAccessKey  string
+	R2SecretAccessKey string
 	R2BucketName      string
 	R2Endpoint        string
 	R2PublicURL       string // Optional: if set, redirect avatar/header to CDN instead of proxying
 
 	// R2 Proof bucket (optional, falls back to main)
-	R2ProofAccessKeyID    string
+	R2ProofAccessKeyID     string
 	R2ProofSecretAccessKey string
-	R2ProofBucketName     string
-	R2ProofEndpoint       string
+	R2ProofBucketName      string
+	R2ProofEndpoint        string
 
 	// HLS Streaming
 	StreamingTokenSecret string
@@ -106,29 +106,29 @@ type Config struct {
 	// Winback + other marketing cron campaigns (single schedule MARKETING_CRON, legacy: WINBACK_CRON).
 	MarketingCronSpec string
 	// MarketingOpsKey: optional Bearer for POST /api/ops/marketing/run-cron without admin session.
-	MarketingOpsKey string
-	WinbackEmailEnabled           bool
-	WinbackInactivityDays         int
-	WinbackCooldownDays           int
-	WinbackBatchLimit             int
-	WinbackTemplateSlug           string
-	WinbackHookLine               string
-	WinbackCtaPath                string
-	WinbackSiteName               string
-	WinbackFirstNameFallback      string
-	WinbackTemplateDefaultsJSON   string
+	MarketingOpsKey             string
+	WinbackEmailEnabled         bool
+	WinbackInactivityDays       int
+	WinbackCooldownDays         int
+	WinbackBatchLimit           int
+	WinbackTemplateSlug         string
+	WinbackHookLine             string
+	WinbackCtaPath              string
+	WinbackSiteName             string
+	WinbackFirstNameFallback    string
+	WinbackTemplateDefaultsJSON string
 
 	// Social proof re-engage (growth_events: had plays/views, now quiet). SOCIAL_PROOF_EMAIL_ENABLED=1.
-	SocialProofEmailEnabled            bool
-	SocialProofTemplateSlug            string
-	SocialProofInactivityDays          int
-	SocialProofCooldownDays            int
-	SocialProofEngagementLookbackDays  int
-	SocialProofBatchLimit              int
-	SocialProofTrendingTitle           string
-	SocialProofProofLine               string
-	SocialProofCtaPath                 string
-	SocialProofTemplateDefaultsJSON    string
+	SocialProofEmailEnabled           bool
+	SocialProofTemplateSlug           string
+	SocialProofInactivityDays         int
+	SocialProofCooldownDays           int
+	SocialProofEngagementLookbackDays int
+	SocialProofBatchLimit             int
+	SocialProofTrendingTitle          string
+	SocialProofProofLine              string
+	SocialProofCtaPath                string
+	SocialProofTemplateDefaultsJSON   string
 
 	// One-shot after favorite_toggled (favorited=true). FAVORITE_NUDGE_EMAIL_ENABLED + FAVORITE_NUDGE_TEMPLATE_SLUG.
 	FavoriteNudgeEmailEnabled         bool
@@ -140,12 +140,12 @@ type Config struct {
 	FavoriteNudgeTemplateDefaultsJSON string
 
 	// One-shot “ever purchased” promo blast (cron). REPEAT_BUYER_PROMO_EMAIL_ENABLED=1.
-	RepeatBuyerPromoEmailEnabled       bool
-	RepeatBuyerPromoCode               string
-	RepeatBuyerTemplateSlug            string
-	RepeatBuyerAbLinkSlugs             string // comma: vip10-a,vip10-b,vip10-c — must match custom_links.slug
-	RepeatBuyerBatchLimit              int
-	RepeatBuyerTemplateDefaultsJSON    string
+	RepeatBuyerPromoEmailEnabled    bool
+	RepeatBuyerPromoCode            string
+	RepeatBuyerTemplateSlug         string
+	RepeatBuyerAbLinkSlugs          string // comma: vip10-a,vip10-b,vip10-c — must match custom_links.slug
+	RepeatBuyerBatchLimit           int
+	RepeatBuyerTemplateDefaultsJSON string
 }
 
 func Load() (*Config, error) {
@@ -154,85 +154,85 @@ func Load() (*Config, error) {
 	_ = godotenv.Load("../.env") // also try parent directory
 
 	cfg := &Config{
-		Port:                  getEnvOrDefault("PORT", "8080"),
-		Environment:           getEnvOrDefault("ENVIRONMENT", "development"),
-		FrontendURL:           getEnvOrDefault("FRONTEND_URL", "http://localhost:3000"),
-		DatabaseURL:            requireEnv("DATABASE_URL"),
-		PostgresBackupDir:      strings.TrimSpace(getEnvOrDefault("POSTGRES_BACKUP_DIR", "")),
-		PostgresBackupDBName:   getEnvOrDefault("POSTGRES_BACKUP_DB_NAME", "content_platform"),
-		OTLPLogEndpoint:        strings.TrimSpace(getEnvOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
-		OTELServiceName:        getEnvOrDefault("OTEL_SERVICE_NAME", "content-api"),
-		RedisURL:               getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:                requireEnv("JWT_SECRET"),
-		JWTExpirySecs:            resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
-		SessionTokenTTL:          resolveSessionTTL(),
-		RememberMeSessionTTLSecs: resolveRememberMeTTL(),
-		DisableBearerAuth:     getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "true" || getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "1",
-		R2AccountID:           getEnvOrDefault("R2_ACCOUNT_ID", ""),
-		R2AccessKeyID:         requireEnv("R2_ACCESS_KEY_ID"),
-		R2SecretAccessKey:     requireEnv("R2_SECRET_ACCESS_KEY"),
-		R2BucketName:          requireEnv("R2_BUCKET_NAME"),
-		R2Endpoint:            getEnvOrDefault("R2_ENDPOINT", ""),
-		R2PublicURL:           getEnvOrDefault("R2_PUBLIC_URL", ""),
-		R2ProofAccessKeyID:    getEnvOrDefault("R2_PROOF_ACCESS_KEY_ID", ""),
-		R2ProofSecretAccessKey: getEnvOrDefault("R2_PROOF_SECRET_ACCESS_KEY", ""),
-		R2ProofBucketName:     getEnvOrDefault("R2_PROOF_BUCKET_NAME", ""),
-		R2ProofEndpoint:       getEnvOrDefault("R2_PROOF_ENDPOINT", ""),
-		StreamingTokenSecret:  requireEnv("STREAMING_TOKEN_SECRET"),
-		StreamingTokenTTL:     getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600),   // 6 hours
-		HLSUseAPISegments:     getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "true" || getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "1",
-		MediaCDNSigningSecret: getEnvOrDefault("MEDIA_CDN_SIGNING_SECRET", ""),
-		MediaCDNUrlTTL:        getEnvOrDefaultInt("MEDIA_CDN_URL_TTL_SEC", 1800),
-		BlikExpirationMinutes: getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
-		SMTPHost:                 getEnvOrDefault("SMTP_HOST", ""),
-		SMTPPort:                 getEnvOrDefaultInt("SMTP_PORT", 587),
-		SMTPUser:                 getEnvOrDefault("SMTP_USER", ""),
-		SMTPPassword:             getEnvOrDefault("SMTP_PASSWORD", ""),
-		SMTPFrom:     getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
-		ResendAPIKey: strings.TrimSpace(getEnvOrDefault("RESEND_API_KEY", "")),
-		MarketingEmailFrom:       strings.TrimSpace(getEnvOrDefault("MARKETING_EMAIL_FROM", "")),
-		DiscordClientID:       getEnvOrDefault("DISCORD_CLIENT_ID", ""),
-		DiscordClientSecret:   getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
-		DiscordRedirectURI:    getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
-		TurnstileSecretKey:            getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
-		PasswordResetTokenTTLSecs:     getEnvOrDefaultInt("PASSWORD_RESET_TOKEN_TTL_SEC", 3600),
-		EmailVerificationTokenTTLSecs: getEnvOrDefaultInt("EMAIL_VERIFICATION_TOKEN_TTL_SEC", 86400),
-		CheckoutReminderDisabled:      getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "1" || getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "true",
-		CheckoutReminderDelayMinutes:  getEnvOrDefaultInt("CHECKOUT_REMINDER_DELAY_MINUTES", 45),
-		CheckoutReminderLookbackDays:  getEnvOrDefaultInt("CHECKOUT_REMINDER_LOOKBACK_DAYS", 14),
-		WinbackEmailEnabled:           getEnvOrDefault("WINBACK_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("WINBACK_EMAIL_ENABLED", "") == "true",
-		WinbackInactivityDays:         getEnvOrDefaultInt("WINBACK_INACTIVITY_DAYS", 30),
-		WinbackCooldownDays:           getEnvOrDefaultInt("WINBACK_COOLDOWN_DAYS", 90),
-		WinbackBatchLimit:             getEnvOrDefaultInt("WINBACK_BATCH_LIMIT", 50),
-		WinbackTemplateSlug:           strings.TrimSpace(getEnvOrDefault("WINBACK_TEMPLATE_SLUG", "winback-soft")),
-		WinbackHookLine:               strings.TrimSpace(getEnvOrDefault("WINBACK_HOOK_LINE", "Dodaliśmy nowe materiały i poprawiliśmy wyszukiwanie — warto rzucić okiem.")),
-		WinbackCtaPath:                strings.TrimSpace(getEnvOrDefault("WINBACK_CTA_PATH", "/models")),
-		WinbackSiteName:               strings.TrimSpace(getEnvOrDefault("WINBACK_SITE_NAME", "Dyskiof")),
-		WinbackFirstNameFallback:      strings.TrimSpace(getEnvOrDefault("WINBACK_FIRSTNAME_FALLBACK", "Tam")),
-		WinbackTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("WINBACK_TEMPLATE_DEFAULTS_JSON", "")),
-		SocialProofEmailEnabled:            getEnvOrDefault("SOCIAL_PROOF_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("SOCIAL_PROOF_EMAIL_ENABLED", "") == "true",
-		SocialProofTemplateSlug:            strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TEMPLATE_SLUG", "social-proof-drop")),
-		SocialProofInactivityDays:          getEnvOrDefaultInt("SOCIAL_PROOF_INACTIVITY_DAYS", 14),
-		SocialProofCooldownDays:            getEnvOrDefaultInt("SOCIAL_PROOF_COOLDOWN_DAYS", 45),
-		SocialProofEngagementLookbackDays:  getEnvOrDefaultInt("SOCIAL_PROOF_ENGAGEMENT_LOOKBACK_DAYS", 90),
-		SocialProofBatchLimit:              getEnvOrDefaultInt("SOCIAL_PROOF_BATCH_LIMIT", 40),
-		SocialProofTrendingTitle:           strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TRENDING_TITLE", "")),
-		SocialProofProofLine:               strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_PROOF_LINE", "")),
-		SocialProofCtaPath:                 strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_CTA_PATH", "/models")),
-		SocialProofTemplateDefaultsJSON:    strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TEMPLATE_DEFAULTS_JSON", "")),
+		Port:                              getEnvOrDefault("PORT", "8080"),
+		Environment:                       getEnvOrDefault("ENVIRONMENT", "development"),
+		FrontendURL:                       getEnvOrDefault("FRONTEND_URL", "http://localhost:3000"),
+		DatabaseURL:                       requireEnv("DATABASE_URL"),
+		PostgresBackupDir:                 strings.TrimSpace(getEnvOrDefault("POSTGRES_BACKUP_DIR", "")),
+		PostgresBackupDBName:              getEnvOrDefault("POSTGRES_BACKUP_DB_NAME", "content_platform"),
+		OTLPLogEndpoint:                   strings.TrimSpace(getEnvOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
+		OTELServiceName:                   getEnvOrDefault("OTEL_SERVICE_NAME", "content-api"),
+		RedisURL:                          getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:                         requireEnv("JWT_SECRET"),
+		JWTExpirySecs:                     resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
+		SessionTokenTTL:                   resolveSessionTTL(),
+		RememberMeSessionTTLSecs:          resolveRememberMeTTL(),
+		DisableBearerAuth:                 getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "true" || getEnvOrDefault("DISABLE_BEARER_AUTH", "") == "1",
+		R2AccountID:                       getEnvOrDefault("R2_ACCOUNT_ID", ""),
+		R2AccessKeyID:                     requireEnv("R2_ACCESS_KEY_ID"),
+		R2SecretAccessKey:                 requireEnv("R2_SECRET_ACCESS_KEY"),
+		R2BucketName:                      requireEnv("R2_BUCKET_NAME"),
+		R2Endpoint:                        getEnvOrDefault("R2_ENDPOINT", ""),
+		R2PublicURL:                       getEnvOrDefault("R2_PUBLIC_URL", ""),
+		R2ProofAccessKeyID:                getEnvOrDefault("R2_PROOF_ACCESS_KEY_ID", ""),
+		R2ProofSecretAccessKey:            getEnvOrDefault("R2_PROOF_SECRET_ACCESS_KEY", ""),
+		R2ProofBucketName:                 getEnvOrDefault("R2_PROOF_BUCKET_NAME", ""),
+		R2ProofEndpoint:                   getEnvOrDefault("R2_PROOF_ENDPOINT", ""),
+		StreamingTokenSecret:              requireEnv("STREAMING_TOKEN_SECRET"),
+		StreamingTokenTTL:                 getEnvOrDefaultInt("STREAMING_TOKEN_TTL", 6*3600), // 6 hours
+		HLSUseAPISegments:                 getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "true" || getEnvOrDefault("HLS_USE_API_SEGMENTS", "") == "1",
+		MediaCDNSigningSecret:             getEnvOrDefault("MEDIA_CDN_SIGNING_SECRET", ""),
+		MediaCDNUrlTTL:                    getEnvOrDefaultInt("MEDIA_CDN_URL_TTL_SEC", 1800),
+		BlikExpirationMinutes:             getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
+		SMTPHost:                          getEnvOrDefault("SMTP_HOST", ""),
+		SMTPPort:                          getEnvOrDefaultInt("SMTP_PORT", 587),
+		SMTPUser:                          getEnvOrDefault("SMTP_USER", ""),
+		SMTPPassword:                      getEnvOrDefault("SMTP_PASSWORD", ""),
+		SMTPFrom:                          getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
+		ResendAPIKey:                      strings.TrimSpace(getEnvOrDefault("RESEND_API_KEY", "")),
+		MarketingEmailFrom:                strings.TrimSpace(getEnvOrDefault("MARKETING_EMAIL_FROM", "")),
+		DiscordClientID:                   getEnvOrDefault("DISCORD_CLIENT_ID", ""),
+		DiscordClientSecret:               getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
+		DiscordRedirectURI:                getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
+		TurnstileSecretKey:                getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
+		PasswordResetTokenTTLSecs:         getEnvOrDefaultInt("PASSWORD_RESET_TOKEN_TTL_SEC", 3600),
+		EmailVerificationTokenTTLSecs:     getEnvOrDefaultInt("EMAIL_VERIFICATION_TOKEN_TTL_SEC", 86400),
+		CheckoutReminderDisabled:          getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "1" || getEnvOrDefault("CHECKOUT_REMINDER_DISABLED", "") == "true",
+		CheckoutReminderDelayMinutes:      getEnvOrDefaultInt("CHECKOUT_REMINDER_DELAY_MINUTES", 45),
+		CheckoutReminderLookbackDays:      getEnvOrDefaultInt("CHECKOUT_REMINDER_LOOKBACK_DAYS", 14),
+		WinbackEmailEnabled:               getEnvOrDefault("WINBACK_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("WINBACK_EMAIL_ENABLED", "") == "true",
+		WinbackInactivityDays:             getEnvOrDefaultInt("WINBACK_INACTIVITY_DAYS", 30),
+		WinbackCooldownDays:               getEnvOrDefaultInt("WINBACK_COOLDOWN_DAYS", 90),
+		WinbackBatchLimit:                 getEnvOrDefaultInt("WINBACK_BATCH_LIMIT", 50),
+		WinbackTemplateSlug:               strings.TrimSpace(getEnvOrDefault("WINBACK_TEMPLATE_SLUG", "winback-soft")),
+		WinbackHookLine:                   strings.TrimSpace(getEnvOrDefault("WINBACK_HOOK_LINE", "Dodaliśmy nowe materiały i poprawiliśmy wyszukiwanie — warto rzucić okiem.")),
+		WinbackCtaPath:                    strings.TrimSpace(getEnvOrDefault("WINBACK_CTA_PATH", "/models")),
+		WinbackSiteName:                   strings.TrimSpace(getEnvOrDefault("WINBACK_SITE_NAME", "Dyskiof")),
+		WinbackFirstNameFallback:          strings.TrimSpace(getEnvOrDefault("WINBACK_FIRSTNAME_FALLBACK", "Tam")),
+		WinbackTemplateDefaultsJSON:       strings.TrimSpace(getEnvOrDefault("WINBACK_TEMPLATE_DEFAULTS_JSON", "")),
+		SocialProofEmailEnabled:           getEnvOrDefault("SOCIAL_PROOF_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("SOCIAL_PROOF_EMAIL_ENABLED", "") == "true",
+		SocialProofTemplateSlug:           strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TEMPLATE_SLUG", "social-proof-drop")),
+		SocialProofInactivityDays:         getEnvOrDefaultInt("SOCIAL_PROOF_INACTIVITY_DAYS", 14),
+		SocialProofCooldownDays:           getEnvOrDefaultInt("SOCIAL_PROOF_COOLDOWN_DAYS", 45),
+		SocialProofEngagementLookbackDays: getEnvOrDefaultInt("SOCIAL_PROOF_ENGAGEMENT_LOOKBACK_DAYS", 90),
+		SocialProofBatchLimit:             getEnvOrDefaultInt("SOCIAL_PROOF_BATCH_LIMIT", 40),
+		SocialProofTrendingTitle:          strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TRENDING_TITLE", "")),
+		SocialProofProofLine:              strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_PROOF_LINE", "")),
+		SocialProofCtaPath:                strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_CTA_PATH", "/models")),
+		SocialProofTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("SOCIAL_PROOF_TEMPLATE_DEFAULTS_JSON", "")),
 		FavoriteNudgeEmailEnabled:         getEnvOrDefault("FAVORITE_NUDGE_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("FAVORITE_NUDGE_EMAIL_ENABLED", "") == "true",
 		FavoriteNudgeTemplateSlug:         strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TEMPLATE_SLUG", "")),
 		FavoriteNudgeHookLine:             strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_HOOK_LINE", "")),
 		FavoriteNudgeCtaPath:              strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_CTA_PATH", "/models")),
 		FavoriteNudgeTrendingTitle:        strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TRENDING_TITLE", "")),
 		FavoriteNudgeProofLine:            strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_PROOF_LINE", "")),
-		FavoriteNudgeTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON", "")),
-		RepeatBuyerPromoEmailEnabled:     getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "true",
-		RepeatBuyerPromoCode:            strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_PROMO_CODE", "DYSKIOF10BK")),
-		RepeatBuyerTemplateSlug:          strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_SLUG", "repeat-buyer-10")),
-		RepeatBuyerAbLinkSlugs:           strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_AB_LINK_SLUGS", "vip10-a,vip10-b,vip10-c")),
-		RepeatBuyerBatchLimit:            getEnvOrDefaultInt("REPEAT_BUYER_BATCH_LIMIT", 120),
-		RepeatBuyerTemplateDefaultsJSON: strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_DEFAULTS_JSON", "")),
+		FavoriteNudgeTemplateDefaultsJSON: strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON", "")),
+		RepeatBuyerPromoEmailEnabled:      getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "true",
+		RepeatBuyerPromoCode:              strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_PROMO_CODE", "DYSKIOF10BK")),
+		RepeatBuyerTemplateSlug:           strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_SLUG", "repeat-buyer-10")),
+		RepeatBuyerAbLinkSlugs:            strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_AB_LINK_SLUGS", "vip10-a,vip10-b,vip10-c")),
+		RepeatBuyerBatchLimit:             getEnvOrDefaultInt("REPEAT_BUYER_BATCH_LIMIT", 120),
+		RepeatBuyerTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_DEFAULTS_JSON", "")),
 	}
 
 	cfg.MarketingCronSpec = strings.TrimSpace(getEnvOrDefault("MARKETING_CRON", ""))

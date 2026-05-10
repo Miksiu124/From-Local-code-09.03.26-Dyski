@@ -158,14 +158,14 @@ func (h *Handler) List(c echo.Context) error {
 	defer rows.Close()
 
 	type FavItem struct {
-		ID            string  `json:"id"`
-		ContentItemID string  `json:"contentItemId"`
-		ContentType   string  `json:"contentType"`
-		Duration      *int    `json:"duration"`
-		ThumbnailURL  string  `json:"thumbnailUrl,omitempty"`
-		ModelName     string  `json:"modelName"`
-		ModelSlug     string  `json:"modelSlug"`
-		CreatedAt     string  `json:"createdAt"`
+		ID            string `json:"id"`
+		ContentItemID string `json:"contentItemId"`
+		ContentType   string `json:"contentType"`
+		Duration      *int   `json:"duration"`
+		ThumbnailURL  string `json:"thumbnailUrl,omitempty"`
+		ModelName     string `json:"modelName"`
+		ModelSlug     string `json:"modelSlug"`
+		CreatedAt     string `json:"createdAt"`
 	}
 
 	var items []FavItem
@@ -342,11 +342,11 @@ func (h *Handler) GetDetails(c echo.Context) error {
 			"folderName": modelFolder,
 		},
 		"contentItem": map[string]interface{}{
-			"id":            ciID,
-			"contentType":   ciType,
-			"duration":      ciDuration,
-			"thumbnailUrl":  thumbURL,
-			"hasSourceMp4":  hasSourceMp4,
+			"id":           ciID,
+			"contentType":  ciType,
+			"duration":     ciDuration,
+			"thumbnailUrl": thumbURL,
+			"hasSourceMp4": hasSourceMp4,
 		},
 		"hasAccess":  hasAccess,
 		"prevItemId": prevID,

@@ -296,7 +296,7 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 	err := h.db.QueryRow(ctx, `
 		SELECT thumbnail_path, hls_folder_path, model_id FROM content_items WHERE id = $1 AND is_active = true AND is_hidden = false
 	`, contentItemID).Scan(&thumbnailPath, &hlsFolderPath, &modelID)
-	
+
 	if err != nil {
 		return common.NotFound(c, "Content item not found")
 	}
@@ -327,7 +327,7 @@ func (h *Handler) Thumbnail(c echo.Context) error {
 		// NEW PATTERN: adjacent _thumbnail.webp file
 		// e.g. folder/movie_source -> folder/movie_source_thumbnail.webp
 		targets = append(targets, base+"_thumbnail.webp")
-		
+
 		// Also try appending _source_thumbnail.webp if the base doesn't have it (just in case)
 		targets = append(targets, base+"_source_thumbnail.webp")
 
@@ -1001,11 +1001,11 @@ func (h *Handler) GetContentDetails(c echo.Context) error {
 	thumbURL := h.cdnThumbnailURL(ciThumbnail, ciHlsFolder)
 	hasSourceMp4 := ciSourceVideo != nil && strings.TrimSpace(*ciSourceVideo) != ""
 	contentItem := map[string]interface{}{
-		"id":            ciID,
-		"contentType":   ciType,
-		"duration":      ciDuration,
-		"thumbnailUrl":  thumbURL,
-		"hasSourceMp4":  hasSourceMp4,
+		"id":           ciID,
+		"contentType":  ciType,
+		"duration":     ciDuration,
+		"thumbnailUrl": thumbURL,
+		"hasSourceMp4": hasSourceMp4,
 	}
 
 	return common.Success(c, map[string]interface{}{

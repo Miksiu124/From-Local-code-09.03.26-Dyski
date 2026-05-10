@@ -42,9 +42,9 @@ func TestSortDirection(t *testing.T) {
 	}{
 		{"asc", "asc"},
 		{"desc", "desc"},
-		{"ASC", "desc"},   // not "asc", falls through
-		{"", "desc"},      // default
-		{"DROP", "desc"},  // injection attempt
+		{"ASC", "desc"},  // not "asc", falls through
+		{"", "desc"},     // default
+		{"DROP", "desc"}, // injection attempt
 		{"asc;--", "desc"},
 	}
 

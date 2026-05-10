@@ -30,10 +30,10 @@ func TestParseSourceSegmentUID(t *testing.T) {
 
 func TestParseVideoM3U8Key(t *testing.T) {
 	tests := []struct {
-		key       string
-		wantUID   string
-		wantHLS   string
-		ok        bool
+		key     string
+		wantUID string
+		wantHLS string
+		ok      bool
 	}{
 		{"models/foo/abc_source/master.m3u8", "abc", "models/foo/abc_source", true},
 		{"models/foo/abc_source (1)/master.m3u8", "abc", "models/foo/abc_source (1)", true},

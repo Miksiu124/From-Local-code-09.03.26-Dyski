@@ -36,8 +36,8 @@ func NewHandler(db *pgxpool.Pool, cfg *config.Config, redisClient *redis.Client)
 }
 
 type pricingConfig struct {
-	modelCost7d  int
-	modelCost30d int
+	modelCost7d   int
+	modelCost30d  int
 	bundleCost14d int
 	bundleCost30d int
 }

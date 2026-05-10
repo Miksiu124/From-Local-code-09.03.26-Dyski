@@ -3,9 +3,10 @@ package observability
 import "strings"
 
 // HTTP log bucket for Loki/Grafana: operator-facing API vs public app traffic vs the rest.
-//   server — /api/admin/* (R2 sync, import, moderacja, approval proofów, …)
-//   user   — pozostałe /api/* (content, purchase, auth, modele, …)
-//   misc   — /health, brak trasy, nietypiczne ścieżki
+//
+//	server — /api/admin/* (R2 sync, import, moderacja, approval proofów, …)
+//	user   — pozostałe /api/* (content, purchase, auth, modele, …)
+//	misc   — /health, brak trasy, nietypiczne ścieżki
 func HTTPLogCategory(echoPath string) string {
 	p := echoPath
 	if p == "" {

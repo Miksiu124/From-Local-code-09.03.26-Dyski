@@ -201,11 +201,11 @@ type PurchaseInfo struct {
 	ApprovedByDisplay string
 
 	// Attribution (same logic as admin payments list: custom /l/ link vs user referral).
-	FromCustomLink          bool
-	CustomLinkSlug          string
-	FromUserReferral        bool
-	ReferralReferrerEmail   string
-	ReferralReferrerName    string
+	FromCustomLink        bool
+	CustomLinkSlug        string
+	FromUserReferral      bool
+	ReferralReferrerEmail string
+	ReferralReferrerName  string
 }
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
@@ -431,12 +431,12 @@ func (n *Notifier) NotifyPurchaseExpired(ctx context.Context, info PurchaseInfo)
 
 // DailyRevenueSummary is sent once per calendar day (Warsaw) to the configured Discord webhook.
 type DailyRevenueSummary struct {
-	DateLabel    string
-	TotalAmount  float64
-	Count        int64
-	MethodsLine  string
-	AdminsLine   string
-	HasActivity  bool
+	DateLabel   string
+	TotalAmount float64
+	Count       int64
+	MethodsLine string
+	AdminsLine  string
+	HasActivity bool
 }
 
 // NotifyDailyRevenueReport posts a daily revenue embed (no @role ping).

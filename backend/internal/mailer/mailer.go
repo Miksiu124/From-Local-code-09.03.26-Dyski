@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	smtpDialTimeout   = 15 * time.Second
-	smtpMaxRetries    = 4
-	smtpRetryDelay    = 1 * time.Second
-	smtpRetryBackoff  = 2.0
-	plnToUsd          = 4 // 4 PLN = 1 USD
+	smtpDialTimeout  = 15 * time.Second
+	smtpMaxRetries   = 4
+	smtpRetryDelay   = 1 * time.Second
+	smtpRetryBackoff = 2.0
+	plnToUsd         = 4 // 4 PLN = 1 USD
 )
 
 type Mailer struct {

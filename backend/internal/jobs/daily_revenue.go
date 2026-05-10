@@ -106,12 +106,12 @@ func RunDailyRevenueReport(ctx context.Context, db *pgxpool.Pool, rdb *redis.Cli
 	}
 
 	report := discord.DailyRevenueSummary{
-		DateLabel:    dateKey + " (Europe/Warsaw)",
-		TotalAmount:  total,
-		Count:        cnt,
-		MethodsLine:  methodsLine,
-		AdminsLine:   adminsLine,
-		HasActivity:  cnt > 0,
+		DateLabel:   dateKey + " (Europe/Warsaw)",
+		TotalAmount: total,
+		Count:       cnt,
+		MethodsLine: methodsLine,
+		AdminsLine:  adminsLine,
+		HasActivity: cnt > 0,
 	}
 	notifier.NotifyDailyRevenueReport(ctx, report)
 	log.Printf("[DailyRevenueReport] sent for %s total=%.2f count=%d", dateKey, total, cnt)

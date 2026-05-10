@@ -194,18 +194,18 @@ func buildRepeatBuyerVariableMap(cfg *config.Config, required []string, displayN
 	sn := siteName(cfg)
 
 	aliases := map[string]string{
-		"firstName":        fn,
-		"firstname":        fn,
-		"FirstName":        fn,
-		"hookLine":         hookLine,
-		"ctaUrl":           ctaURL,
-		"promoCode":        promoCode,
-		"promoTerms":       promoTerms,
-		"unsubscribeUrl":   unsubURL,
-		"siteName":         sn,
-		"lastname":         "",
-		"lastName":         "",
-		"stat1":            "",
+		"firstName":      fn,
+		"firstname":      fn,
+		"FirstName":      fn,
+		"hookLine":       hookLine,
+		"ctaUrl":         ctaURL,
+		"promoCode":      promoCode,
+		"promoTerms":     promoTerms,
+		"unsubscribeUrl": unsubURL,
+		"siteName":       sn,
+		"lastname":       "",
+		"lastName":       "",
+		"stat1":          "",
 	}
 
 	out := make(map[string]string)

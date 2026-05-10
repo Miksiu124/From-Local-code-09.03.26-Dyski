@@ -17,18 +17,18 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
-	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/credits"
 	"content-platform-backend/internal/database"
+	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/favorites"
 	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/jobs"
 	"content-platform-backend/internal/links"
 	"content-platform-backend/internal/mailer"
-	"content-platform-backend/internal/middleware"
-	"content-platform-backend/internal/marketing/campaigns"
 	"content-platform-backend/internal/marketing"
+	"content-platform-backend/internal/marketing/campaigns"
+	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
 	"content-platform-backend/internal/observability"
@@ -91,7 +91,7 @@ func main() {
 	// ── Echo server ──────────────────────────────────────────────────────
 	e := echo.New()
 	e.HideBanner = true
-	
+
 	// SECURITY PATTERN: Ufamy tylko zweryfikowanemu przez Nginx nagłówkowi X-Real-IP, zapobiegając fałszowaniu IP przez hakera w X-Forwarded-For
 	e.IPExtractor = echo.ExtractIPFromRealIPHeader()
 
@@ -120,7 +120,7 @@ func main() {
 		if he, ok := err.(*echo.HTTPError); ok {
 			code = he.Code
 		}
-		
+
 		// If headers were already sent, just return
 		if c.Response().Committed {
 			return
@@ -232,7 +232,7 @@ func main() {
 
 	// Content streaming (requires auth + access)
 	contentHandler := content.NewHandler(pgPool, r2Client, cfg, redisClient)
-	
+
 	// Model images (public)
 	api.GET("/models/:slug/avatar", contentHandler.ModelAvatar)
 	api.GET("/models/:slug/header", contentHandler.ModelHeader)
@@ -266,7 +266,7 @@ func main() {
 	// Purchases (requires auth)
 	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient)
 	api.POST("/purchases", purchasesHandler.Create, authMW.Authenticate, authMW.RequireEmailVerified)
-    api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
+	api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
 
 	// Favorites (requires auth)
 	favoritesHandler := favorites.NewHandler(pgPool, cfg)
