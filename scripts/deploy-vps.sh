@@ -10,6 +10,7 @@
 #   --lgtm         = grafana/otel-lgtm; brak .env.lgtm → kopia z .env.lgtm.example
 # Wymaga: rsync, ssh
 # Polaczenie: domyslnie z ContentManager/.env.deploy (VPS_HOST, VPS_USER, VPS_PATH). Mozesz nadpisac zmienne srodowiskowe.
+# CI/GitHub Actions: automatycznie odpala na serwerze `scripts/rollout-on-vps.sh` (.github/workflows/deploy.yml).
 # Wolumen Postgresa / LGTM: skrypt na serwerze wczytuje scripts/compose-vps-files.sh (jak vps-rebuild) —
 # użyj .env / .env.vps (VPS_USE_POSTGRES_CLUSTER, COMPOSE_FILE=...) albo lokalny .env.deploy tylko do tego logu.
 

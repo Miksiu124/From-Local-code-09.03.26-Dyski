@@ -1,0 +1,69 @@
+name: Deploy (VPS rolling)
+
+on:
+  workflow_run:
+    workflows:
+      - Tests
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: vps-rollout-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (
+        github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.head_branch == 'main'
+        && github.event.workflow_run.event == 'push'
+      )
+
+    steps:
+      - name: Decide deploy branch
+        id: gitref
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            echo "branch=main" >> "${GITHUB_OUTPUT}"
+          else
+            echo "branch=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Rolling deploy via SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
+          CONTENTMANAGER_GIT_BRANCH: ${{ steps.gitref.outputs.branch }}
+        run: |
+          set -euo pipefail
+          for name in VPS_SSH_PRIVATE_KEY VPS_HOST VPS_USER VPS_PATH; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing GitHub Actions secret ${name} — add Repository secrets before deploy."
+              exit 1
+            fi
+          done
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "${SSH_PRIVATE_KEY}" > ~/.ssh/vps_deploy
+          chmod 600 ~/.ssh/vps_deploy
+          ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          q_path="$(printf '%q' "${VPS_PATH}")"
+          q_branch="$(printf '%q' "${CONTENTMANAGER_GIT_BRANCH}")"
+          ssh -i ~/.ssh/vps_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+            "${VPS_USER}@${VPS_HOST}" \
+            bash -lc "cd ${q_path} && CONTENTMANAGER_GIT_BRANCH=${q_branch} bash scripts/rollout-on-vps.sh"
