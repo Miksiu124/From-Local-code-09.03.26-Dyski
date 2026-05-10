@@ -63,7 +63,6 @@ export function VideoPlayer({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
-  const [buffered, setBuffered] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -94,6 +93,10 @@ export function VideoPlayer({
   const qualityMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [qualityMenuRect, setQualityMenuRect] = useState<{ top: number; right: number } | null>(null);
+  /** Coalesce timeupdate → fewer React commits while keeping the bar smooth enough */
+  const lastUiTimeRef = useRef<number>(-1);
+  const hideMouseMoveRafRef = useRef<number | null>(null);
+  const hoverMoveRafRef = useRef<number | null>(null);
 
   const MAX_AUTO_RETRIES = 2;
   const LOADING_TIMEOUT_MS = 25_000;
@@ -186,6 +189,7 @@ export function VideoPlayer({
     lastVideoWallMsRef.current = 0;
     lastEmittedAccumulatedWatchRef.current = 0;
     finalEngagementSentRef.current = false;
+    lastUiTimeRef.current = -1;
   }, [contentItemId]);
 
   useEffect(() => {
@@ -247,7 +251,7 @@ export function VideoPlayer({
       // Reset UI state from previous video so we don't show stale progress/time
       setCurrentTime(0);
       setDuration(0);
-      setBuffered(0);
+      lastUiTimeRef.current = -1;
       setPlaying(false);
       setHlsError(null);
       if (loadingTimeoutRef.current) {
@@ -460,19 +464,29 @@ export function VideoPlayer({
     setInitKey((k) => k + 1);
   }, []);
 
-  // Video event listeners — throttle timeupdate (fires ~4/sec) to reduce React re-renders
+  // Video event listeners — RAF-coalesce timeupdate; quantize UI time to cut React commits
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     /** Powyżej: typowy klatkowy przyrost; poniżej: seek (nagły skok bez czasu ściennego). */
     const SEEK_JUMP_THRESHOLD_SEC = 1.75;
+    /** ~20 UI updates/sec during play; seek/pause flush immediately */
+    const UI_TIME_EPS_SEC = 0.05;
 
     const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPause = () => {
+      setPlaying(false);
+      const t = video.currentTime;
+      lastUiTimeRef.current = t;
+      setCurrentTime(t);
+    };
     const onSeeked = () => {
-      lastVideoTimeForWatchRef.current = video.currentTime;
+      const t = video.currentTime;
+      lastVideoTimeForWatchRef.current = t;
       lastVideoWallMsRef.current = performance.now();
+      lastUiTimeRef.current = t;
+      setCurrentTime(t);
     };
     let timeupdateRaf: number | null = null;
     const onTimeUpdate = () => {
@@ -481,10 +495,12 @@ export function VideoPlayer({
         timeupdateRaf = null;
         const v = videoRef.current;
         if (!v) return;
-        setCurrentTime(v.currentTime);
-        if (v.seeking) return;
-
         const t = v.currentTime;
+        if (Math.abs(t - lastUiTimeRef.current) >= UI_TIME_EPS_SEC) {
+          lastUiTimeRef.current = t;
+          setCurrentTime(t);
+        }
+        if (v.seeking) return;
         const now = performance.now();
         const lastT = lastVideoTimeForWatchRef.current;
         const lastWall = lastVideoWallMsRef.current;
@@ -509,11 +525,6 @@ export function VideoPlayer({
       });
     };
     const onDurationChange = () => setDuration(video.duration || 0);
-    const onProgress = () => {
-      if (video.buffered.length > 0) {
-        setBuffered(video.buffered.end(video.buffered.length - 1));
-      }
-    };
     const onWaiting = () => setLoading(true);
     const onCanPlay = () => {
       if (loadingTimeoutRef.current) {
@@ -532,7 +543,6 @@ export function VideoPlayer({
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("durationchange", onDurationChange);
-    video.addEventListener("progress", onProgress);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("canplay", onCanPlay);
     video.addEventListener("volumechange", onVolumeChange);
@@ -544,7 +554,6 @@ export function VideoPlayer({
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("durationchange", onDurationChange);
-      video.removeEventListener("progress", onProgress);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("volumechange", onVolumeChange);
@@ -593,8 +602,22 @@ export function VideoPlayer({
 
   useEffect(() => {
     resetHideTimer();
-    return () => { if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current); };
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+      if (hideMouseMoveRafRef.current != null) {
+        cancelAnimationFrame(hideMouseMoveRafRef.current);
+        hideMouseMoveRafRef.current = null;
+      }
+    };
   }, [playing, resetHideTimer]);
+
+  const resetHideTimerThrottled = useCallback(() => {
+    if (hideMouseMoveRafRef.current != null) return;
+    hideMouseMoveRafRef.current = requestAnimationFrame(() => {
+      hideMouseMoveRafRef.current = null;
+      resetHideTimer();
+    });
+  }, [resetHideTimer]);
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -646,12 +669,17 @@ export function VideoPlayer({
   }, [duration, resetHideTimer]);
 
   const handleProgressHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const bar = progressRef.current;
-    if (!bar || !duration) return;
-    const rect = bar.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setHoverTime(pct * duration);
-    setHoverX(e.clientX - rect.left);
+    const clientX = e.clientX;
+    if (hoverMoveRafRef.current != null) return;
+    hoverMoveRafRef.current = requestAnimationFrame(() => {
+      hoverMoveRafRef.current = null;
+      const bar = progressRef.current;
+      if (!bar || !duration) return;
+      const rect = bar.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      setHoverTime(pct * duration);
+      setHoverX(clientX - rect.left);
+    });
   }, [duration]);
 
   const toggleFullscreen = useCallback(() => {
@@ -918,7 +946,7 @@ export function VideoPlayer({
           : "aspect-video",
       )}
       style={{ touchAction: "manipulation" } as React.CSSProperties}
-      onMouseMove={resetHideTimer}
+      onMouseMove={resetHideTimerThrottled}
       onMouseLeave={() => { if (playing) setShowControls(false); }}
       onClick={handleContainerClick}
       tabIndex={0}
@@ -1017,7 +1045,13 @@ export function VideoPlayer({
           onClick={(e) => { e.stopPropagation(); handleSeek(e); }}
           onTouchEnd={(e) => { e.stopPropagation(); handleSeek(e); }}
           onMouseMove={(e) => { e.stopPropagation(); handleProgressHover(e); }}
-          onMouseLeave={() => setHoverTime(null)}
+          onMouseLeave={() => {
+            if (hoverMoveRafRef.current != null) {
+              cancelAnimationFrame(hoverMoveRafRef.current);
+              hoverMoveRafRef.current = null;
+            }
+            setHoverTime(null);
+          }}
           style={{ touchAction: "none" } as React.CSSProperties}
         >
           {/* Progress fill only — buffered removed to avoid double-bar appearance */}
