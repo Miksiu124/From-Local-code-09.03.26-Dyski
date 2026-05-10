@@ -64,6 +64,7 @@ jobs:
           ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
           q_path="$(printf '%q' "${VPS_PATH}")"
           q_branch="$(printf '%q' "${CONTENTMANAGER_GIT_BRANCH}")"
+          # Absolute path avoids `cd`/cwd surprises if secrets differ subtly from SSH login shell defaults.
           ssh -i ~/.ssh/vps_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
             "${VPS_USER}@${VPS_HOST}" \
-            bash -lc "cd ${q_path} && CONTENTMANAGER_GIT_BRANCH=${q_branch} bash scripts/rollout-on-vps.sh"
+            bash -lc "CONTENTMANAGER_GIT_BRANCH=${q_branch} bash ${q_path}/scripts/rollout-on-vps.sh"
