@@ -328,10 +328,10 @@ func (h *Handler) GetCustomLinkAnalytics(c echo.Context) error {
 	_ = h.db.QueryRow(ctx, `SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM credit_purchases WHERE custom_link_id = $1 AND status = 'APPROVED'`, id).Scan(&purchasesCount, &revenue)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"daily":               daily,
-		"referers":            referers,
-		"registrationsCount":  registrationsCount,
-		"purchasesCount":      purchasesCount,
-		"revenue":             revenue,
+		"daily":              daily,
+		"referers":           referers,
+		"registrationsCount": registrationsCount,
+		"purchasesCount":     purchasesCount,
+		"revenue":            revenue,
 	})
 }

@@ -174,13 +174,13 @@ func buildSocialProofVariableMap(cfg *config.Config, required []string, displayN
 	sn := siteName(cfg)
 
 	aliases := map[string]string{
-		"firstName":        fn,
-		"firstname":        fn,
-		"trendingTitle":    title,
-		"proofLine":        proof,
-		"ctaUrl":           cta,
-		"unsubscribeUrl":   unsubURL,
-		"siteName":         sn,
+		"firstName":      fn,
+		"firstname":      fn,
+		"trendingTitle":  title,
+		"proofLine":      proof,
+		"ctaUrl":         cta,
+		"unsubscribeUrl": unsubURL,
+		"siteName":       sn,
 	}
 
 	out := make(map[string]string)

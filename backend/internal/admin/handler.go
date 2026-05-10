@@ -19,10 +19,10 @@ import (
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
-	"content-platform-backend/internal/growth"
-	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/discord"
+	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/mailer"
+	"content-platform-backend/internal/middleware"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -84,29 +84,29 @@ func validateDiscordWebhookURL(value interface{}) string {
 
 // allowedSettingsKeys — whitelist for UpdateSettings (security: prevent arbitrary key injection)
 var allowedSettingsKeys = map[string]bool{
-	"blik_enabled":                 true,
-	"blik_expiration_minutes":      true,
-	"default_country_id":          true,
-	"max_pending_credit_purchases": true,
-	"crypto_wallets":               true,
-	"paypal_address":               true,
-	"revolut_address":              true,
-	"discord_webhook_url":          true,
-	"discord_ping_role_id":         true,
-	"model_credit_cost_7d":         true,
-	"model_credit_cost_30d":        true,
-	"bundle_credit_cost_14d":       true,
-	"bundle_credit_cost_30d":       true,
-	"crypto_expiration_hours":      true,
-	"paypal_expiration_hours":      true,
-	"revolut_expiration_hours":     true,
-	"liczba_credit_card_14d":       true,
-	"liczba_credit_card_30d":       true,
-	"referral_credits_referrer":    true,
+	"blik_enabled":                   true,
+	"blik_expiration_minutes":        true,
+	"default_country_id":             true,
+	"max_pending_credit_purchases":   true,
+	"crypto_wallets":                 true,
+	"paypal_address":                 true,
+	"revolut_address":                true,
+	"discord_webhook_url":            true,
+	"discord_ping_role_id":           true,
+	"model_credit_cost_7d":           true,
+	"model_credit_cost_30d":          true,
+	"bundle_credit_cost_14d":         true,
+	"bundle_credit_cost_30d":         true,
+	"crypto_expiration_hours":        true,
+	"paypal_expiration_hours":        true,
+	"revolut_expiration_hours":       true,
+	"liczba_credit_card_14d":         true,
+	"liczba_credit_card_30d":         true,
+	"referral_credits_referrer":      true,
 	"referral_bonus_percent_referee": true,
-	"referral_max_per_user":       true,
-	"referral_min_purchase_amount": true,
-	"referral_cooldown_hours":     true,
+	"referral_max_per_user":          true,
+	"referral_min_purchase_amount":   true,
+	"referral_cooldown_hours":        true,
 }
 
 type Handler struct {
@@ -703,18 +703,18 @@ func (h *Handler) GetUser(c echo.Context) error {
 	}
 
 	return common.Success(c, map[string]interface{}{
-		"id":            id,
-		"email":         email,
-		"name":          name,
-		"role":          role,
-		"creditBalance": balance,
-		"isBanned":      isBanned,
-		"avatarUrl":     avatarUrl,
-		"createdAt":     createdAt,
-		"lastLoginAt":   lastLogin,
-		"purchases":     purchasesList,
+		"id":              id,
+		"email":           email,
+		"name":            name,
+		"role":            role,
+		"creditBalance":   balance,
+		"isBanned":        isBanned,
+		"avatarUrl":       avatarUrl,
+		"createdAt":       createdAt,
+		"lastLoginAt":     lastLogin,
+		"purchases":       purchasesList,
 		"creditPurchases": cpList,
-		"userAccess":    uaList,
+		"userAccess":      uaList,
 	})
 }
 
@@ -775,7 +775,7 @@ func (h *Handler) UpdateUserCredits(c echo.Context) error {
 		Credits int `json:"credits"` // Delta or absolute? Let's assume SET absolute or ADD delta. Usage implies "give/take".
 		// Let's implement ADD (positive) / REMOVE (negative) via a "delta" field, or just set absolute.
 		// Use "amount" for delta.
-		Amount int `json:"amount"` 
+		Amount int    `json:"amount"`
 		Reason string `json:"reason"`
 	}
 	if err := c.Bind(&req); err != nil {
@@ -783,26 +783,32 @@ func (h *Handler) UpdateUserCredits(c echo.Context) error {
 	}
 
 	tx, err := h.db.Begin(ctx)
-	if err != nil { return common.InternalError(c) }
+	if err != nil {
+		return common.InternalError(c)
+	}
 	defer tx.Rollback(ctx)
 
 	// Update balance
 	_, err = tx.Exec(ctx, `UPDATE users SET credit_balance = credit_balance + $1 WHERE id = $2`, req.Amount, userID)
-	if err != nil { return common.InternalError(c) }
+	if err != nil {
+		return common.InternalError(c)
+	}
 
 	// Record transaction
 	_, err = tx.Exec(ctx, `
 		INSERT INTO credit_transactions (user_id, type, amount, description)
 		VALUES ($1, 'ADJUSTMENT', $2, $3)
 	`, userID, req.Amount, req.Reason)
-	// Note: 'ADJUSTMENT' needs to be added to enum or mapped to 'PURCHASE'/'SPEND'. 
-	// Enum is: PURCHASE, SPEND, REFUND. 
+	// Note: 'ADJUSTMENT' needs to be added to enum or mapped to 'PURCHASE'/'SPEND'.
+	// Enum is: PURCHASE, SPEND, REFUND.
 	// If amount > 0, treat as REFUND (or similar), < 0 as SPEND.
 	// Or alter enum.
 	// Let's use 'REFUND' for positive and 'SPEND' for negative for now, or just 'PURCHASE' with note.
 	// Actually, let's add ADJUSTMENT to enum in migration.
-	
-	if err := tx.Commit(ctx); err != nil { return common.InternalError(c) }
+
+	if err := tx.Commit(ctx); err != nil {
+		return common.InternalError(c)
+	}
 
 	return common.Success(c, map[string]bool{"success": true})
 }
@@ -817,11 +823,15 @@ func (h *Handler) ToggleBan(c echo.Context) error {
 	var req struct {
 		IsBanned bool `json:"isBanned"`
 	}
-	if err := c.Bind(&req); err != nil { return common.BadRequest(c, "Invalid request body") }
+	if err := c.Bind(&req); err != nil {
+		return common.BadRequest(c, "Invalid request body")
+	}
 
 	_, err := h.db.Exec(ctx, `UPDATE users SET is_banned = $1 WHERE id = $2`, req.IsBanned, userID)
-	if err != nil { return common.InternalError(c) }
-	
+	if err != nil {
+		return common.InternalError(c)
+	}
+
 	return common.Success(c, map[string]bool{"success": true})
 }
 
@@ -1099,15 +1109,15 @@ func (h *Handler) ListPromoCodes(c echo.Context) error {
 func (h *Handler) CreatePromoCode(c echo.Context) error {
 	ctx := c.Request().Context()
 	var req struct {
-		Code                string   `json:"code"`
-		DiscountType        string   `json:"discountType"`
-		DiscountValue         int      `json:"discountValue"`
-		MinPurchaseCredits    int      `json:"minPurchaseCredits"`
-		MinPurchaseAmount     *float64 `json:"minPurchaseAmount"`
-		MaxUses               *int     `json:"maxUses"`
-		ExpiresAt             *string  `json:"expiresAt"`
-		OncePerUser           bool     `json:"oncePerUser"`
-		FirstPurchaseOnly     bool     `json:"firstPurchaseOnly"`
+		Code               string   `json:"code"`
+		DiscountType       string   `json:"discountType"`
+		DiscountValue      int      `json:"discountValue"`
+		MinPurchaseCredits int      `json:"minPurchaseCredits"`
+		MinPurchaseAmount  *float64 `json:"minPurchaseAmount"`
+		MaxUses            *int     `json:"maxUses"`
+		ExpiresAt          *string  `json:"expiresAt"`
+		OncePerUser        bool     `json:"oncePerUser"`
+		FirstPurchaseOnly  bool     `json:"firstPurchaseOnly"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return common.BadRequest(c, "Invalid request body")
@@ -1167,16 +1177,16 @@ func (h *Handler) UpdatePromoCode(c echo.Context) error {
 	ctx := c.Request().Context()
 	promoID := c.Param("id")
 	var req struct {
-		Code                *string  `json:"code"`
-		DiscountType        *string  `json:"discountType"`
-		DiscountValue       *int     `json:"discountValue"`
-		MinPurchaseCredits  *int     `json:"minPurchaseCredits"`
-		MinPurchaseAmount   *float64 `json:"minPurchaseAmount"`
-		MaxUses             *int     `json:"maxUses"`
-		ExpiresAt           *string  `json:"expiresAt"`
-		IsActive            *bool    `json:"isActive"`
-		OncePerUser         *bool    `json:"oncePerUser"`
-		FirstPurchaseOnly   *bool    `json:"firstPurchaseOnly"`
+		Code               *string  `json:"code"`
+		DiscountType       *string  `json:"discountType"`
+		DiscountValue      *int     `json:"discountValue"`
+		MinPurchaseCredits *int     `json:"minPurchaseCredits"`
+		MinPurchaseAmount  *float64 `json:"minPurchaseAmount"`
+		MaxUses            *int     `json:"maxUses"`
+		ExpiresAt          *string  `json:"expiresAt"`
+		IsActive           *bool    `json:"isActive"`
+		OncePerUser        *bool    `json:"oncePerUser"`
+		FirstPurchaseOnly  *bool    `json:"firstPurchaseOnly"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return common.BadRequest(c, "Invalid request body")
@@ -1316,8 +1326,8 @@ func (h *Handler) GetSettings(c echo.Context) error {
 			continue
 		}
 		settings = append(settings, map[string]interface{}{
-			"key": key,
-			"value": value,
+			"key":         key,
+			"value":       value,
 			"description": desc,
 		})
 	}
@@ -1484,9 +1494,9 @@ func (h *Handler) SyncR2(c echo.Context) error {
 
 	h.invalidateContentCaches(ctx)
 	return common.Success(c, map[string]interface{}{
-		"syncedModels":   len(synced),
+		"syncedModels":    len(synced),
 		"newContentItems": totalImported,
-		"totalObjects":   totalObjects,
+		"totalObjects":    totalObjects,
 	})
 }
 
@@ -1963,7 +1973,7 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 			"totalSpent":  totalSpent,
 		},
 		"revenue": map[string]float64{
-			"total":  totalRevenue,
+			"total":   totalRevenue,
 			"last30d": revenue30d,
 			"last7d":  revenue7d,
 		},
@@ -1973,10 +1983,10 @@ func (h *Handler) GetAnalytics(c echo.Context) error {
 			"recent":   recent,
 		},
 		"purchases": map[string]int{
-			"total":               totalPurchases,
-			"usersWithPurchase":   usersWithPurchase,
-			"bundles":             bundlePurchases,
-			"individual":          individualPurchases,
+			"total":             totalPurchases,
+			"usersWithPurchase": usersWithPurchase,
+			"bundles":           bundlePurchases,
+			"individual":        individualPurchases,
 		},
 		"topSellers": topSellers,
 		"referral": map[string]interface{}{
@@ -2000,19 +2010,19 @@ func pgErrCode(err error) string {
 
 // ContentPerformanceRow is one row for /api/admin/content-performance.
 type ContentPerformanceRow struct {
-	ContentItemID     string  `json:"contentItemId"`
-	ContentType       string  `json:"contentType"`
-	ModelFolderName   string  `json:"modelFolderName"`
-	ModelName         string  `json:"modelName"`
-	ThumbOpens        int64   `json:"thumbOpens"`
-	DetailViews       int64   `json:"detailViews"`
-	FirstPlays        int64   `json:"firstPlays"`
-	PhotoFirstViews   int64   `json:"photoFirstViews"`
-	TotalWatchSeconds float64 `json:"totalWatchSeconds"`
-	EngagementSessions int64  `json:"engagementSessions"`
-	AvgWatchSeconds   float64 `json:"avgWatchSeconds"`
-	HasSourceFile     bool    `json:"hasSourceFile"`
-	CanExportZip      bool    `json:"canExportZip"`
+	ContentItemID      string  `json:"contentItemId"`
+	ContentType        string  `json:"contentType"`
+	ModelFolderName    string  `json:"modelFolderName"`
+	ModelName          string  `json:"modelName"`
+	ThumbOpens         int64   `json:"thumbOpens"`
+	DetailViews        int64   `json:"detailViews"`
+	FirstPlays         int64   `json:"firstPlays"`
+	PhotoFirstViews    int64   `json:"photoFirstViews"`
+	TotalWatchSeconds  float64 `json:"totalWatchSeconds"`
+	EngagementSessions int64   `json:"engagementSessions"`
+	AvgWatchSeconds    float64 `json:"avgWatchSeconds"`
+	HasSourceFile      bool    `json:"hasSourceFile"`
+	CanExportZip       bool    `json:"canExportZip"`
 }
 
 // GetContentPerformance ranks content by engagement (excludes admin users from metrics).
@@ -2211,27 +2221,27 @@ LIMIT $2`
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"days":   days,
-		"sort":   sortKey,
-		"order":  strings.ToLower(orderDir),
-		"items":  out,
+		"days":  days,
+		"sort":  sortKey,
+		"order": strings.ToLower(orderDir),
+		"items": out,
 	})
 }
 
 // CatalogModelPerformanceRow is one row for /api/admin/catalog-model-performance.
 type CatalogModelPerformanceRow struct {
-	ModelID               string  `json:"modelId"`
-	FolderName            string  `json:"folderName"`
-	ModelName             string  `json:"modelName"`
-	Impressions           int64   `json:"impressions"`
-	ClicksOpen            int64   `json:"clicksOpen"`
-	ClicksLoginWall       int64   `json:"clicksLoginWall"`
-	EngagedImpressions    int64   `json:"engagedImpressions"`
-	ProfileSessions       int64   `json:"profileSessions"`
-	AvgTimeOnProfileSec   float64 `json:"avgTimeOnProfileSec"`
-	DeepProfileSessions   int64   `json:"deepProfileSessions"`
-	CTR                   float64 `json:"ctr"`
-	CTREngaged            float64 `json:"ctrEngaged"`
+	ModelID             string  `json:"modelId"`
+	FolderName          string  `json:"folderName"`
+	ModelName           string  `json:"modelName"`
+	Impressions         int64   `json:"impressions"`
+	ClicksOpen          int64   `json:"clicksOpen"`
+	ClicksLoginWall     int64   `json:"clicksLoginWall"`
+	EngagedImpressions  int64   `json:"engagedImpressions"`
+	ProfileSessions     int64   `json:"profileSessions"`
+	AvgTimeOnProfileSec float64 `json:"avgTimeOnProfileSec"`
+	DeepProfileSessions int64   `json:"deepProfileSessions"`
+	CTR                 float64 `json:"ctr"`
+	CTREngaged          float64 `json:"ctrEngaged"`
 }
 
 // GetCatalogModelPerformance aggregates catalog + profile engagement per model (excludes admin users).
@@ -2396,10 +2406,10 @@ LIMIT `
 	}
 
 	resp := map[string]interface{}{
-		"days":   days,
-		"sort":   sortKey,
-		"order":  strings.ToLower(orderDir),
-		"items":  out,
+		"days":  days,
+		"sort":  sortKey,
+		"order": strings.ToLower(orderDir),
+		"items": out,
 		"surface": func() interface{} {
 			if validSurface {
 				return surface

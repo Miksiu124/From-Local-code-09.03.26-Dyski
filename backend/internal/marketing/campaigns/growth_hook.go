@@ -124,14 +124,14 @@ func buildFavoriteNudgeVariableMap(cfg *config.Config, required []string, displa
 	sn := siteName(cfg)
 
 	aliases := map[string]string{
-		"firstName":        fn,
-		"firstname":        fn,
-		"hookLine":         hook,
-		"ctaUrl":           cta,
-		"unsubscribeUrl":   unsubURL,
-		"siteName":         sn,
-		"trendingTitle":    strings.TrimSpace(cfg.FavoriteNudgeTrendingTitle),
-		"proofLine":        strings.TrimSpace(cfg.FavoriteNudgeProofLine),
+		"firstName":      fn,
+		"firstname":      fn,
+		"hookLine":       hook,
+		"ctaUrl":         cta,
+		"unsubscribeUrl": unsubURL,
+		"siteName":       sn,
+		"trendingTitle":  strings.TrimSpace(cfg.FavoriteNudgeTrendingTitle),
+		"proofLine":      strings.TrimSpace(cfg.FavoriteNudgeProofLine),
 	}
 
 	out := make(map[string]string)

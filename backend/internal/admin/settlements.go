@@ -59,12 +59,12 @@ func (h *Handler) ListRevenueSettlements(c echo.Context) error {
 			snap = map[string]interface{}{}
 		}
 		m := map[string]interface{}{
-			"id":          derefStr(id),
-			"settledAt":   derefStr(settledAt),
-			"periodStart": derefStr(periodStart),
-			"periodEnd":   derefStr(periodEnd),
+			"id":             derefStr(id),
+			"settledAt":      derefStr(settledAt),
+			"periodStart":    derefStr(periodStart),
+			"periodEnd":      derefStr(periodEnd),
 			"transferAmount": transfer,
-			"snapshot":    snap,
+			"snapshot":       snap,
 		}
 		if notes != nil {
 			m["notes"] = *notes
@@ -81,16 +81,16 @@ func (h *Handler) ListRevenueSettlements(c echo.Context) error {
 }
 
 type settlementSnapshot struct {
-	PeriodStart       string                   `json:"periodStart"`
-	PeriodEnd         string                   `json:"periodEnd"`
-	ApprovedTotal     float64                  `json:"approvedTotal"`
-	ApprovedCount     int64                    `json:"approvedCount"`
-	PerAdmin          []map[string]interface{} `json:"perAdmin"`
-	PerMethod         []map[string]interface{} `json:"perMethod"`
-	TransferAmount    float64                  `json:"transferAmount"`
-	MyAdminID         string                   `json:"myAdminId"`
-	MyCollected       float64                  `json:"myCollected"`
-	PartnerCollected  float64                  `json:"partnerCollected"`
+	PeriodStart      string                   `json:"periodStart"`
+	PeriodEnd        string                   `json:"periodEnd"`
+	ApprovedTotal    float64                  `json:"approvedTotal"`
+	ApprovedCount    int64                    `json:"approvedCount"`
+	PerAdmin         []map[string]interface{} `json:"perAdmin"`
+	PerMethod        []map[string]interface{} `json:"perMethod"`
+	TransferAmount   float64                  `json:"transferAmount"`
+	MyAdminID        string                   `json:"myAdminId"`
+	MyCollected      float64                  `json:"myCollected"`
+	PartnerCollected float64                  `json:"partnerCollected"`
 }
 
 // CreateRevenueSettlement closes the open period since last settlement and stores a snapshot.

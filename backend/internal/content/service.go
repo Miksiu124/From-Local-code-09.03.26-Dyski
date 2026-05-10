@@ -88,9 +88,10 @@ func playlistImportPriority(base string) int {
 }
 
 // parseSourceSegmentUID extracts the video id from an R2 path segment:
-//   xyz_source → xyz
-//   xyz_source (1) → xyz   (Windows duplicate folder)
-//   xyz_source - Copy → xyz, xyz_source - Copy (2) → xyz   (English Windows)
+//
+//	xyz_source → xyz
+//	xyz_source (1) → xyz   (Windows duplicate folder)
+//	xyz_source - Copy → xyz, xyz_source - Copy (2) → xyz   (English Windows)
 func parseSourceSegmentUID(segment string) (uid string, ok bool) {
 	const marker = "_source"
 	idx := strings.LastIndex(segment, marker)
@@ -285,17 +286,17 @@ func (s *Service) ImportModelContent(ctx context.Context, folderName string) (in
 		if (strings.HasSuffix(key, ".jpg") || strings.HasSuffix(key, ".png") || strings.HasSuffix(key, ".webp")) &&
 			!strings.Contains(key, "_source") &&
 			!strings.Contains(strings.ToLower(key), "avatar") {
-			
+
 			parts := strings.Split(key, "/")
 			filename := parts[len(parts)-1]
 			uniqueID := strings.TrimSuffix(filename, ".jpg")
 			uniqueID = strings.TrimSuffix(uniqueID, ".png")
 			uniqueID = strings.TrimSuffix(uniqueID, ".webp")
-			
+
 			// Prevent collision with video IDs or other models
 			fullUniqueID := folderName + "-" + uniqueID
 
-		_, err := s.db.Exec(ctx, `
+			_, err := s.db.Exec(ctx, `
 			INSERT INTO content_items (model_id, unique_id, content_type, thumbnail_path, is_active, is_hidden)
 			VALUES ($1, $2, 'PHOTO', $3, true, false)
 			ON CONFLICT (unique_id) DO UPDATE SET thumbnail_path = $3

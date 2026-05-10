@@ -220,25 +220,25 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 	hasMore := false
 	for rows.Next() {
 		var (
-			id, credits                    string
-			amount                         float64
-			paymentMethod, txCode          string
-			blikCode, crypto, txId         *string
-			status                         string
-			proofUrl, adminNotes           *string
-			retryCount                     int
-			expiration, created, upd       string
-			adminIDStr, adminVerifiedAtStr *string
-			adminEmail, adminName          *string
-			uid, email                     string
-			uname                          *string
-			pkgName                        string
-			pkgCredits                     int
-			pkgPrice                       float64
+			id, credits                       string
+			amount                            float64
+			paymentMethod, txCode             string
+			blikCode, crypto, txId            *string
+			status                            string
+			proofUrl, adminNotes              *string
+			retryCount                        int
+			expiration, created, upd          string
+			adminIDStr, adminVerifiedAtStr    *string
+			adminEmail, adminName             *string
+			uid, email                        string
+			uname                             *string
+			pkgName                           string
+			pkgCredits                        int
+			pkgPrice                          float64
 			effectiveCustomLinkID, customSlug *string
-			fromUserReferral               bool
-			refReferrerID, refReferrerEmail *string
-			refReferrerName                *string
+			fromUserReferral                  bool
+			refReferrerID, refReferrerEmail   *string
+			refReferrerName                   *string
 		)
 
 		if err := rows.Scan(&id, &credits, &amount, &paymentMethod, &txCode,
@@ -275,10 +275,10 @@ func (h *Handler) ListCreditPurchases(c echo.Context) error {
 		var adminObj interface{}
 		if adminIDStr != nil && *adminIDStr != "" {
 			adminObj = map[string]interface{}{
-				"id":          *adminIDStr,
-				"email":       derefStr(adminEmail),
-				"name":        adminName,
-				"verifiedAt":  derefStrPtr(adminVerifiedAtStr),
+				"id":         *adminIDStr,
+				"email":      derefStr(adminEmail),
+				"name":       adminName,
+				"verifiedAt": derefStrPtr(adminVerifiedAtStr),
 			}
 		} else {
 			adminObj = nil

@@ -305,7 +305,7 @@ func (h *Handler) FunnelSummary(c echo.Context) error {
 		"byDay":            byDay,
 		"rates":            rates,
 		"stepTransitions":  stepTransitions,
-				"funnelStepEvents": []string{"signup_completed", "email_verified", "checkout_started", "purchase_completed"},
+		"funnelStepEvents": []string{"signup_completed", "email_verified", "checkout_started", "purchase_completed"},
 	})
 }
 

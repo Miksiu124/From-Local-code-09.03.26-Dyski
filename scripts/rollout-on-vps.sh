@@ -35,7 +35,7 @@ if [[ "${SKIP_GIT_PULL:-0}" != "1" ]]; then
 	git fetch origin
 	git checkout "$BRANCH"
 	echo "HEAD: $(git rev-parse HEAD)"
-	git pull --ff-only "origin/$BRANCH"
+	git pull --ff-only origin "$BRANCH"
 else
 	echo "SKIP_GIT_PULL=1 — using working tree as-is"
 fi

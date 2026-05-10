@@ -489,23 +489,23 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 
 	// Notify admin panel in real time via Redis SSE
 	adminPayload, _ := json.Marshal(map[string]interface{}{
-		"event":           "new_purchase",
-		"id":              purchaseID,
-		"credits":         pkgCredits,
-		"amount":          pkgPrice,
-		"paymentMethod":   req.PaymentMethod,
-		"transactionCode": txCode,
-		"blikCode":        blikCode,
-		"cryptoCurrency":  cryptoCurrencyDisplay,
-		"status":          "PENDING",
-		"expirationTime":  expirationTime,
-		"createdAt":       time.Now().UTC().Format(time.RFC3339),
+		"event":            "new_purchase",
+		"id":               purchaseID,
+		"credits":          pkgCredits,
+		"amount":           pkgPrice,
+		"paymentMethod":    req.PaymentMethod,
+		"transactionCode":  txCode,
+		"blikCode":         blikCode,
+		"cryptoCurrency":   cryptoCurrencyDisplay,
+		"status":           "PENDING",
+		"expirationTime":   expirationTime,
+		"createdAt":        time.Now().UTC().Format(time.RFC3339),
 		"fromCustomLink":   fromCustomLink,
 		"customLinkSlug":   customLinkSlug,
 		"fromUserReferral": fromUserReferral,
 		"referralReferrer": referralReferrer,
 		"user":             map[string]interface{}{"email": discordInfo.UserEmail, "name": discordInfo.UserName},
-		"creditPackage":   map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
+		"creditPackage":    map[string]interface{}{"name": pkgName, "credits": pkgCredits, "price": pkgPrice},
 	})
 	_ = h.redis.Publish(ctx, "admin:purchases", string(adminPayload))
 
@@ -673,9 +673,9 @@ func (h *Handler) UploadProof(c echo.Context) error {
 
 	// Notify admin panel in real-time
 	adminPayload, _ := json.Marshal(map[string]interface{}{
-		"event":            "proof_uploaded",
-		"id":               purchaseID,
-		"paymentProofUrl":   r2Key,
+		"event":           "proof_uploaded",
+		"id":              purchaseID,
+		"paymentProofUrl": r2Key,
 	})
 	_ = h.redis.Publish(ctx, "admin:purchases", string(adminPayload))
 
@@ -732,14 +732,14 @@ func (h *Handler) ListPurchases(c echo.Context) error {
 	var purchases []map[string]interface{}
 	for rows.Next() {
 		var (
-			id, credits                            string
-			amount                                 float64
-			paymentMethod, txCode, status          string
-			blikCode, cryptoCurrency, txId         *string
-			expirationTime, createdAt              string
-			pkgName                                string
-			pkgCredits                             int
-			pkgPrice                               float64
+			id, credits                    string
+			amount                         float64
+			paymentMethod, txCode, status  string
+			blikCode, cryptoCurrency, txId *string
+			expirationTime, createdAt      string
+			pkgName                        string
+			pkgCredits                     int
+			pkgPrice                       float64
 		)
 
 		if err := rows.Scan(&id, &credits, &amount, &paymentMethod, &txCode,
@@ -858,10 +858,10 @@ func (h *Handler) GetPurchaseStatus(c echo.Context) error {
 	}
 
 	return common.Success(c, map[string]interface{}{
-		"status":         status,
+		"status":          status,
 		"paymentProofUrl": paymentProofUrl,
-		"paymentMethod":  paymentMethod,
-		"expirationTime": expirationTime,
+		"paymentMethod":   paymentMethod,
+		"expirationTime":  expirationTime,
 	})
 }
 
@@ -1060,9 +1060,9 @@ func (h *Handler) UpdateBlikCode(c echo.Context) error {
 
 	// Notify admin panel about updated BLIK code
 	blikUpdatePayload, _ := json.Marshal(map[string]interface{}{
-		"event":      "blik_code_updated",
-		"id":         purchaseID,
-		"blikCode":   strings.TrimSpace(req.BlikCode),
+		"event":          "blik_code_updated",
+		"id":             purchaseID,
+		"blikCode":       strings.TrimSpace(req.BlikCode),
 		"expirationTime": expirationTime,
 	})
 	_ = h.redis.Publish(ctx, "admin:purchases", string(blikUpdatePayload))
@@ -1162,7 +1162,7 @@ func (h *Handler) ValidatePromo(c echo.Context) error {
 		"discountType":  discountType,
 		"discountValue": discountValue,
 		"finalCredits":  finalCredits,
-		"finalPrice":   finalPrice,
+		"finalPrice":    finalPrice,
 	})
 }
 

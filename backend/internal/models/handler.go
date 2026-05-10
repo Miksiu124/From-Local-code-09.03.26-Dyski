@@ -19,19 +19,19 @@ import (
 )
 
 const (
-	cacheKeyCountries   = "api:countries"
-	cacheKeySettings    = "api:settings:public"
-	cacheKeyStats       = "api:stats:models"
-	cacheKeyModelSlug   = "api:model:slug:"
-	cacheKeyModelContent = "api:model:content:"
-	cacheKeyModelsFirst = "api:models:first"
+	cacheKeyCountries      = "api:countries"
+	cacheKeySettings       = "api:settings:public"
+	cacheKeyStats          = "api:stats:models"
+	cacheKeyModelSlug      = "api:model:slug:"
+	cacheKeyModelContent   = "api:model:content:"
+	cacheKeyModelsFirst    = "api:models:first"
 	cacheKeyModelsFeatured = "api:models:featured"
-	cacheTTLCountries   = time.Hour
-	cacheTTLSettings    = 5 * time.Minute
-	cacheTTLStats       = time.Minute
-	cacheTTLModelSlug   = 5 * time.Minute
-	cacheTTLModelContent = 8 * time.Minute
-	cacheTTLModelsList  = 3 * time.Minute
+	cacheTTLCountries      = time.Hour
+	cacheTTLSettings       = 5 * time.Minute
+	cacheTTLStats          = time.Minute
+	cacheTTLModelSlug      = 5 * time.Minute
+	cacheTTLModelContent   = 8 * time.Minute
+	cacheTTLModelsList     = 3 * time.Minute
 )
 
 type Handler struct {
@@ -301,7 +301,7 @@ func (h *Handler) ListContent(c echo.Context) error {
 	cursor := c.QueryParam("cursor")
 	limitStr := c.QueryParam("limit")
 	contentType := c.QueryParam("type") // VIDEO, PHOTO, ALL
-	sort := c.QueryParam("sort")       // newest, oldest
+	sort := c.QueryParam("sort")        // newest, oldest
 
 	limit := 24
 	if limitStr != "" {

@@ -32,10 +32,10 @@ var (
 )
 
 type Handler struct {
-	db        *pgxpool.Pool
-	mailer    *mailer.Mailer
-	cfg       *config.Config
-	rotator   SessionRotator
+	db      *pgxpool.Pool
+	mailer  *mailer.Mailer
+	cfg     *config.Config
+	rotator SessionRotator
 }
 
 func NewHandler(db *pgxpool.Pool, m *mailer.Mailer, cfg *config.Config, rotator SessionRotator) *Handler {

@@ -45,7 +45,7 @@ type RegisterRequest struct {
 	Email          string `json:"email"`
 	Password       string `json:"password"`
 	RefCode        string `json:"ref"` // referral code from ?ref= or body
-	TurnstileToken string `json:"turnstileToken"` 
+	TurnstileToken string `json:"turnstileToken"`
 }
 
 var (
@@ -284,9 +284,9 @@ func (h *Handler) Register(c echo.Context) error {
 // ── Login ────────────────────────────────────────────────────────────────────
 
 type LoginRequest struct {
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	RememberMe  bool   `json:"rememberMe"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"rememberMe"`
 }
 
 func (h *Handler) Login(c echo.Context) error {
@@ -358,12 +358,12 @@ func (h *Handler) Login(c echo.Context) error {
 
 	return common.Success(c, map[string]interface{}{
 		"user": map[string]interface{}{
-			"id":             user.ID,
-			"email":          user.Email,
-			"name":           user.Name,
-			"role":           role,
-			"creditBalance":  user.CreditBalance,
-			"emailVerified":  user.EmailVerified,
+			"id":            user.ID,
+			"email":         user.Email,
+			"name":          user.Name,
+			"role":          role,
+			"creditBalance": user.CreditBalance,
+			"emailVerified": user.EmailVerified,
 		},
 	})
 }
@@ -713,12 +713,12 @@ type discordTokenResponse struct {
 }
 
 type discordUser struct {
-	ID            string `json:"id"`
-	Username      string `json:"username"`
-	Email         string `json:"email"`
-	Verified      bool   `json:"verified"`
-	GlobalName    string `json:"global_name"`
-	Avatar        string `json:"avatar"`
+	ID         string `json:"id"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Verified   bool   `json:"verified"`
+	GlobalName string `json:"global_name"`
+	Avatar     string `json:"avatar"`
 }
 
 func (h *Handler) DiscordCallback(c echo.Context) error {
