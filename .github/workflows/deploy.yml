@@ -64,7 +64,28 @@ jobs:
           ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
           q_path="$(printf '%q' "${VPS_PATH}")"
           q_branch="$(printf '%q' "${CONTENTMANAGER_GIT_BRANCH}")"
-          # Absolute path avoids `cd`/cwd surprises if secrets differ subtly from SSH login shell defaults.
+          # Non-login shell: `bash -lc` can swallow or alter output in CI + long docker builds are clearer with keepalives.
+          # Absolute ${q_path} avoids cd/cwd surprises if secrets differ subtly from SSH login shell defaults.
+          ssh -i ~/.ssh/vps_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
+            "${VPS_USER}@${VPS_HOST}" \
+            bash -c "set -euxo pipefail; export CONTENTMANAGER_GIT_BRANCH=${q_branch}; exec bash ${q_path}/scripts/rollout-on-vps.sh"
+
+      - name: Verify VPS revision (sanity check)
+        shell: bash
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "${VPS_SSH_PRIVATE_KEY}" > ~/.ssh/vps_deploy
+          chmod 600 ~/.ssh/vps_deploy
+          ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          q_path="$(printf '%q' "${VPS_PATH}")"
           ssh -i ~/.ssh/vps_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
             "${VPS_USER}@${VPS_HOST}" \
-            bash -lc "CONTENTMANAGER_GIT_BRANCH=${q_branch} bash ${q_path}/scripts/rollout-on-vps.sh"
+            bash -c "set -euxo pipefail; cd ${q_path}; echo '=== git ==='; git log -1 --oneline; echo '=== docker ps ==='; docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Status}}'"
