@@ -45,6 +45,7 @@ cloudflare.env
 .idea/
 *.iml
 .cursor/
+.impeccable/
 .vscode/
 
 # vercel
