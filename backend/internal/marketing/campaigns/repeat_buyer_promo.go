@@ -20,9 +20,9 @@ import (
 const repeatBuyerCampaignKey = "repeat_buyer_promo_v1"
 
 var repeatBuyerHookVariants = []string{
-	"Dziękujemy, że jesteś z nami po drugiej stronie checkoutu — wracamy z rabatem: 10% na pakiet kredytów, gdy wartość pakietu to co najmniej 50 zł.",
+	"Wracamy z rabatem dla osób, które już kupowały: 10% na pakiet kredytów od 50 zł.",
 	"Krótka wiadomość od zespołu: mamy dla Ciebie 10% zniżki na doładowanie (min. 50 zł za pakiet przed rabatem).",
-	"Dla osób, które już kupowały u nas modele lub kredyty — podarunek: kod rabatowy w mailu i link poniżej (min. 50 zł za wybrany pakiet).",
+	"Dla kupujących wrzucamy kod na kolejne doładowanie: 10% rabatu przy pakiecie od 50 zł.",
 }
 
 func repeatBuyerVariantIdx(userID string, n int) int {

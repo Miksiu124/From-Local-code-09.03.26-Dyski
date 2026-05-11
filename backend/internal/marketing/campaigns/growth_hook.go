@@ -118,7 +118,7 @@ func buildFavoriteNudgeVariableMap(cfg *config.Config, required []string, displa
 	}
 	hook := strings.TrimSpace(cfg.FavoriteNudgeHookLine)
 	if hook == "" {
-		hook = "Masz nową pozycję w ulubionych — wróć, gdy będziesz mieć chwilę."
+		hook = "masz nową pozycję w ulubionych i szybki powrót bez ponownego szukania."
 	}
 	cta := ctaURL(cfg, cfg.FavoriteNudgeCtaPath)
 	sn := siteName(cfg)

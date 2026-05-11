@@ -19,6 +19,16 @@ Wysyłka przez **`Mailer.SendMarketingTemplate`** (szablony wbudowane w backendz
 - Cron jest **rejestrowany**, gdy włączony jest **winback**, **social proof** lub **repeat buyer promo** (`WINBACK_EMAIL_ENABLED` albo `SOCIAL_PROOF_EMAIL_ENABLED` albo `REPEAT_BUYER_PROMO_EMAIL_ENABLED`).
 - W jednym przebiegu wywoływane są kolejno włączone kampanie (winback → social proof → repeat buyer promo).
 
+## Plan użycia limitu 50k / miesiąc
+
+Nie traktuj większego limitu jak zaproszenia do jednego masowego newslettera. Najlepszy zwrot powinny dać sekwencje oparte na intencji:
+
+1. **Najpierw repeat buyer promo** — użytkownicy, którzy już kupili, mają najkrótszą drogę do kolejnej transakcji. To kampania jednorazowa, więc można ją puścić mocniej (`REPEAT_BUYER_BATCH_LIMIT=300-800`) i mierzyć kliknięcia przez `/l/vip10-a,b,c`.
+2. **Potem social proof co 14-21 dni** — tylko do osób, które realnie oglądały treści i ucichły. Ustaw krótszy cooldown niż winback, ale nie schodź poniżej 30 dni bez danych o wypisach.
+3. **Winback jako wolniejszy rezerwuar** — dla zimnych kont trzymaj dłuższą nieaktywność i cooldown. Ta kampania buduje zasięg, ale będzie miała słabszą konwersję niż repeat buyer.
+4. **Trigger po ulubionym** — włącz `FAVORITE_NUDGE_EMAIL_ENABLED=1`, bo to mail po zachowaniu z wysoką intencją. Domyślny szablon to `favorite-nudge`, CTA prowadzi do `/favorites`.
+5. **Kontrola wolumenu** — na starcie trzymaj łączny wolumen poniżej 20-30% nowego limitu, sprawdź odbicia, wypisy i kliknięcia, dopiero potem zwiększaj batch.
+
 ## Kampanie „batch” (segment z SQL)
 
 ### 1. Winback (`WINBACK_EMAIL_ENABLED`)
@@ -51,7 +61,7 @@ Po udanym zapisie wiersza w `growth_events` wywoływany jest hook (goroutine, ti
 - Zdarzenie: `favorite_toggled` z `favorited: true` (frontend: `trackFavoriteToggled`).
 - Wymaga zalogowanego użytkownika (`user_id` w zdarzeniu).
 - **Jednorazowo na konto:** `marketing_trigger_fires` z kluczem `favorite_nudge_v1`.
-- **Szablon:** obowiązkowy **`FAVORITE_NUDGE_TEMPLATE_SLUG`** (np. krótki szablon w `marketing_templates_data.go` lub ten sam co winback — dopasuj zmienne przez `FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON`).
+- **Szablon:** domyślnie **`favorite-nudge`**. Można nadpisać przez `FAVORITE_NUDGE_TEMPLATE_SLUG`, jeśli testujesz inną wersję.
 
 ## Zgoda i e-mail
 

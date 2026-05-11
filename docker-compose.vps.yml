@@ -40,7 +40,7 @@ services:
       # Kampanie marketingowe (cron API): domyślnie włączone na stosie VPS; wyłącz w .env: WINBACK_EMAIL_ENABLED=0 itd.
       WINBACK_EMAIL_ENABLED: ${WINBACK_EMAIL_ENABLED:-1}
       SOCIAL_PROOF_EMAIL_ENABLED: ${SOCIAL_PROOF_EMAIL_ENABLED:-1}
-      # Nudge po pierwszym ulubionym — wymaga FAVORITE_NUDGE_TEMPLATE_SLUG w .env; bez sluga zostaje wyłączone w kodzie.
+      # Nudge po pierwszym ulubionym: domyślny slug to favorite-nudge; włącz po sprawdzeniu deliverability.
       FAVORITE_NUDGE_EMAIL_ENABLED: ${FAVORITE_NUDGE_EMAIL_ENABLED:-0}
 
   nginx:

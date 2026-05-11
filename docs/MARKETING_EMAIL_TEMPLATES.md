@@ -14,11 +14,20 @@ Składnia: `{{nazwa}}` — w nazwie dozwolone litery, cyfry i podkreślenie (np.
 
 Slug szablonu w env (np. `WINBACK_TEMPLATE_SLUG`) musi **dokładnie** odpowiadać polu `Slug` w `marketing_templates_data.go` (tylko `a-z`, `0-9`, `-`).
 
+## Aktualne slugi
+
+- `winback-soft` — powrót po dłuższej ciszy.
+- `social-proof-drop` — powrót do treści, które znowu są popularne.
+- `repeat-buyer-10` — jednorazowy kod dla osób, które już kupowały.
+- `favorite-nudge` — jednorazowy mail po pierwszym dodaniu do ulubionych.
+- `catalog-model-updated` i `promo-limited` — szablony pomocnicze do ręcznych lub przyszłych kampanii.
+
 ## Dobre praktyki
 
 - Link **wypisu**: zawsze `{{unsubscribeUrl}}` (generowany przez backend).
 - Zgoda: `users.marketing_email_opt_in` (patrz `MARKETING_CAMPAIGNS.md`).
 - Nadawca promocji: rozważ `newsletter@…` zamiast `noreply@…`; adres musi być dozwolony w Resend.
+- Wysyłaj z ciepłego, rozpoznawalnego nadawcy i trzymaj jeden główny CTA. Szablony są celowo krótkie, bo mają kierować do katalogu, nie sprzedawać całej oferty w e-mailu.
 
 ## Dodawanie nowego szablonu
 

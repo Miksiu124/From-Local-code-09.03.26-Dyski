@@ -153,7 +153,7 @@ func buildWinbackVariableMap(cfg *config.Config, required []string, displayName,
 	}
 	hook := strings.TrimSpace(cfg.WinbackHookLine)
 	if hook == "" {
-		hook = "Dodaliśmy nowe materiały i poprawiliśmy wyszukiwanie — warto rzucić okiem."
+		hook = "dodaliśmy nowe materiały i szybciej prowadzą one do zakupu."
 	}
 	ctaPath := strings.TrimSpace(cfg.WinbackCtaPath)
 	if ctaPath == "" {
