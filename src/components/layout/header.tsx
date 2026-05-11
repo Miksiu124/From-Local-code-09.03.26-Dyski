@@ -127,7 +127,7 @@ export function Header() {
 
   const isAdmin = user?.role === "ADMIN";
 
-  const adminHomeHref = "/admin/content-insights/engagement";
+  const adminHomeHref = "/admin/payments";
   const isAdminNavActive = pathname?.startsWith("/admin") ?? false;
 
   const handleLogoClick = (e: React.MouseEvent) => {

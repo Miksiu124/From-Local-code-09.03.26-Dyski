@@ -41,7 +41,7 @@ export default function AdminError({
                     )}
                 </CardContent>
                 <CardFooter className="flex justify-center gap-4">
-                    <Button variant="outline" onClick={() => window.location.href = "/admin/content-insights/engagement"}>
+                    <Button variant="outline" onClick={() => window.location.href = "/admin/payments"}>
                         <Home className="mr-2 h-4 w-4" />
                         Dashboard
                     </Button>

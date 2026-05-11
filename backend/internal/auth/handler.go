@@ -849,7 +849,7 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 
 	redirectPath := "/"
 	if role == "ADMIN" {
-		redirectPath = "/admin"
+		redirectPath = "/admin/payments"
 	}
 
 	return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+redirectPath)

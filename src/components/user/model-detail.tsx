@@ -1572,13 +1572,19 @@ export function ModelDetail({
             className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5 items-start [grid-auto-rows:minmax(0,auto)]"
           >
             {displayItems.map((item, index) => (
-              <button
+              <div
                 key={item.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 data-model-folder-reveal
                 style={{ "--reveal-stagger": index % 12 } as CSSProperties}
                 className="model-folder-reveal grid-item-contain cursor-pointer group text-left w-full min-h-0 max-w-full self-start overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 min-w-0 [content-visibility:auto] [contain-intrinsic-size:240px_320px]"
                 onClick={() => handleContentClick(item.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  handleContentClick(item.id);
+                }}
                 aria-label={item.contentType === "VIDEO" ? t("video") : t("photo")}
               >
                 {/* aspect-ratio + contain: layout isolate each cell from grid reflow glitches (DevTools / overlay close). */}
@@ -1672,7 +1678,7 @@ export function ModelDetail({
                     </div>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
 

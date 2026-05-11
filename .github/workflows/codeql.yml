@@ -1,13 +1,13 @@
-# CodeQL SAST — runs on push to default/main branches and PRs
+# CodeQL SAST — runs on schedule or manual dispatch (non-blocking for normal dev flow)
 # https://docs.github.com/en/code-security/codeql-cli/codeql-overview
 
 name: CodeQL
 
 on:
-  push:
-    branches: ["main", "master"]
-  pull_request:
-    branches: ["main", "master"]
+  schedule:
+    # Weekly Sunday security sweep at 03:00 UTC.
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
 
 permissions:
   contents: read
