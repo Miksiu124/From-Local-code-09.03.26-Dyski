@@ -180,6 +180,7 @@
       "paypal": "PayPal",
       "revolut": "Revolut"
     },
+    "blikUnavailableHint": "BLIK jest teraz wyłączony (np. w nocy). Spróbuj ponownie rano lub wybierz inną metodę płatności.",
     "cryptoCurrencies": {
       "btc": "Bitcoin (BTC)",
       "eth": "Ethereum (ETH)",

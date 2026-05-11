@@ -96,7 +96,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <div className="mx-auto w-full min-w-0 max-w-7xl py-8 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+      <div className="mx-auto w-full min-w-0 max-w-7xl py-5 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:py-7">
       <ModelsGrid
         initialModels={modelsData.models.map((m) => ({
           id: m.id,

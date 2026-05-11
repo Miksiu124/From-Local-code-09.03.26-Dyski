@@ -321,7 +321,11 @@ export function CreditPurchaseFlow({
     { id: "REVOLUT", label: t("paymentMethods.revolut"), icon: <CreditCard className="h-5 w-5" /> },
   ];
 
-  const methods = blikEnabled ? allMethods : allMethods.filter((m) => m.id !== "BLIK");
+  useEffect(() => {
+    if (!blikEnabled && selectedMethod === "BLIK") {
+      setSelectedMethod(null);
+    }
+  }, [blikEnabled, selectedMethod]);
 
   const cryptos: { id: CryptoCurrency; label: string }[] = [
     { id: "BTC", label: t("cryptoCurrencies.btc") },
@@ -375,6 +379,7 @@ export function CreditPurchaseFlow({
 
   const handleMethodNext = () => {
     if (!selectedMethod) return;
+    if (selectedMethod === "BLIK" && !blikEnabled) return;
     if (selectedMethod === "BLIK") {
       setStep("blik-code");
     } else {
@@ -579,7 +584,7 @@ export function CreditPurchaseFlow({
     step === "waiting" && (paymentStatus === "APPROVED" || paymentStatus === "REJECTED");
 
   const selectedMethodLabel = selectedMethod
-    ? methods.find((m) => m.id === selectedMethod)?.label ?? selectedMethod
+    ? allMethods.find((m) => m.id === selectedMethod)?.label ?? selectedMethod
     : null;
 
   const stickyMobileActions = cn(
@@ -880,20 +885,39 @@ export function CreditPurchaseFlow({
           >
             <h2 className="mb-3 text-base font-semibold lg:mb-4 lg:text-lg">{t("selectMethod")}</h2>
             <div className="grid grid-cols-2 gap-2 sm:gap-3">
-              {methods.map((method) => (
-                <Card
-                  key={method.id}
-                  className={`cursor-pointer transition-all press-effect hover:border-primary/30 ${selectedMethod === method.id ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]" : "border-white/[0.06]"
-                    }`}
-                  onClick={() => setSelectedMethod(method.id)}
-                >
-                  <CardContent className="flex flex-col items-center justify-center gap-2 p-4 sm:p-6">
-                    {method.icon}
-                    <p className="font-medium text-xs sm:text-sm">{method.label}</p>
-                  </CardContent>
-                </Card>
-              ))}
+              {allMethods.map((method) => {
+                const blikClosed = method.id === "BLIK" && !blikEnabled;
+                return (
+                  <Card
+                    key={method.id}
+                    title={blikClosed ? t("blikUnavailableHint") : undefined}
+                    aria-disabled={blikClosed}
+                    tabIndex={blikClosed ? -1 : undefined}
+                    className={cn(
+                      "transition-all border-white/[0.06]",
+                      blikClosed
+                        ? "cursor-not-allowed opacity-55 hover:border-white/[0.06]"
+                        : "cursor-pointer press-effect hover:border-primary/30",
+                      !blikClosed && selectedMethod === method.id
+                        ? "border-primary/50 ring-2 ring-primary/15 bg-primary/[0.03]"
+                        : "",
+                    )}
+                    onClick={() => {
+                      if (blikClosed) return;
+                      setSelectedMethod(method.id);
+                    }}
+                  >
+                    <CardContent className="flex flex-col items-center justify-center gap-2 p-4 sm:p-6">
+                      {method.icon}
+                      <p className="font-medium text-xs sm:text-sm">{method.label}</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
+            {!blikEnabled && (
+              <p className="mt-3 text-xs text-muted-foreground sm:mt-4">{t("blikUnavailableHint")}</p>
+            )}
 
             {/* Crypto selector - grid-template-rows avoids layout thrashing */}
             {selectedMethod === "CRYPTO" && (
@@ -930,7 +954,11 @@ export function CreditPurchaseFlow({
               </Button>
               <Button
                 className="min-h-11 flex-1"
-                disabled={!selectedMethod || loading}
+                disabled={
+                  !selectedMethod ||
+                  loading ||
+                  (selectedMethod === "BLIK" && !blikEnabled)
+                }
                 onClick={handleMethodNext}
               >
                 {loading ? "..." : t("continue")} <ArrowRight className="ml-2 h-4 w-4" />

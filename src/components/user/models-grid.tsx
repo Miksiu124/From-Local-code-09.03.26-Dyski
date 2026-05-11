@@ -183,35 +183,35 @@ const ModelCard = memo(function ModelCard({
       className="group block h-full min-w-0"
     >
         <div
-          className="relative aspect-[3/4] rounded-xl overflow-hidden bg-card border border-white/[0.06] card-hover group-hover:border-primary/30 transition-all duration-300"
+          className="catalog-contact-card relative aspect-[3/4] overflow-hidden rounded-lg border border-white/[0.07] bg-card transition-colors duration-300 group-hover:border-[oklch(0.58_0.08_42_/_0.45)]"
           style={{ viewTransitionName: modelThumbViewTransitionName(model.id) }}
         >
           <NextImageWithFallback
             src={thumbSrc}
             alt={model.name}
-            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
+            className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.035]"
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
             loading={imagePriority ? "eager" : "lazy"}
             priority={imagePriority}
             quality={72}
             fallback={
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary to-muted">
+              <div className="absolute inset-0 flex items-center justify-center bg-[oklch(0.16_0.018_28)]">
                 <span className="text-4xl font-bold text-muted-foreground/30">
                   {model.name.charAt(0).toUpperCase()}
                 </span>
               </div>
             }
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent opacity-80" />
-          <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-all duration-500" />
+          <div className="catalog-contact-fade absolute inset-0" />
+          <div className="absolute inset-0 bg-[oklch(0.08_0.012_28_/_0.12)] transition-colors duration-500 group-hover:bg-transparent" />
           <div className="absolute top-2.5 right-2.5">
             {hasAccess(model.id) ? (
-              <div className="bg-success/20 p-1.5 rounded-lg border border-success/30 text-success">
+              <div className="rounded-md border border-success/30 bg-success/18 p-1.5 text-success">
                 <Unlock className="h-3 w-3" aria-hidden />
               </div>
             ) : (
-              <div className="bg-black/35 p-1.5 rounded-lg border border-white/[0.08] text-white/50">
+              <div className="rounded-md border border-white/[0.08] bg-[oklch(0.1_0.012_28_/_0.62)] p-1.5 text-white/55">
                 <Lock className="h-3 w-3" aria-hidden />
               </div>
             )}
@@ -221,7 +221,7 @@ const ModelCard = memo(function ModelCard({
               <span className="text-lg drop-shadow-md">{model.countryFlag}</span>
             </div>
           )}
-          <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 transform translate-y-0.5 group-hover:translate-y-0 transition-transform duration-300">
+          <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4">
             <h3 className="text-sm sm:text-base font-bold text-white truncate">{model.name}</h3>
             <div className="flex items-center justify-between mt-1.5 gap-1">
               <span className="text-[9px] sm:text-xs font-medium text-white/50 leading-snug line-clamp-2 min-w-0">
@@ -230,7 +230,7 @@ const ModelCard = memo(function ModelCard({
                   : `${model.contentCount} ${t("items")}`}
               </span>
               {!hasAccess(model.id) && cost7d > 0 && (
-                <span className="text-[10px] sm:text-xs text-primary-foreground bg-primary/90 px-2 py-0.5 rounded-md font-semibold">
+                <span className="rounded-sm bg-[oklch(0.74_0.13_48)] px-2 py-0.5 text-[10px] font-semibold text-[oklch(0.12_0.018_28)] sm:text-xs">
                   {t("getAccess")}
                 </span>
               )}
@@ -616,24 +616,24 @@ export function ModelsGrid({
     <>
       {/* Featured Section */}
       {!filteredMode && heroModel && (
-        <div className="mb-12 slide-up" style={{ animationDelay: "0.1s" }}>
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground">
+        <section className="catalog-contact-section mb-10 slide-up" style={{ animationDelay: "0.1s" }}>
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <h2 className="text-sm font-semibold text-foreground/78">
               {t("featured")}
             </h2>
             {displayFeatured.length > 1 && (
               <div className="flex items-center gap-1.5">
-                <button type="button" onClick={goPrev} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer touch-manipulation" aria-label={t("carouselPrev")}>
+                <button type="button" onClick={goPrev} className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-lg border border-white/[0.07] bg-[oklch(0.13_0.014_28)] transition-colors hover:bg-[oklch(0.17_0.018_28)] touch-manipulation" aria-label={t("carouselPrev")}>
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <button type="button" onClick={goNext} className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/[0.05] hover:bg-white/[0.1] transition-colors cursor-pointer touch-manipulation" aria-label={t("carouselNext")}>
+                <button type="button" onClick={goNext} className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-lg border border-white/[0.07] bg-[oklch(0.13_0.014_28)] transition-colors hover:bg-[oklch(0.17_0.018_28)] touch-manipulation" aria-label={t("carouselNext")}>
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:h-[420px]">
+          <div className="grid grid-cols-1 gap-2.5 lg:h-[460px] lg:grid-cols-[minmax(0,1.72fr)_minmax(280px,0.68fr)]">
             {/* Main Hero Card — aspect-video prevents empty stretched tile before image loads */}
             <CatalogModelSurfaceTracker
               key={heroModel.id}
@@ -644,9 +644,9 @@ export function ModelsGrid({
               queryLen={search.trim().length}
               countryId={selectedCountry}
               purchasedOnly={showPurchasedOnly}
-              className="lg:col-span-2 relative group overflow-hidden rounded-2xl border border-white/[0.06] bg-card w-full aspect-video lg:aspect-auto lg:min-h-0 lg:h-full min-h-[200px]"
+              className="catalog-hero-frame relative min-h-[220px] w-full overflow-hidden rounded-xl border border-white/[0.08] bg-card aspect-video lg:h-full lg:min-h-0 lg:aspect-auto"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-muted/50 via-muted/30 to-card animate-pulse lg:animate-none" aria-hidden />
+              <div className="absolute inset-0 bg-[linear-gradient(135deg,oklch(0.19_0.02_28),oklch(0.12_0.014_28))] animate-pulse lg:animate-none" aria-hidden />
               <CatalogNavLink
                 href={`/models/${heroModel.folderName}`}
                 onClick={(e) => handleModelClick(heroModel, e, "featured_hero", activeIndex)}
@@ -656,10 +656,10 @@ export function ModelsGrid({
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={heroModel.id}
-                    initial={{ opacity: 0, scale: 1.05 }}
+                    initial={{ opacity: 0, scale: 1.025 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.35 }}
+                    transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
                     className="absolute inset-0"
                     style={{ viewTransitionName: modelHeaderViewTransitionName(heroModel.id) }}
                   >
@@ -675,12 +675,12 @@ export function ModelsGrid({
                     />
                   </motion.div>
                 </AnimatePresence>
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none z-[2]" aria-hidden />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent pointer-events-none z-[2]" />
+                <div className="catalog-hero-vignette pointer-events-none absolute inset-0 z-[2]" aria-hidden />
+                <div className="catalog-hero-rake pointer-events-none absolute inset-0 z-[2]" />
 
-                <div className="absolute bottom-0 left-0 p-6 sm:p-8 w-full z-[3]">
+                <div className="absolute bottom-0 left-0 z-[3] w-full p-5 sm:p-7">
                   <div className="mb-3">
-                    <Badge className="bg-primary/85 text-white border-none rounded-lg px-2.5 py-1 text-[10px] tracking-widest uppercase font-semibold">
+                    <Badge className="rounded-md border border-white/[0.08] bg-[oklch(0.74_0.13_48)] px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[oklch(0.12_0.018_28)]">
                       {t("featured")}
                     </Badge>
                   </div>
@@ -703,7 +703,7 @@ export function ModelsGrid({
 
                 {/* Carousel indicators */}
                 {displayFeatured.length > 1 && (
-                  <div className="absolute bottom-6 right-6 sm:bottom-8 sm:right-8 z-[4] flex items-center gap-0.5 pointer-events-auto">
+                  <div className="pointer-events-auto absolute bottom-5 right-5 z-[4] flex items-center gap-0.5 sm:bottom-7 sm:right-7">
                     {displayFeatured.map((_, i) => (
                       <button
                         key={i}
@@ -716,7 +716,7 @@ export function ModelsGrid({
                         <span
                           className={cn(
                             "block rounded-full transition-all duration-300",
-                            i === activeIndex ? "h-1.5 w-6 bg-white" : "h-1.5 w-1.5 bg-white/30 hover:bg-white/50"
+                            i === activeIndex ? "h-1.5 w-6 bg-[oklch(0.92_0.02_48)]" : "h-1.5 w-1.5 bg-white/30 hover:bg-white/50"
                           )}
                           aria-hidden
                         />
@@ -728,7 +728,7 @@ export function ModelsGrid({
             </CatalogModelSurfaceTracker>
 
             {/* Side List */}
-            <div className="flex flex-row lg:flex-col gap-3 overflow-x-auto overscroll-x-contain pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0 scrollbar-hide snap-x snap-mandatory lg:snap-none">
+            <div className="-mx-4 flex flex-row gap-2 overflow-x-auto overscroll-x-contain px-4 pb-2 scrollbar-hide snap-x snap-mandatory lg:mx-0 lg:flex-col lg:px-0 lg:pb-0 lg:snap-none">
               {sideModels.map((model, idx) => (
                 <CatalogModelSurfaceTracker
                   key={model.id}
@@ -739,7 +739,7 @@ export function ModelsGrid({
                   queryLen={search.trim().length}
                   countryId={selectedCountry}
                   purchasedOnly={showPurchasedOnly}
-                  className="flex-shrink-0 w-[260px] snap-start lg:w-auto flex-1 relative group overflow-hidden rounded-xl border border-white/[0.06] bg-card transition-all duration-300 hover:border-primary/20"
+                  className="catalog-strip-frame group relative flex-1 w-[248px] flex-shrink-0 snap-start overflow-hidden rounded-lg border border-white/[0.07] bg-card transition-colors duration-300 hover:border-[oklch(0.58_0.08_42_/_0.38)] lg:w-auto"
                 >
                 <CatalogNavLink
                   href={`/models/${model.folderName}`}
@@ -763,10 +763,10 @@ export function ModelsGrid({
                           </div>
                         }
                       />
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent to-card" />
+                      <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,oklch(0.14_0.018_28))]" />
                     </div>
-                    <div className="flex-1 p-4 flex flex-col justify-center">
-                      <h4 className="text-sm lg:text-base font-bold text-white group-hover:text-primary transition-colors truncate">{model.name}</h4>
+                    <div className="flex flex-1 flex-col justify-center p-4">
+                      <h4 className="truncate text-sm font-bold text-white transition-colors group-hover:text-[oklch(0.84_0.07_48)] lg:text-base">{model.name}</h4>
                       <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-2">
                         {model.videoCount != null && model.imageCount != null && (model.videoCount > 0 || model.imageCount > 0)
                           ? t("videosPhotosCount", { videoCount: model.videoCount, imageCount: model.imageCount })
@@ -779,7 +779,7 @@ export function ModelsGrid({
               ))}
             </div>
           </div>
-        </div>
+        </section>
       )}
 
       {/* Bundle Banner */}
@@ -831,7 +831,7 @@ export function ModelsGrid({
       )}
 
       {/* Search + country on one row (narrower search); filters beside */}
-      <div className="flex flex-col gap-3 mb-6 slide-up" style={{ animationDelay: "0.15s" }}>
+      <div className="catalog-control-shelf sticky top-[4.55rem] z-30 mb-6 flex flex-col gap-3 rounded-xl border border-white/[0.07] px-2.5 py-2.5 slide-up" style={{ animationDelay: "0.15s" }}>
         <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center min-[480px]:gap-3">
           <div className="relative min-w-0 flex-1 max-w-full min-[480px]:max-w-xl md:max-w-2xl" data-tour="tour-guest-search">
             <label htmlFor="catalog-search" className="sr-only">
@@ -883,9 +883,9 @@ export function ModelsGrid({
                       setSelectedCountry(v.length > 0 ? v : null);
                       setShowPurchasedOnly(false);
                     }}
-                    className={cn(
-                      "h-11 w-full min-w-0 rounded-xl border border-white/[0.08] bg-card px-3 text-base text-foreground transition-colors duration-200 md:h-10 md:text-sm",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:border-primary/50 focus-visible:bg-white/[0.05] touch-manipulation",
+                  className={cn(
+                    "h-11 w-full min-w-0 rounded-lg border border-white/[0.08] bg-card px-3 text-base text-foreground transition-colors duration-200 md:h-10 md:text-sm",
+                    "focus-visible:border-[oklch(0.68_0.11_48_/_0.55)] focus-visible:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[oklch(0.68_0.11_48_/_0.25)] touch-manipulation",
                       showPurchasedOnly && "cursor-not-allowed opacity-50"
                     )}
                   >
@@ -911,14 +911,14 @@ export function ModelsGrid({
         </div>
       ) : displayModels.length === 0 && loading ? (
         /* Skeleton while search/filter loads — avoids blank flash */
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5">
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="aspect-[3/4] rounded-xl bg-white/[0.04] animate-pulse" />
+            <div key={i} className="aspect-[3/4] rounded-lg bg-white/[0.04] animate-pulse" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="catalog-sheet-grid grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5">
             {displayModels.map((model, index) => {
               const staggerClass =
                 index < 12 ? `animate-in fade-in stagger-${Math.min(index + 1, 10)}` : "";

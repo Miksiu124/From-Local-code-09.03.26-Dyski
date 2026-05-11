@@ -233,6 +233,105 @@ body {
 /* content-visibility: auto was removed — it can cause scroll jank / sizing quirks in
    WebKit when combined with CSS grid; paint savings are less important than smooth scrolling. */
 
+/* Homepage contact sheet: matte, media-forward framing without per-frame animation work. */
+.catalog-contact-section {
+  isolation: isolate;
+}
+
+.catalog-hero-frame,
+.catalog-contact-card,
+.catalog-strip-frame {
+  background-color: oklch(0.13 0.016 28);
+}
+
+.catalog-hero-frame {
+  box-shadow:
+    0 20px 56px -36px oklch(0.02 0.006 28 / 0.88),
+    inset 0 1px 0 oklch(0.96 0.014 48 / 0.06);
+}
+
+.catalog-contact-card,
+.catalog-strip-frame {
+  box-shadow:
+    0 12px 30px -26px oklch(0.02 0.006 28 / 0.82),
+    inset 0 1px 0 oklch(0.96 0.014 48 / 0.04);
+}
+
+.catalog-contact-card {
+  transition:
+    border-color 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.catalog-contact-card:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow:
+    0 18px 42px -32px oklch(0.02 0.006 28 / 0.92),
+    inset 0 1px 0 oklch(0.96 0.014 48 / 0.06);
+}
+
+.catalog-contact-fade {
+  background:
+    linear-gradient(
+      to top,
+      oklch(0.08 0.012 28 / 0.9) 0%,
+      oklch(0.08 0.012 28 / 0.44) 44%,
+      transparent 72%
+    );
+}
+
+.catalog-hero-vignette {
+  background:
+    linear-gradient(
+      to top,
+      oklch(0.08 0.012 28 / 0.92) 0%,
+      oklch(0.08 0.012 28 / 0.34) 42%,
+      transparent 72%
+    );
+}
+
+.catalog-hero-rake {
+  background:
+    linear-gradient(
+      90deg,
+      oklch(0.08 0.012 28 / 0.64) 0%,
+      oklch(0.08 0.012 28 / 0.22) 34%,
+      transparent 68%
+    );
+}
+
+.catalog-control-shelf {
+  background:
+    linear-gradient(
+      180deg,
+      oklch(0.105 0.016 28 / 0.98),
+      oklch(0.12 0.016 28 / 0.94)
+    );
+  box-shadow: 0 14px 34px -30px oklch(0.02 0.006 28 / 0.86);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .catalog-sheet-grid > .grid-item-contain {
+      animation: catalog-contact-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 22%;
+    }
+  }
+}
+
+@keyframes catalog-contact-rise {
+  from {
+    opacity: 0.72;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 /* Model folder — scroll-into-view reveals (IntersectionObserver toggles .model-folder-reveal-visible) */
 @media (prefers-reduced-motion: no-preference) {
   .model-folder-reveal {

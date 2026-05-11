@@ -180,6 +180,7 @@
       "paypal": "PayPal",
       "revolut": "Revolut"
     },
+    "blikUnavailableHint": "BLIK is closed right now (for example overnight). Try again in the morning or choose another payment method.",
     "cryptoCurrencies": {
       "btc": "Bitcoin (BTC)",
       "eth": "Ethereum (ETH)",
