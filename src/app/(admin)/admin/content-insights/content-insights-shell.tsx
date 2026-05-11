@@ -25,6 +25,12 @@ export function ContentInsightsShell({ children }: { children: React.ReactNode }
           {t("dashboardHomeTitle")}
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">{t("contentInsightsShellSubtitle")}</p>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          <Link href="/admin/analytics" className="text-primary font-medium hover:underline">
+            {t("contentInsightsAnalyticsCtaLink")}
+          </Link>{" "}
+          {t("contentInsightsAnalyticsCtaTail")}
+        </p>
       </header>
 
       <LayoutGroup>

@@ -443,6 +443,8 @@
     "contentInsightsNavGroup": "Content & CTR",
     "contentInsightsNavSingle": "Content & CTR",
     "contentInsightsShellSubtitle": "Content engagement and catalog performance — export for marketing while respecting rights.",
+    "contentInsightsAnalyticsCtaLink": "Full analytics",
+    "contentInsightsAnalyticsCtaTail": "- e.g. new users today / 7d / 30d, revenue, credit purchases, referrals.",
     "contentInsightsTablistAria": "Content analytics views",
     "dashboardTablistAria": "Dashboard sections",
     "dashboardTabOverview": "Overview",
