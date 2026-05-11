@@ -9,15 +9,16 @@ on:
   pull_request:
     branches: ["main", "master"]
 
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
 
     strategy:
       fail-fast: false
@@ -29,22 +30,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.language == 'go' && 'autobuild' || 'none' }}
-          source-root: ${{ matrix.language == 'go' && 'backend' || '.' }}
-          # Ignore bundled agent/live-browser artefacts (megabyte JS blobs) — not app surface for SAST.
-          config: |
-            paths-ignore:
-              - ".agents/**"
-
+      # Toolchains before CodeQL init so Go/Node are on PATH for extraction metadata.
       - name: Set up Go
         if: matrix.language == 'go'
         uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.0"
+          cache-dependency-path: backend/go.sum
 
       - name: Set up Node.js
         if: matrix.language == 'javascript-typescript'
@@ -56,6 +48,23 @@ jobs:
       - name: Install dependencies
         if: matrix.language == 'javascript-typescript'
         run: npm ci
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # Go lives in backend/ — autobuild often misses nested modules; manual build is reliable.
+          build-mode: ${{ matrix.language == 'go' && 'manual' || 'none' }}
+          source-root: ${{ matrix.language == 'go' && 'backend' || '.' }}
+          # Ignore bundled agent/live-browser artefacts (megabyte JS blobs) — not app surface for SAST.
+          config: |
+            paths-ignore:
+              - ".agents/**"
+
+      - name: Build Go (traced)
+        if: matrix.language == 'go'
+        working-directory: backend
+        run: go build -buildvcs=false -o "$RUNNER_TEMP/codeql-go" ./cmd/server
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
