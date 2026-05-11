@@ -12,6 +12,7 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/marketing"
+	"content-platform-backend/internal/marketing/promogen"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -34,10 +35,19 @@ func repeatBuyerVariantIdx(userID string, n int) int {
 	return int(v % uint32(n))
 }
 
-// RunRepeatBuyerPromo emails verified purchasers (credits APPROVED or any model/bundle purchase) once per campaign key.
-// A/B/C link hooks are not three mails per user: each user gets exactly one send, with hook + /l/{slug} chosen
-// deterministically from user id for analytics. This function loops batches until no candidates remain or ctx ends,
-// so one cron run can drain the whole eligible queue (no need to rely on the next day for the next LIMIT page).
+func abVariantTagFromSlug(slug string) string {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return ""
+	}
+	if i := strings.LastIndex(slug, "-"); i >= 0 && i+1 < len(slug) {
+		return slug[i+1:]
+	}
+	return slug
+}
+
+// RunRepeatBuyerPromo emails verified purchasers once per campaign key with a fresh single-use promo code
+// and a signed tracking CTA to checkout (utm + click logging).
 func RunRepeatBuyerPromo(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client, m *mailer.Mailer, cfg *config.Config) {
 	if db == nil || cfg == nil || !cfg.RepeatBuyerPromoEmailEnabled {
 		return
@@ -51,17 +61,21 @@ func RunRepeatBuyerPromo(ctx context.Context, db *pgxpool.Pool, rdb *redis.Clien
 		return
 	}
 
-	code := strings.TrimSpace(cfg.RepeatBuyerPromoCode)
-	if code == "" {
-		code = "DYSKIOF10BK"
+	cloneSource := strings.TrimSpace(cfg.RepeatBuyerCloneFromCode)
+	if cloneSource == "" {
+		cloneSource = strings.TrimSpace(cfg.RepeatBuyerPromoCode)
 	}
-	var promoOK bool
-	if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM promo_codes WHERE UPPER(TRIM(code)) = UPPER(TRIM($1)) AND is_active = true)`, code).Scan(&promoOK); err != nil {
-		log.Printf("[Marketing] repeat_buyer: promo lookup code=%q: %v", code, err)
+	if cloneSource == "" {
+		cloneSource = "DYSKIOF10BK"
+	}
+
+	var templateOK bool
+	if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM promo_codes WHERE UPPER(TRIM(code)) = UPPER(TRIM($1)) AND is_active = true)`, cloneSource).Scan(&templateOK); err != nil {
+		log.Printf("[Marketing] repeat_buyer: template promo lookup code=%q: %v", cloneSource, err)
 		return
 	}
-	if !promoOK {
-		log.Printf("[Marketing] repeat_buyer: no active promo code %q — create it or run migration", code)
+	if !templateOK {
+		log.Printf("[Marketing] repeat_buyer: no active template promo %q — create it or set REPEAT_BUYER_CLONE_FROM_CODE / REPEAT_BUYER_PROMO_CODE", cloneSource)
 		return
 	}
 
@@ -80,6 +94,12 @@ func RunRepeatBuyerPromo(ctx context.Context, db *pgxpool.Pool, rdb *redis.Clien
 	if len(abSlugs) == 0 {
 		abSlugs = []string{"vip10-a", "vip10-b", "vip10-c"}
 	}
+
+	ctaPath := strings.TrimSpace(cfg.RepeatBuyerCtaPath)
+	if ctaPath == "" {
+		ctaPath = "/purchase"
+	}
+	ttl := time.Duration(cfg.RepeatBuyerGeneratedPromoTTLDays) * 24 * time.Hour
 
 	const q = `
 SELECT u.id, u.email, COALESCE(NULLIF(trim(u.name), ''), '') AS display_name
@@ -147,19 +167,29 @@ LIMIT $2
 				continue
 			}
 			unsub := marketing.UnsubscribeLinkForEmail(cfg, token)
-			vi := repeatBuyerVariantIdx(u.id, len(abSlugs))
-			linkSlug := abSlugs[vi]
-			cta := strings.TrimRight(cfg.FrontendURL, "/") + "/l/" + linkSlug
-			hook := repeatBuyerHookVariants[vi%len(repeatBuyerHookVariants)]
-			vars := buildRepeatBuyerVariableMap(cfg, required, u.displayName, unsub, code, cta, hook, extras)
-			if err := m.SendMarketingTemplate(u.email, slug, "", vars); err != nil {
-				log.Printf("[Marketing] repeat_buyer: send user=%s email=%s: %v", u.id, u.email, err)
+
+			promoID, newCode, perr := promogen.CreateSingleUseClone(ctx, db, cloneSource, u.id, repeatBuyerCampaignKey, ttl)
+			if perr != nil {
+				log.Printf("[Marketing] repeat_buyer: promo clone user=%s: %v", u.id, perr)
 				marketing.DeleteUnsubscribeToken(ctx, rdb, token)
 				continue
 			}
-			if _, err := db.Exec(ctx, `
-INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES ($1, $2, $3)
-`, u.id, repeatBuyerCampaignKey, slug); err != nil {
+
+			vi := repeatBuyerVariantIdx(u.id, len(abSlugs))
+			linkSlug := abSlugs[vi]
+			abTag := abVariantTagFromSlug(linkSlug)
+			cta := trackedEmailCTA(cfg, u.id, repeatBuyerCampaignKey, slug, ctaPath, newCode, promoID, abTag)
+			hook := repeatBuyerHookVariants[vi%len(repeatBuyerHookVariants)]
+			vars := buildRepeatBuyerVariableMap(cfg, required, u.displayName, unsub, newCode, cta, hook, extras)
+			if err := m.SendMarketingTemplate(u.email, slug, "", vars); err != nil {
+				log.Printf("[Marketing] repeat_buyer: send user=%s email=%s: %v", u.id, u.email, err)
+				if _, delErr := db.Exec(ctx, `DELETE FROM promo_codes WHERE id = $1`, promoID); delErr != nil {
+					log.Printf("[Marketing] repeat_buyer: rollback promo %s: %v", promoID, delErr)
+				}
+				marketing.DeleteUnsubscribeToken(ctx, rdb, token)
+				continue
+			}
+			if err := insertMarketingCampaignSend(ctx, db, u.id, repeatBuyerCampaignKey, slug, &promoID); err != nil {
 				log.Printf("[Marketing] repeat_buyer: audit insert user=%s: %v", u.id, err)
 			}
 			batchSent++
@@ -167,7 +197,7 @@ INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES (
 			time.Sleep(200 * time.Millisecond)
 		}
 		if batchSent > 0 {
-			log.Printf("[Marketing] repeat_buyer: batch sent %d (running total %d, slug=%s code=%s)", batchSent, totalSent, slug, code)
+			log.Printf("[Marketing] repeat_buyer: batch sent %d (running total %d, slug=%s template=%s)", batchSent, totalSent, slug, cloneSource)
 		}
 		if batchSent == 0 && len(candidates) > 0 {
 			log.Printf("[Marketing] repeat_buyer: stopping after batch with 0 sends (%d candidates) to avoid a tight loop", len(candidates))
@@ -178,7 +208,7 @@ INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES (
 		}
 	}
 	if totalSent > 0 {
-		log.Printf("[Marketing] repeat_buyer: done total sent=%d (slug=%s code=%s)", totalSent, slug, code)
+		log.Printf("[Marketing] repeat_buyer: done total sent=%d (slug=%s cloneFrom=%s)", totalSent, slug, cloneSource)
 	}
 }
 

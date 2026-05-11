@@ -34,7 +34,10 @@ type Config struct {
 	RedisURL string
 
 	// JWT
-	JWTSecret                string
+	JWTSecret string
+
+	// MarketingEmailClickSecret: optional HMAC key for signed /api/public/email-cta links. Empty = JWT_SECRET.
+	MarketingEmailClickSecret string
 	JWTExpirySecs            int
 	SessionTokenTTL          int // seconds (default session when not using "remember me")
 	RememberMeSessionTTLSecs int // seconds for password login with rememberMe (default 30d)
@@ -144,8 +147,14 @@ type Config struct {
 	// One-shot “ever purchased” promo blast (cron). REPEAT_BUYER_PROMO_EMAIL_ENABLED=1.
 	RepeatBuyerPromoEmailEnabled    bool
 	RepeatBuyerPromoCode            string
+	// RepeatBuyerCloneFromCode: active promo row to copy discount rules from for per-recipient codes. Empty = RepeatBuyerPromoCode.
+	RepeatBuyerCloneFromCode string
+	// RepeatBuyerGeneratedPromoTTLDays: expiry for each issued single-use code (days).
+	RepeatBuyerGeneratedPromoTTLDays int
+	// RepeatBuyerCtaPath: primary button destination after click tracking (default /purchase).
+	RepeatBuyerCtaPath              string
 	RepeatBuyerTemplateSlug         string
-	RepeatBuyerAbLinkSlugs          string // comma: vip10-a,vip10-b,vip10-c — must match custom_links.slug
+	RepeatBuyerAbLinkSlugs          string // comma: vip10-a,vip10-b,vip10-c — A/B label only (utm_email_ab); CTAs are tracked /purchase + unique promo
 	RepeatBuyerBatchLimit           int
 	RepeatBuyerTemplateDefaultsJSON string
 
@@ -208,6 +217,7 @@ func Load() (*Config, error) {
 		OTELServiceName:                   getEnvOrDefault("OTEL_SERVICE_NAME", "content-api"),
 		RedisURL:                          getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:                         requireEnv("JWT_SECRET"),
+		MarketingEmailClickSecret:         strings.TrimSpace(getEnvOrDefault("MARKETING_EMAIL_CLICK_SECRET", "")),
 		JWTExpirySecs:                     resolveSessionTTL(), // matches SessionTokenTTL (SESSION_TTL_DAYS or JWT_EXPIRY_SECS)
 		SessionTokenTTL:                   resolveSessionTTL(),
 		RememberMeSessionTTLSecs:          resolveRememberMeTTL(),
@@ -274,6 +284,9 @@ func Load() (*Config, error) {
 		FavoriteNudgeTemplateDefaultsJSON: strings.TrimSpace(getEnvOrDefault("FAVORITE_NUDGE_TEMPLATE_DEFAULTS_JSON", "")),
 		RepeatBuyerPromoEmailEnabled:      getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "true",
 		RepeatBuyerPromoCode:              strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_PROMO_CODE", "DYSKIOF10BK")),
+		RepeatBuyerCloneFromCode:          strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_CLONE_FROM_CODE", "")),
+		RepeatBuyerGeneratedPromoTTLDays: getEnvOrDefaultInt("REPEAT_BUYER_GENERATED_PROMO_TTL_DAYS", 14),
+		RepeatBuyerCtaPath:                strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_CTA_PATH", "/purchase")),
 		RepeatBuyerTemplateSlug:           strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_SLUG", "repeat-buyer-10")),
 		RepeatBuyerAbLinkSlugs:            strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_AB_LINK_SLUGS", "vip10-a,vip10-b,vip10-c")),
 		RepeatBuyerBatchLimit:             getEnvOrDefaultInt("REPEAT_BUYER_BATCH_LIMIT", 120),
@@ -435,6 +448,15 @@ func clampMarketingCampaigns(cfg *Config) {
 	}
 	if cfg.RepeatBuyerBatchLimit > 500 {
 		cfg.RepeatBuyerBatchLimit = 500
+	}
+	if cfg.RepeatBuyerGeneratedPromoTTLDays < 1 {
+		cfg.RepeatBuyerGeneratedPromoTTLDays = 1
+	}
+	if cfg.RepeatBuyerGeneratedPromoTTLDays > 90 {
+		cfg.RepeatBuyerGeneratedPromoTTLDays = 90
+	}
+	if cfg.RepeatBuyerCtaPath == "" {
+		cfg.RepeatBuyerCtaPath = "/purchase"
 	}
 	if cfg.WelcomeTemplateSlug == "" {
 		cfg.WelcomeTemplateSlug = "welcome-value-stack"

@@ -96,22 +96,20 @@ FROM users u WHERE u.id = $1
 		return
 	}
 	unsub := marketing.UnsubscribeLinkForEmail(cfg, token)
-	vars := buildFavoriteNudgeVariableMap(cfg, required, displayName, unsub, extras)
+	vars := buildFavoriteNudgeVariableMap(cfg, userID, slug, required, displayName, unsub, extras)
 	if err := m.SendMarketingTemplate(email, slug, "", vars); err != nil {
 		log.Printf("[Marketing] favorite_nudge: send user=%s: %v", userID, err)
 		marketing.DeleteUnsubscribeToken(ctx, rdb, token)
 		releaseTrigger(ctx, db, userID, favoriteNudgeTriggerKey)
 		return
 	}
-	if _, err := db.Exec(ctx, `
-INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES ($1, $2, $3)
-`, userID, favoriteNudgeTriggerKey, slug); err != nil {
+	if err := insertMarketingCampaignSend(ctx, db, userID, favoriteNudgeTriggerKey, slug, nil); err != nil {
 		log.Printf("[Marketing] favorite_nudge: audit: %v", err)
 	}
 	log.Printf("[Marketing] favorite_nudge: sent user=%s slug=%s", userID, slug)
 }
 
-func buildFavoriteNudgeVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildFavoriteNudgeVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -123,7 +121,7 @@ func buildFavoriteNudgeVariableMap(cfg *config.Config, required []string, displa
 	if hook == "" {
 		hook = "masz nową pozycję w ulubionych i szybki powrót bez ponownego szukania."
 	}
-	cta := ctaURL(cfg, cfg.FavoriteNudgeCtaPath)
+	cta := trackedEmailCTA(cfg, userID, favoriteNudgeTriggerKey, templateSlug, cfg.FavoriteNudgeCtaPath, "", "", "")
 	sn := siteName(cfg)
 
 	aliases := map[string]string{

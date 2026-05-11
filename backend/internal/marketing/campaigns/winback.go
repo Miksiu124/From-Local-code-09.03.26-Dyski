@@ -112,15 +112,13 @@ LIMIT $1
 				continue
 			}
 			unsub := marketing.UnsubscribeLinkForEmail(cfg, token)
-			vars := buildWinbackVariableMap(cfg, required, u.displayName, unsub, extras)
+			vars := buildWinbackVariableMap(cfg, u.id, slug, required, u.displayName, unsub, extras)
 			if err := m.SendMarketingTemplate(u.email, slug, "", vars); err != nil {
 				log.Printf("[Marketing] winback: send user=%s email=%s: %v", u.id, u.email, err)
 				marketing.DeleteUnsubscribeToken(ctx, rdb, token)
 				continue
 			}
-			if _, err := db.Exec(ctx, `
-INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES ($1, $2, $3)
-`, u.id, winbackCampaignKey, slug); err != nil {
+			if err := insertMarketingCampaignSend(ctx, db, u.id, winbackCampaignKey, slug, nil); err != nil {
 				log.Printf("[Marketing] winback: audit insert user=%s: %v", u.id, err)
 			}
 			batchSent++
@@ -143,7 +141,7 @@ INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES (
 	}
 }
 
-func buildWinbackVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildWinbackVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -159,7 +157,7 @@ func buildWinbackVariableMap(cfg *config.Config, required []string, displayName,
 	if ctaPath == "" {
 		ctaPath = "/models"
 	}
-	cta := ctaURL(cfg, ctaPath)
+	cta := trackedEmailCTA(cfg, userID, winbackCampaignKey, templateSlug, ctaPath, "", "", "")
 	sn := siteName(cfg)
 
 	aliases := map[string]string{

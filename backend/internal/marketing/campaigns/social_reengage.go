@@ -119,15 +119,13 @@ LIMIT $1
 				continue
 			}
 			unsub := marketing.UnsubscribeLinkForEmail(cfg, token)
-			vars := buildSocialProofVariableMap(cfg, required, u.displayName, unsub, extras)
+			vars := buildSocialProofVariableMap(cfg, u.id, slug, required, u.displayName, unsub, extras)
 			if err := m.SendMarketingTemplate(u.email, slug, "", vars); err != nil {
 				log.Printf("[Marketing] social_proof: send user=%s: %v", u.id, err)
 				marketing.DeleteUnsubscribeToken(ctx, rdb, token)
 				continue
 			}
-			if _, err := db.Exec(ctx, `
-INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES ($1, $2, $3)
-`, u.id, socialProofCampaignKey, slug); err != nil {
+			if err := insertMarketingCampaignSend(ctx, db, u.id, socialProofCampaignKey, slug, nil); err != nil {
 				log.Printf("[Marketing] social_proof: audit user=%s: %v", u.id, err)
 			}
 			batchSent++
@@ -150,7 +148,7 @@ INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES (
 	}
 }
 
-func buildSocialProofVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildSocialProofVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -170,7 +168,7 @@ func buildSocialProofVariableMap(cfg *config.Config, required []string, displayN
 	if ctaPath == "" {
 		ctaPath = "/models"
 	}
-	cta := ctaURL(cfg, ctaPath)
+	cta := trackedEmailCTA(cfg, userID, socialProofCampaignKey, templateSlug, ctaPath, "", "", "")
 	sn := siteName(cfg)
 
 	aliases := map[string]string{

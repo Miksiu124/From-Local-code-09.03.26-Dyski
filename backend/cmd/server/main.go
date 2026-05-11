@@ -28,6 +28,7 @@ import (
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/marketing"
 	"content-platform-backend/internal/marketing/campaigns"
+	"content-platform-backend/internal/marketing/emailcta"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/models"
 	"content-platform-backend/internal/notifications"
@@ -232,6 +233,9 @@ func main() {
 	linksHandler := links.NewHandler(pgPool, cfg)
 	api.GET("/public/links/:slug", linksHandler.TrackAndResolveLink)
 
+	emailCTAHandler := emailcta.NewHandler(pgPool, cfg)
+	api.GET("/public/email-cta", emailCTAHandler.Redirect)
+
 	// Content streaming (requires auth + access)
 	contentHandler := content.NewHandler(pgPool, r2Client, cfg, redisClient)
 
@@ -324,6 +328,7 @@ func main() {
 		ops := api.Group("/ops", opsGuard)
 		ops.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
 		ops.POST("/marketing/email-samples", adminHandler.SendEmailSamples)
+		ops.GET("/marketing/email-stats", adminHandler.GetMarketingEmailStats)
 	}
 
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)
@@ -375,6 +380,7 @@ func main() {
 	adminGroup.GET("/content/:id/source-download", adminHandler.DownloadContentSource)
 	adminGroup.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
 	adminGroup.POST("/marketing/email-samples", adminHandler.SendEmailSamples)
+	adminGroup.GET("/marketing/email-stats", adminHandler.GetMarketingEmailStats)
 	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
 	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)

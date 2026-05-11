@@ -74,16 +74,14 @@ FROM users u WHERE u.id = $1
 		return
 	}
 	unsub := marketing.UnsubscribeLinkForEmail(cfg, token)
-	vars := buildWelcomeVariableMap(cfg, required, displayName, unsub, extras)
+	vars := buildWelcomeVariableMap(cfg, userID, slug, required, displayName, unsub, extras)
 	if err := m.SendMarketingTemplate(email, slug, "", vars); err != nil {
 		log.Printf("[Marketing] welcome: send user=%s: %v", userID, err)
 		marketing.DeleteUnsubscribeToken(ctx, rdb, token)
 		releaseTrigger(ctx, db, userID, welcomeTriggerKey)
 		return
 	}
-	if _, err := db.Exec(ctx, `
-INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES ($1, $2, $3)
-`, userID, welcomeCampaignKey, slug); err != nil {
+	if err := insertMarketingCampaignSend(ctx, db, userID, welcomeCampaignKey, slug, nil); err != nil {
 		log.Printf("[Marketing] welcome: audit: %v", err)
 	}
 	uid := userID
@@ -92,7 +90,7 @@ INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES (
 	log.Printf("[Marketing] welcome: sent user=%s slug=%s", userID, slug)
 }
 
-func buildWelcomeVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildWelcomeVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -108,7 +106,7 @@ func buildWelcomeVariableMap(cfg *config.Config, required []string, displayName,
 	if benefit == "" {
 		benefit = "Jasne ceny, spójna jakość, szybki powrót do ulubionych folderów."
 	}
-	cta := ctaURL(cfg, cfg.WelcomeCtaPath)
+	cta := trackedEmailCTA(cfg, userID, welcomeCampaignKey, templateSlug, cfg.WelcomeCtaPath, "", "", "")
 	sn := siteName(cfg)
 	aliases := map[string]string{
 		"firstName":      fn,

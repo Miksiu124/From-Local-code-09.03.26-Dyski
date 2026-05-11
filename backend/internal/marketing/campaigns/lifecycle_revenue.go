@@ -183,7 +183,7 @@ LIMIT $5
 		cfg.LapsedBuyerBatchLimit, required, extras, buildLapsedBuyerVariableMap)
 }
 
-type lifecycleVarBuilder func(cfg *config.Config, required []string, displayName, unsub string, extras map[string]string) map[string]string
+type lifecycleVarBuilder func(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsub string, extras map[string]string) map[string]string
 
 func runLifecycleBatch(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client, m *mailer.Mailer, cfg *config.Config,
 	logLabel, campaignKey, slug, query string, args []any, batchLimit int, required []string, extras map[string]string, buildVars lifecycleVarBuilder,
@@ -227,15 +227,13 @@ func runLifecycleBatch(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client,
 				continue
 			}
 			unsub := marketing.UnsubscribeLinkForEmail(cfg, token)
-			vars := buildVars(cfg, required, u.displayName, unsub, extras)
+			vars := buildVars(cfg, u.id, slug, required, u.displayName, unsub, extras)
 			if err := m.SendMarketingTemplate(u.email, slug, "", vars); err != nil {
 				log.Printf("[Marketing] %s: send user=%s: %v", logLabel, u.id, err)
 				marketing.DeleteUnsubscribeToken(ctx, rdb, token)
 				continue
 			}
-			if _, err := db.Exec(ctx, `
-INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES ($1, $2, $3)
-`, u.id, campaignKey, slug); err != nil {
+			if err := insertMarketingCampaignSend(ctx, db, u.id, campaignKey, slug, nil); err != nil {
 				log.Printf("[Marketing] %s: audit user=%s: %v", logLabel, u.id, err)
 			}
 			uid := u.id
@@ -260,7 +258,7 @@ INSERT INTO marketing_campaign_sends (user_id, campaign, template_slug) VALUES (
 	}
 }
 
-func buildStarterOfferVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildStarterOfferVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -276,7 +274,7 @@ func buildStarterOfferVariableMap(cfg *config.Config, required []string, display
 	if urgency == "" {
 		urgency = "Krótkie okno na start: wejdź do kasy, gdy Ci pasuje."
 	}
-	cta := ctaURL(cfg, cfg.StarterOfferCtaPath)
+	cta := trackedEmailCTA(cfg, userID, starterOfferCampaignKey, templateSlug, cfg.StarterOfferCtaPath, "", "", "")
 	sn := siteName(cfg)
 	aliases := map[string]string{
 		"firstName":      fn,
@@ -290,7 +288,7 @@ func buildStarterOfferVariableMap(cfg *config.Config, required []string, display
 	return fillTemplateAliases(required, aliases, extras)
 }
 
-func buildAtRiskVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildAtRiskVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -302,7 +300,7 @@ func buildAtRiskVariableMap(cfg *config.Config, required []string, displayName, 
 	if hook == "" {
 		hook = "Wróć na chwilę — podpowiemy, co teraz najczęściej wybierają kupujący w katalogu."
 	}
-	cta := ctaURL(cfg, cfg.AtRiskCtaPath)
+	cta := trackedEmailCTA(cfg, userID, atRiskPaidCampaignKey, templateSlug, cfg.AtRiskCtaPath, "", "", "")
 	sn := siteName(cfg)
 	aliases := map[string]string{
 		"firstName":      fn,
@@ -315,7 +313,7 @@ func buildAtRiskVariableMap(cfg *config.Config, required []string, displayName, 
 	return fillTemplateAliases(required, aliases, extras)
 }
 
-func buildLapsedBuyerVariableMap(cfg *config.Config, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
+func buildLapsedBuyerVariableMap(cfg *config.Config, userID, templateSlug string, required []string, displayName, unsubURL string, extras map[string]string) map[string]string {
 	fn := firstNameFromDisplay(displayName)
 	if fn == "" {
 		fn = strings.TrimSpace(cfg.WinbackFirstNameFallback)
@@ -327,7 +325,7 @@ func buildLapsedBuyerVariableMap(cfg *config.Config, required []string, displayN
 	if hook == "" {
 		hook = "Od Twojej ostatniej wizyty doszły nowe materiały — możesz wrócić prosto do katalogu."
 	}
-	cta := ctaURL(cfg, cfg.LapsedBuyerCtaPath)
+	cta := trackedEmailCTA(cfg, userID, lapsedBuyerCampaignKey, templateSlug, cfg.LapsedBuyerCtaPath, "", "", "")
 	sn := siteName(cfg)
 	aliases := map[string]string{
 		"firstName":      fn,
