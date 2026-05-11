@@ -75,3 +75,17 @@ if ($check2 -match "1") {
     Write-Host "  docker exec -i content-postgres psql -U platform -d content_platform < backend/migrations/20260313120000_add_referral_link_tracking.up.sql"
     exit 1
 }
+
+$mkt = & psql -h $dbHost -p $dbPort -U $dbUser -d $dbName -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='marketing_email_click_events'" 2>$null
+if ($mkt -notmatch "1") {
+    Write-Host "[Pending] marketing_email_click_events missing - applying 20260511120000..."
+    $mktFile = Join-Path $ContentDir "backend\migrations\20260511120000_marketing_email_tracking.up.sql"
+    & psql -h $dbHost -p $dbPort -U $dbUser -d $dbName -v ON_ERROR_STOP=1 -f $mktFile
+}
+$mkt2 = & psql -h $dbHost -p $dbPort -U $dbUser -d $dbName -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='marketing_email_click_events'" 2>$null
+if ($mkt2 -match "1") {
+    Write-Host "[OK] marketing_email_click_events ready"
+} else {
+    Write-Host "[WARN] marketing_email_click_events still missing. Run manually:"
+    Write-Host "  psql ... -f backend/migrations/20260511120000_marketing_email_tracking.up.sql"
+}

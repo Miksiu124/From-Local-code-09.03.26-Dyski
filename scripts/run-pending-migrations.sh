@@ -88,3 +88,15 @@ fi
 if check_table custom_links; then
   echo "[OK] custom_links table exists"
 fi
+
+# Email marketing: click log + promo attribution (admin /admin/email-campaigns)
+if ! check_table marketing_email_click_events; then
+  echo "[Pending] marketing_email_click_events missing - applying 20260511120000..."
+  run_sql "$MIGRATIONS_DIR/20260511120000_marketing_email_tracking.up.sql" || true
+fi
+if check_table marketing_email_click_events; then
+  echo "[OK] marketing_email_click_events ready"
+else
+  echo "[WARN] marketing_email_click_events still missing. Run manually:"
+  echo "  PGPASSWORD=\$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f backend/migrations/20260511120000_marketing_email_tracking.up.sql"
+fi
