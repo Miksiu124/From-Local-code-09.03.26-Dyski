@@ -7,65 +7,67 @@ var embeddedMarketingTemplates = []struct {
 	{
 		Slug:    "catalog-model-updated",
 		Subject: "{{modelName}}: świeże materiały w katalogu",
-		BodyHTML: marketingEmailFrame(`<tr><td style="padding:30px 30px 8px;font-size:13px;line-height:1.4;color:#9a9189;">{{siteName}}</td></tr>
-<tr><td style="padding:8px 30px 0;font-size:24px;font-weight:700;line-height:1.18;color:#f3ece4;">{{modelName}} ma nową wersję</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">Cześć {{firstName}},</td></tr>
-<tr><td style="padding:10px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">{{updateSummary}}</td></tr>
-<tr><td style="padding:22px 30px 6px;font-size:13px;line-height:1.5;color:#9a9189;">Jeden link, bez szukania od nowa.</td></tr>
-<tr><td style="padding:22px 30px 34px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d6a657;color:#17110d;text-decoration:none;font-weight:700;font-size:14px;line-height:1;padding:14px 20px;border-radius:8px;">Otwórz w katalogu</a></td></tr>`),
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Nowa wersja w katalogu</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">{{modelName}}</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">Cześć {{firstName}}, {{updateSummary}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">Aktualizacja jest już podpięta do katalogu. Jeden link prowadzi prosto do materiałów, bez szukania modelu od początku.</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Otwórz aktualizację</a></td></tr>`),
 	},
 	{
 		Slug:    "promo-limited",
 		Subject: "{{promoTitle}}: kod {{promoCode}} do {{promoExpiry}}",
-		BodyHTML: marketingEmailFrame(`<tr><td style="padding:30px 30px 8px;font-size:13px;line-height:1.4;color:#9a9189;">{{siteName}}</td></tr>
-<tr><td style="padding:8px 30px 0;font-size:24px;font-weight:700;line-height:1.18;color:#f3ece4;">{{promoTitle}}</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">Hej {{firstName}}, kod jest aktywny do <strong style="color:#f3ece4;">{{promoExpiry}}</strong>. Jeśli planujesz doładowanie, użyj go przy kasie.</td></tr>
-<tr><td style="padding:18px 30px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #37302a;background:#211b17;border-radius:10px;"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.5;color:#b9afa4;">Kod</td><td align="right" style="padding:16px 18px;font-size:18px;font-weight:700;letter-spacing:.08em;color:#f3ece4;">{{promoCode}}</td></tr></table></td></tr>
-<tr><td style="padding:24px 30px 34px;"><a href="{{promoUrl}}" style="display:inline-block;background:#d6a657;color:#17110d;text-decoration:none;font-weight:700;font-size:14px;line-height:1;padding:14px 20px;border-radius:8px;">Przejdź do oferty</a></td></tr>`),
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Oferta czasowa</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">{{promoTitle}}</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">Hej {{firstName}}, kod jest aktywny do <strong style="color:#f4ede4;">{{promoExpiry}}</strong>. Jeśli planujesz doładowanie, to jest najprostszy moment, żeby wejść taniej.</td></tr>
+<tr><td style="padding:24px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#261b12;border:1px solid #5c4327;border-radius:14px;"><tr><td style="padding:18px 20px 8px;font-size:12px;line-height:1.4;color:#bca274;text-transform:uppercase;letter-spacing:.12em;">Kod przy kasie</td></tr><tr><td style="padding:0 20px 20px;font-size:28px;font-weight:800;letter-spacing:.16em;color:#f2d199;">{{promoCode}}</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{promoUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Skorzystaj z kodu</a></td></tr>`),
 	},
 	{
 		Slug:    "winback-soft",
 		Subject: "{{firstName}}, katalog trochę się zmienił",
-		BodyHTML: marketingEmailFrame(`<tr><td style="padding:30px 30px 8px;font-size:13px;line-height:1.4;color:#9a9189;">{{siteName}}</td></tr>
-<tr><td style="padding:8px 30px 0;font-size:24px;font-weight:700;line-height:1.18;color:#f3ece4;">Wróć tylko do tego, co warte uwagi</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">{{firstName}}, {{hookLine}}</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:14px;line-height:1.55;color:#a99f94;">Krótka sesja wystarczy: nowe pozycje, ceny i topowe materiały masz od razu w katalogu.</td></tr>
-<tr><td style="padding:24px 30px 34px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d6a657;color:#17110d;text-decoration:none;font-weight:700;font-size:14px;line-height:1;padding:14px 20px;border-radius:8px;">Zobacz katalog</a></td></tr>`),
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Powrót do katalogu</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Wróć tylko do tego, co warte uwagi</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{firstName}}, {{hookLine}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td width="33%" style="padding:16px 8px 16px 18px;font-size:12px;line-height:1.45;color:#b8aa9d;">Nowe pozycje</td><td width="33%" style="padding:16px 8px;font-size:12px;line-height:1.45;color:#b8aa9d;">Jasne ceny</td><td width="33%" style="padding:16px 18px 16px 8px;font-size:12px;line-height:1.45;color:#b8aa9d;">TOP materiały</td></tr></table></td></tr>
+<tr><td style="padding:24px 34px 0;font-size:14px;line-height:1.55;color:#a99f94;">Krótka sesja wystarczy: katalog prowadzi od razu do wyboru i zakupu, bez przebijania się przez przypadkowy content.</td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Zobacz, co doszło</a></td></tr>`),
 	},
 	{
 		Slug:    "social-proof-drop",
 		Subject: "{{trendingTitle}} wraca na top",
-		BodyHTML: marketingEmailFrame(`<tr><td style="padding:30px 30px 8px;font-size:13px;line-height:1.4;color:#9a9189;">{{siteName}}</td></tr>
-<tr><td style="padding:8px 30px 0;font-size:24px;font-weight:700;line-height:1.18;color:#f3ece4;">{{trendingTitle}}</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">{{firstName}}, {{proofLine}}</td></tr>
-<tr><td style="padding:16px 30px 0;font-size:14px;line-height:1.55;color:#a99f94;">Jeśli przegapiłeś ostatni ruch w katalogu, zacznij od tej pozycji.</td></tr>
-<tr><td style="padding:24px 30px 34px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d6a657;color:#17110d;text-decoration:none;font-weight:700;font-size:14px;line-height:1;padding:14px 20px;border-radius:8px;">Sprawdź, co jest na topie</a></td></tr>`),
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Teraz popularne</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">{{trendingTitle}}</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{firstName}}, {{proofLine}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">To dobry punkt wejścia, jeśli nie chcesz przeglądać wszystkiego od zera. Zacznij od pozycji, która właśnie wraca na górę katalogu.</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Sprawdź top</a></td></tr>`),
 	},
 	{
 		Slug:    "favorite-nudge",
 		Subject: "{{firstName}}, ulubione nie musi czekać",
-		BodyHTML: marketingEmailFrame(`<tr><td style="padding:30px 30px 8px;font-size:13px;line-height:1.4;color:#9a9189;">{{siteName}}</td></tr>
-<tr><td style="padding:8px 30px 0;font-size:24px;font-weight:700;line-height:1.18;color:#f3ece4;">Zapisane. Teraz możesz wrócić prosto do tego wyboru.</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">{{firstName}}, {{hookLine}}</td></tr>
-<tr><td style="padding:16px 30px 0;font-size:14px;line-height:1.55;color:#a99f94;">Ulubione działa najlepiej jako krótka lista: bez przewijania katalogu od początku, bez tracenia tropu.</td></tr>
-<tr><td style="padding:24px 30px 34px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d6a657;color:#17110d;text-decoration:none;font-weight:700;font-size:14px;line-height:1;padding:14px 20px;border-radius:8px;">Otwórz ulubione</a></td></tr>`),
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Zapisane do ulubionych</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Nie trać tropu. Wróć prosto do wyboru.</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{firstName}}, {{hookLine}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">Ulubione działa jak prywatna krótka lista. Wracasz do zapisanych materiałów bez ponownego scrollowania katalogu.</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Otwórz ulubione</a></td></tr>`),
 	},
 	{
 		Slug:    "repeat-buyer-10",
 		Subject: "{{siteName}}: 10% na kolejne doładowanie",
-		BodyHTML: marketingEmailFrame(`<tr><td style="padding:30px 30px 8px;font-size:13px;line-height:1.4;color:#9a9189;">{{siteName}}</td></tr>
-<tr><td style="padding:8px 30px 0;font-size:24px;font-weight:700;line-height:1.18;color:#f3ece4;">Masz 10% na kolejne doładowanie</td></tr>
-<tr><td style="padding:18px 30px 0;font-size:15px;line-height:1.62;color:#c9bfb4;">{{hookLine}}</td></tr>
-<tr><td style="padding:18px 30px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #37302a;background:#211b17;border-radius:10px;"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.5;color:#b9afa4;">Kod rabatowy</td><td align="right" style="padding:16px 18px;font-size:18px;font-weight:700;letter-spacing:.08em;color:#f3ece4;">{{promoCode}}</td></tr></table></td></tr>
-<tr><td style="padding:12px 30px 0;font-size:12px;line-height:1.55;color:#8f857a;">{{promoTerms}}</td></tr>
-<tr><td style="padding:24px 30px 34px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d6a657;color:#17110d;text-decoration:none;font-weight:700;font-size:14px;line-height:1;padding:14px 20px;border-radius:8px;">Doładuj z rabatem</a></td></tr>`),
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Dla kupujących</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Masz 10% na kolejne doładowanie</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{hookLine}}</td></tr>
+<tr><td style="padding:24px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#261b12;border:1px solid #5c4327;border-radius:14px;"><tr><td style="padding:18px 20px 8px;font-size:12px;line-height:1.4;color:#bca274;text-transform:uppercase;letter-spacing:.12em;">Kod rabatowy</td></tr><tr><td style="padding:0 20px 20px;font-size:28px;font-weight:800;letter-spacing:.16em;color:#f2d199;">{{promoCode}}</td></tr></table></td></tr>
+<tr><td style="padding:14px 34px 0;font-size:12px;line-height:1.55;color:#8f857a;">{{promoTerms}}</td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Doładuj z rabatem</a></td></tr>`),
 	},
 }
 
 func marketingEmailFrame(inner string) string {
-	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#100f12;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#f3ece4;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#100f12;padding:34px 14px;"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#18161a;border:1px solid #2b2520;border-radius:12px;overflow:hidden;">` + inner + `
-<tr><td style="padding:0 30px 30px;font-size:12px;line-height:1.55;color:#7f766d;">Dostajesz ten e-mail, bo masz zgodę marketingową w {{siteName}}. <a href="{{unsubscribeUrl}}" style="color:#b7a28c;text-decoration:underline;">Wypisz się</a>.</td></tr>
-</table></td></tr></table></body></html>`
+	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0b0908;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#f4ede4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0908;padding:38px 14px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#171210;border:1px solid #34261f;border-radius:16px;overflow:hidden;">
+<tr><td style="height:5px;background:#d8a84f;font-size:0;line-height:0;">&nbsp;</td></tr>
+<tr><td style="padding:24px 34px 20px;border-bottom:1px solid #2e231d;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="font-size:20px;font-weight:800;line-height:1;color:#f4ede4;">{{siteName}}</td><td align="right" style="font-size:11px;line-height:1;color:#9f8a72;letter-spacing:.14em;text-transform:uppercase;">Quality · Price · TOP</td></tr></table></td></tr>` + inner + `
+<tr><td style="padding:0 34px 34px;font-size:12px;line-height:1.55;color:#82766b;">Dostajesz ten e-mail, bo masz zgodę marketingową w {{siteName}}. <a href="{{unsubscribeUrl}}" style="color:#c6a16a;text-decoration:underline;">Wypisz się</a>.</td></tr>
+</table><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;"><tr><td align="center" style="padding:16px 20px 0;font-size:11px;line-height:1.5;color:#5e554e;">{{siteName}} · katalog premium</td></tr></table></td></tr></table></body></html>`
 }
