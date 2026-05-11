@@ -70,6 +70,15 @@ export const GROWTH = {
   // Inne
   FAVORITE_TOGGLED: "favorite_toggled",
   GROWTH_INSIGHT: "growth_insight",
+
+  /** Serwer: po wysłaniu szablonu welcome-value (audyt + KPI) */
+  LIFECYCLE_WELCOME_SENT: "lifecycle_welcome_sent",
+  /** Serwer: starter offer (cron) */
+  LIFECYCLE_STARTER_OFFER_SENT: "lifecycle_starter_offer_sent",
+  /** Serwer: at-risk paid (cron) */
+  LIFECYCLE_AT_RISK_SENT: "lifecycle_at_risk_sent",
+  /** Serwer: lapsed buyer (cron) */
+  LIFECYCLE_LAPSED_SENT: "lifecycle_lapsed_sent",
 } as const;
 
 export type GrowthEventName = (typeof GROWTH)[keyof typeof GROWTH];

@@ -60,6 +60,43 @@ var embeddedMarketingTemplates = []struct {
 <tr><td style="padding:14px 34px 0;font-size:12px;line-height:1.55;color:#8f857a;">{{promoTerms}}</td></tr>
 <tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Doładuj z rabatem</a></td></tr>`),
 	},
+	{
+		Slug:    "welcome-value-stack",
+		Subject: "{{firstName}}, zacznij od najlepszej części — {{siteName}}",
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Start w katalogu</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Witaj — tu jest krótsza droga</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{firstName}}, {{hookLine}}</td></tr>
+<tr><td style="padding:14px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">{{benefitLine}}</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Otwórz katalog</a></td></tr>`),
+	},
+	{
+		Slug:    "starter-offer-welcome",
+		Subject: "{{siteName}} — mały bonus startowy (krótko)",
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Powitalna szansa</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">{{firstName}}, domknij start</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{hookLine}}</td></tr>
+<tr><td style="padding:12px 34px 0;font-size:13px;line-height:1.55;color:#c6a16a;">{{urgencyLine}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">Jeden link prowadzi do kasy kredytów — bez zbędnych kroków w katalogu.</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Przejdź do zakupu</a></td></tr>`),
+	},
+	{
+		Slug:    "at-risk-retention",
+		Subject: "{{firstName}}, wróć na moment — coś dla Ciebie",
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Dla osób z kontem</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Szybki powrót</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{firstName}}, {{hookLine}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">Materiały nadal czekają w katalogu — wróć tam, gdzie skończyłeś(-aś).</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Zobacz katalog</a></td></tr>`),
+	},
+	{
+		Slug:    "lapsed-buyer-comeback",
+		Subject: "{{firstName}}, sporo nowego od Twojej ostatniej wizyty",
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Wracamy do Ciebie</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Katalog się ruszył</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">{{firstName}}, {{hookLine}}</td></tr>
+<tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">Krótka sesja: odświeżone pozycje, ten sam schemat cen — bez zgadywania.</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Wróć do katalogu</a></td></tr>`),
+	},
 }
 
 func marketingEmailFrame(inner string) string {

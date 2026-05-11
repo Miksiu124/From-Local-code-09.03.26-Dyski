@@ -40,6 +40,11 @@ services:
       # Kampanie marketingowe (cron API): domyślnie włączone na stosie VPS; wyłącz w .env: WINBACK_EMAIL_ENABLED=0 itd.
       WINBACK_EMAIL_ENABLED: ${WINBACK_EMAIL_ENABLED:-1}
       SOCIAL_PROOF_EMAIL_ENABLED: ${SOCIAL_PROOF_EMAIL_ENABLED:-1}
+      # Revenue lifecycle (domyślnie wyłączone — włącz po skonfigurowaniu copy i limitów; patrz docs/MARKETING_CAMPAIGNS.md).
+      WELCOME_EMAIL_ENABLED: ${WELCOME_EMAIL_ENABLED:-0}
+      STARTER_OFFER_EMAIL_ENABLED: ${STARTER_OFFER_EMAIL_ENABLED:-0}
+      AT_RISK_EMAIL_ENABLED: ${AT_RISK_EMAIL_ENABLED:-0}
+      LAPSED_BUYER_EMAIL_ENABLED: ${LAPSED_BUYER_EMAIL_ENABLED:-0}
       # Nudge po pierwszym ulubionym: domyślny slug to favorite-nudge; włącz po sprawdzeniu deliverability.
       FAVORITE_NUDGE_EMAIL_ENABLED: ${FAVORITE_NUDGE_EMAIL_ENABLED:-0}
 

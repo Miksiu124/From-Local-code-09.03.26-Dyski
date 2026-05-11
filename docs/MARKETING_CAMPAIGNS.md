@@ -13,11 +13,13 @@
 
 Wysyłka przez **`Mailer.SendMarketingTemplate`** (szablony wbudowane w backendzie, Resend lub SMTP — patrz `docs/EMAIL_VPS_SETUP.md`).
 
+Segmenty, cap tygodniowy i zdarzenia audytu: **`docs/EMAIL_LIFECYCLE_SEGMENTS.md`**. A/B i KPI: **`docs/EMAIL_AB_TESTING_AND_KPIS.md`**.
+
 ## Harmonogram (cron)
 
 - Jedna specyfikacja crona: **`MARKETING_CRON`** (np. `0 9 * * *` UTC). Jeśli pusta, używane jest **`WINBACK_CRON`** (kompatybilność wstecz).
-- Cron jest **rejestrowany**, gdy włączony jest **winback**, **social proof** lub **repeat buyer promo** (`WINBACK_EMAIL_ENABLED` albo `SOCIAL_PROOF_EMAIL_ENABLED` albo `REPEAT_BUYER_PROMO_EMAIL_ENABLED`).
-- W jednym przebiegu wywoływane są kolejno włączone kampanie (winback → social proof → repeat buyer promo).
+- Cron jest **rejestrowany**, gdy włączony jest którykolwiek z: **winback**, **social proof**, **repeat buyer promo**, **starter offer**, **at-risk**, **lapsed buyer** (odpowiednie `*_EMAIL_ENABLED=1`).
+- W jednym przebiegu wywoływane są kolejno: winback → social proof → repeat buyer → starter offer → at-risk paid → lapsed buyer (każda funkcja sama się wyłącza, jeśli flaga = off).
 
 ## Plan użycia limitu 50k / miesiąc
 
@@ -62,6 +64,28 @@ Po udanym zapisie wiersza w `growth_events` wywoływany jest hook (goroutine, ti
 - Wymaga zalogowanego użytkownika (`user_id` w zdarzeniu).
 - **Jednorazowo na konto:** `marketing_trigger_fires` z kluczem `favorite_nudge_v1`.
 - **Szablon:** domyślnie **`favorite-nudge`**. Można nadpisać przez `FAVORITE_NUDGE_TEMPLATE_SLUG`, jeśli testujesz inną wersję.
+
+### Welcome value stack (`WELCOME_EMAIL_ENABLED`)
+
+- **Kiedy:** po pomyślnej weryfikacji e-maila (link) albo po **pierwszym** utworzeniu konta Discord (nowy wiersz `users`).
+- **Jednorazowo:** `marketing_trigger_fires` + audyt `marketing_campaign_sends` (`welcome_value_v1`).
+- **Szablon:** `WELCOME_TEMPLATE_SLUG` (domyślnie `welcome-value-stack`). Zdarzenie audytu: `lifecycle_welcome_sent`.
+
+### Starter offer (`STARTER_OFFER_EMAIL_ENABLED`)
+
+- **Kto:** `email_verified` w `growth_events`, okno **`STARTER_OFFER_DAYS_MIN`…`STARTER_OFFER_DAYS_MAX`** od pierwszej weryfikacji, brak `purchase_completed` / brak zatwierdzonego `credit_purchases`.
+- **Cooldown:** kampania `starter_offer_v1` + limit tygodniowy (patrz `lifecycle_revenue.go`).
+- **Szablon:** `starter-offer-welcome`. Audyt: `lifecycle_starter_offer_sent`.
+
+### At-risk (kupujący, krótsza cisza) (`AT_RISK_EMAIL_ENABLED`)
+
+- **Kto:** kiedykolwiek zakup (`purchase_completed` lub `credit_purchases.APPROVED`) + pasmo nieaktywności między `AT_RISK_INACTIVE_DAYS_MIN` a `AT_RISK_INACTIVE_DAYS_MAX` (ta sama miara co winback).
+- **Cooldown:** `at_risk_paid_v1`. Audyt: `lifecycle_at_risk_sent`.
+
+### Lapsed buyer (`LAPSED_BUYER_EMAIL_ENABLED`)
+
+- **Kto:** jak wyżej (kupujący), głębsze pasmo nieaktywności (`LAPSED_INACTIVE_DAYS_*`) przed długim winbackiem; konfiguracja jest **docinana** tak, by nie kolidować z pasmem at-risk.
+- **Cooldown:** `lapsed_buyer_v1`. Audyt: `lifecycle_lapsed_sent`.
 
 ## Zgoda i e-mail
 

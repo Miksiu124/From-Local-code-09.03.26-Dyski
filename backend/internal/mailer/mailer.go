@@ -31,10 +31,16 @@ type Mailer struct {
 	password      string
 	from          string
 	marketingFrom string // MARKETING_EMAIL_FROM — optional From for marketing templates
+	txFrom        string // TRANSACTIONAL_EMAIL_FROM — optional From for verification / receipts
+	siteName      string // brand line in transactional + templates
 	resendKey     string
 }
 
 func New(cfg *config.Config) *Mailer {
+	sn := strings.TrimSpace(cfg.WinbackSiteName)
+	if sn == "" {
+		sn = "Dyskiof"
+	}
 	return &Mailer{
 		host:          cfg.SMTPHost,
 		port:          cfg.SMTPPort,
@@ -42,8 +48,21 @@ func New(cfg *config.Config) *Mailer {
 		password:      cfg.SMTPPassword,
 		from:          cfg.SMTPFrom,
 		marketingFrom: cfg.MarketingEmailFrom,
+		txFrom:        cfg.TransactionalEmailFrom,
+		siteName:      sn,
 		resendKey:     cfg.ResendAPIKey,
 	}
+}
+
+func (m *Mailer) transactionalFromAddr() string {
+	if strings.TrimSpace(m.txFrom) != "" {
+		return strings.TrimSpace(m.txFrom)
+	}
+	return ""
+}
+
+func (m *Mailer) sendTransactional(to, subject, htmlBody string) error {
+	return m.sendEmailWithFrom(to, m.transactionalFromAddr(), subject, htmlBody)
 }
 
 func (m *Mailer) IsConfigured() bool {
@@ -405,173 +424,112 @@ func polishCreditsPhrase(n int) string {
 }
 
 func (m *Mailer) SendPasswordReset(to, resetURL string, ttlSecs int) error {
-	subject := "Resetowanie hasła — Dyskiof"
+	subject := "Reset hasła — bezpieczny link"
 	expires := humanTTLLinePL(ttlSecs)
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Reset hasła</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Poprosiłeś(-aś) o reset hasła do konta Dyskiof. Kliknij przycisk poniżej, aby ustawić nowe hasło.
-    </p>
-    <a href="%s" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
-      Ustaw nowe hasło
-    </a>
-    <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      Link jest ważny przez %s. Jeśli to nie Ty, zignoruj tę wiadomość.
-    </p>
-  </div>
-</body>
-</html>`, resetURL, expires)
-
-	return m.Send(to, subject, body)
+	inner := transactionalKicker("Bezpieczeństwo konta") +
+		transactionalTitle("Reset hasła") +
+		transactionalParagraph(fmt.Sprintf(`Poproszono o reset hasła do konta <strong style="color:#f4ede4;">%s</strong>. Użyj przycisku poniżej — link działa jednorazowo.`, escapeHTML(m.siteName))) +
+		transactionalCTA(resetURL, "Ustaw nowe hasło") +
+		transactionalParagraph(fmt.Sprintf(`<span style="color:#8f857a;font-size:13px;">Link wygasa po %s. Jeśli to nie Ty, zignoruj tę wiadomość — hasło pozostanie bez zmian.</span>`, escapeHTML(expires)))
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
 }
 
 func (m *Mailer) SendVerificationEmail(to, name, verifyURL string, ttlSecs int) error {
-	subject := "Potwierdź adres e-mail — Dyskiof"
+	subject := "Potwierdź adres e-mail — bezpieczny link"
 	greeting := "Cześć!"
 	if strings.TrimSpace(name) != "" {
-		greeting = fmt.Sprintf("Cześć, %s!", strings.TrimSpace(name))
+		greeting = fmt.Sprintf("Cześć, %s!", escapeHTML(strings.TrimSpace(name)))
+	} else {
+		greeting = "Cześć!"
 	}
 	expires := humanTTLLinePL(ttlSecs)
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Potwierdź e-mail</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      %s Potwierdź adres e-mail, aby w pełni korzystać z konta Dyskiof. Kliknij przycisk poniżej.
-    </p>
-    <a href="%s" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
-      Potwierdzam e-mail
-    </a>
-    <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      Link jest ważny przez %s. Jeśli nie zakładałeś(-aś) konta, zignoruj tę wiadomość.
-    </p>
-  </div>
-</body>
-</html>`, greeting, verifyURL, expires)
-	return m.Send(to, subject, body)
+	inner := transactionalKicker("Aktywacja konta") +
+		transactionalTitle("Potwierdź adres e-mail") +
+		transactionalParagraph(fmt.Sprintf(`%s Dzięki temu odblokujesz pełny dostęp do katalogu i zakupów w <strong style="color:#f4ede4;">%s</strong>.`, greeting, escapeHTML(m.siteName))) +
+		transactionalCTA(verifyURL, "Potwierdzam e-mail") +
+		transactionalParagraph(fmt.Sprintf(`<span style="color:#8f857a;font-size:13px;">Link wygasa po %s. Jeśli nie zakładałeś(-aś) konta, zignoruj wiadomość.</span>`, escapeHTML(expires)))
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
 }
 
 func (m *Mailer) SendWelcome(to, name string) error {
-	subject := "Witaj w Dyskiof!"
+	subject := "Konto gotowe — " + m.siteName
 	title := "Witaj!"
 	if strings.TrimSpace(name) != "" {
-		title = fmt.Sprintf("Witaj, %s!", strings.TrimSpace(name))
+		title = fmt.Sprintf("Witaj, %s!", escapeHTML(strings.TrimSpace(name)))
 	}
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">%s</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Twoje konto Dyskiof jest gotowe. Możesz przeglądać materiały i w razie potrzeby dokupić kredyty, aby odblokować dostęp.
-    </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">
-      &mdash; Zespół Dyskiof
-    </p>
-  </div>
-</body>
-</html>`, title)
-
-	return m.Send(to, subject, body)
+	inner := transactionalKicker("Powitalne") +
+		transactionalTitle(title) +
+		transactionalParagraph(fmt.Sprintf(`Twoje konto w <strong style="color:#f4ede4;">%s</strong> jest aktywne. Możesz przeglądać katalog i — gdy będziesz gotowy(-a) — doładować kredyty, aby odblokować wybrane materiały.`, escapeHTML(m.siteName))) +
+		transactionalParagraph(`<span style="color:#8f857a;font-size:13px;">— Zespół</span>`)
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
 }
 
 func (m *Mailer) SendPaymentConfirmation(to string, credits int, amountPln float64) error {
 	// 4 PLN = 1 USD, round up
 	amountUsd := math.Ceil(amountPln / plnToUsd)
 	credPhrase := polishCreditsPhrase(credits)
-	subject := "Płatność zatwierdzona — Dyskiof"
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #22c55e;">Płatność przyjęta</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 16px;">
-      Twoja wpłata <strong style="color: #fff;">%.0f PLN (ok. $%.0f)</strong> została zatwierdzona.
-    </p>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Na saldo dodaliśmy: <strong style="color: #fff;">%s</strong>.
-    </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">
-      &mdash; Zespół Dyskiof
-    </p>
-  </div>
-</body>
-</html>`, amountPln, amountUsd, credPhrase)
-
-	return m.Send(to, subject, body)
+	subject := "Płatność zatwierdzona — dostęp i saldo"
+	inner := transactionalKicker("Potwierdzenie zakupu") +
+		transactionalTitle("Jesteś w środku — kredyty na koncie") +
+		transactionalParagraph(fmt.Sprintf(`Wpłata <strong style="color:#f4ede4;">%.0f PLN</strong> (ok. <strong style="color:#f4ede4;">$%.0f</strong>) została zatwierdzona.`, amountPln, amountUsd)) +
+		transactionalParagraph(fmt.Sprintf(`Na saldo dodano: <strong style="color:#c6e0b4;">%s</strong>. Możesz od razu wrócić do katalogu i odblokować wybrane pozycje.`, credPhrase)) +
+		transactionalParagraph(`<span style="color:#8f857a;font-size:13px;">To jest wiadomość transakcyjna dotycząca Twojej płatności.</span>`)
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
 }
 
 // SendCheckoutAbandonmentReminder nudges users who opened the credit checkout but did not complete a purchase.
 func (m *Mailer) SendCheckoutAbandonmentReminder(to, purchaseURL string) error {
-	subject := "Dokończ zakup kredytów — Dyskiof"
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Wróć do płatności</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Zacząłeś(-aś) proces zakupu kredytów, ale go nie dokończyłeś(-aś). Możesz wrócić w dowolnej chwili &mdash; zajmie to chwilę.
-    </p>
-    <a href="%s" style="display: inline-block; background: #7c3aed; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 10px; font-weight: 600; font-size: 14px;">
-      Przejdź do kasy
-    </a>
-    <p style="color: #737373; font-size: 12px; margin: 24px 0 0; line-height: 1.5;">
-      Jeśli już zapłaciłeś(-aś) lub nie potrzebujesz kredytów, zignoruj tę wiadomość.
-    </p>
-  </div>
-</body>
-</html>`, purchaseURL)
+	subject := "Koszyk kredytów — dokończ, gdy pasuje"
+	inner := transactionalKicker("Przypomnienie") +
+		transactionalTitle("Wróć do kasy") +
+		transactionalParagraph(fmt.Sprintf(`Rozpocząłeś(-aś) zakup kredytów w <strong style="color:#f4ede4;">%s</strong>, ale nie doszło do finalizacji. Możesz wrócić w jednym kroku — bez ponownego wypełniania danych, jeśli sesja jest nadal aktywna.`, escapeHTML(m.siteName))) +
+		transactionalCTA(purchaseURL, "Przejdź do kasy") +
+		transactionalParagraph(`<span style="color:#8f857a;font-size:13px;">Jeśli już opłaciłeś(-aś) zamówienie lub nie chcesz kontynuować, zignoruj tę wiadomość.</span>`)
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
+}
 
-	return m.Send(to, subject, body)
+// SendPaymentRejected notifies the user when a pending credit purchase was rejected (transactional).
+func (m *Mailer) SendPaymentRejected(to string, credits int, reason string) error {
+	subject := "Płatność nie została zaksięgowana — sprawdź szczegóły"
+	reason = strings.TrimSpace(reason)
+	reasonBlock := ""
+	if reason != "" {
+		reasonBlock = transactionalParagraph(fmt.Sprintf(`Informacja od weryfikacji: <strong style="color:#f4ede4;">%s</strong>`, escapeHTML(reason)))
+	}
+	inner := transactionalKicker("Status wpłaty") +
+		transactionalTitle("Transakcja nie została zatwierdzona") +
+		transactionalParagraph(fmt.Sprintf(`Zamówienie kredytów (%s) nie zostało zaksięgowane. Saldo <strong style="color:#f4ede4;">nie uległo zmianie</strong>.`, polishCreditsPhrase(credits))) +
+		reasonBlock +
+		transactionalParagraph(`<span style="color:#8f857a;font-size:13px;">Możesz ponownie złożyć zamówienie z poprawionym potwierdzeniem płatności lub napisać do pomocy, jeśli uważasz, że to pomyłka.</span>`)
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
 }
 
 // SendEmailChanged sends security notifications when a user changes their email.
 // Sends confirmation to the new address and a security alert to the old address.
 func (m *Mailer) SendEmailChanged(newEmail, oldEmail string) error {
 	// Confirmation to new email
-	subjectNew := "Zmieniono adres e-mail — Dyskiof"
-	bodyNew := `<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #fff;">Adres e-mail zaktualizowany</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Adres e-mail Twojego konta Dyskiof został zmieniony na ten. Jeśli to nie Ty, skontaktuj się z pomocą techniczną jak najszybciej.
-    </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; Zespół Dyskiof</p>
-  </div>
-</body>
-</html>`
-	if err := m.Send(newEmail, subjectNew, bodyNew); err != nil {
+	subjectNew := "Adres e-mail zaktualizowany — potwierdzenie"
+	innerNew := transactionalKicker("Konto") +
+		transactionalTitle("Nowy adres e-mail") +
+		transactionalParagraph(fmt.Sprintf(`Konto w <strong style="color:#f4ede4;">%s</strong> używa teraz tego adresu. Jeśli to nie Ty, skontaktuj się z pomocą jak najszybciej.`, escapeHTML(m.siteName)))
+	bodyNew := transactionalEmailFrame(m.siteName, innerNew)
+	if err := m.sendTransactional(newEmail, subjectNew, bodyNew); err != nil {
 		return err
 	}
 	// Security alert to old email (only if different - avoids duplicate to same inbox)
 	if oldEmail != "" && oldEmail != newEmail {
-		subjectOld := "Uwaga: zmieniono e-mail do Dyskiof"
-		bodyOld := `<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #f59e0b;">Powiadomienie bezpieczeństwa</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Adres e-mail przypisany do konta Dyskiof został zmieniony. Jeśli to nie Ty, użyj opcji &bdquo;Nie pamiętam hasła&rdquo;, aby odzyskać dostęp.
-    </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; Zespół Dyskiof</p>
-  </div>
-</body>
-</html>`
-		if err := m.Send(oldEmail, subjectOld, bodyOld); err != nil {
+		subjectOld := "Powiadomienie: zmiana adresu e-mail konta"
+		innerOld := transactionalKicker("Bezpieczeństwo") +
+			transactionalTitle("Zmieniono e-mail logowania") +
+			transactionalParagraph(fmt.Sprintf(`Powiadomienie systemowe: konto <strong style="color:#f4ede4;">%s</strong> ma przypisany inny adres e-mail. Jeśli to nie Ty, użyj odzyskiwania hasła lub wsparcia.`, escapeHTML(m.siteName)))
+		bodyOld := transactionalEmailFrame(m.siteName, innerOld)
+		if err := m.sendTransactional(oldEmail, subjectOld, bodyOld); err != nil {
 			return err
 		}
 	}
@@ -580,19 +538,10 @@ func (m *Mailer) SendEmailChanged(newEmail, oldEmail string) error {
 
 // SendPasswordChanged sends a security notification when a user changes their password.
 func (m *Mailer) SendPasswordChanged(to string) error {
-	subject := "Hasło zostało zmienione — Dyskiof"
-	body := `<!DOCTYPE html>
-<html lang="pl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px;">
-  <div style="max-width: 480px; margin: 0 auto; background: #171717; border-radius: 16px; padding: 40px; border: 1px solid rgba(255,255,255,0.06);">
-    <h1 style="font-size: 24px; margin: 0 0 16px; color: #22c55e;">Hasło zaktualizowane</h1>
-    <p style="color: #a3a3a3; line-height: 1.6; margin: 0 0 24px;">
-      Hasło do konta Dyskiof zostało pomyślnie zmienione. Jeśli to nie Ty, użyj opcji &bdquo;Nie pamiętam hasła&rdquo;, aby odzyskać dostęp.
-    </p>
-    <p style="color: #737373; font-size: 12px; margin: 0;">&mdash; Zespół Dyskiof</p>
-  </div>
-</body>
-</html>`
-	return m.Send(to, subject, body)
+	subject := "Hasło zostało zmienione — potwierdzenie"
+	inner := transactionalKicker("Bezpieczeństwo") +
+		transactionalTitle("Hasło zaktualizowane") +
+		transactionalParagraph(fmt.Sprintf(`Hasło do konta <strong style="color:#f4ede4;">%s</strong> zostało zmienione. Jeśli to nie Ty, natychmiast użyj resetu hasła lub pomocy.`, escapeHTML(m.siteName)))
+	body := transactionalEmailFrame(m.siteName, inner)
+	return m.sendTransactional(to, subject, body)
 }

@@ -481,16 +481,16 @@ func (s *Service) CreateEmailVerificationToken(ctx context.Context, email string
 	return token, nil
 }
 
-// VerifyEmail validates the token and sets email_verified = true
-func (s *Service) VerifyEmail(ctx context.Context, token string) error {
+// VerifyEmail validates the token and sets email_verified = true. Returns verified user id on success.
+func (s *Service) VerifyEmail(ctx context.Context, token string) (string, error) {
 	key := fmt.Sprintf("email-verify:%s", token)
 	userID, err := s.redis.Get(ctx, key).Result()
 	if err != nil {
-		return fmt.Errorf("invalid or expired token")
+		return "", fmt.Errorf("invalid or expired token")
 	}
 	_, err = s.db.Exec(ctx, `UPDATE users SET email_verified = true WHERE id = $1`, userID)
 	if err != nil {
-		return fmt.Errorf("failed to verify email")
+		return "", fmt.Errorf("failed to verify email")
 	}
 	s.redis.Del(ctx, key)
 	s.redis.Del(ctx, fmt.Sprintf("email-verify:active:%s", userID))
@@ -498,7 +498,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 	uid := userID
 	_ = growth.InsertEvent(ctx, s.db, "email_verified", &uid, map[string]interface{}{})
 	growth.EmitJSON("email_verified", &uid, map[string]interface{}{})
-	return nil
+	return userID, nil
 }
 
 // EmitGrowthEvent persists a funnel row (e.g. verification_sent from handler).

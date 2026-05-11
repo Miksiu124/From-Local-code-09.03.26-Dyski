@@ -91,6 +91,8 @@ type Config struct {
 
 	// MarketingEmailFrom: optional default From for embedded marketing templates (domain verified in Resend). Empty = SMTP_FROM.
 	MarketingEmailFrom string
+	// TransactionalEmailFrom: optional From for verification, password reset, receipts (e.g. noreply@tx.example.com). Empty = SMTP_FROM.
+	TransactionalEmailFrom string
 
 	// Discord OAuth
 	DiscordClientID     string
@@ -146,6 +148,48 @@ type Config struct {
 	RepeatBuyerAbLinkSlugs          string // comma: vip10-a,vip10-b,vip10-c — must match custom_links.slug
 	RepeatBuyerBatchLimit           int
 	RepeatBuyerTemplateDefaultsJSON string
+
+	// Welcome value stack after email verification (async). WELCOME_EMAIL_ENABLED=1.
+	WelcomeEmailEnabled         bool
+	WelcomeTemplateSlug         string
+	WelcomeHookLine             string
+	WelcomeBenefitLine          string
+	WelcomeCtaPath              string
+	WelcomeTemplateDefaultsJSON string
+
+	// Starter offer for verified non-buyers (cron). STARTER_OFFER_EMAIL_ENABLED=1.
+	StarterOfferEmailEnabled          bool
+	StarterOfferDaysMin               int
+	StarterOfferDaysMax               int
+	StarterOfferCooldownDays          int
+	StarterOfferBatchLimit            int
+	StarterOfferTemplateSlug          string
+	StarterOfferHookLine              string
+	StarterOfferUrgencyLine           string
+	StarterOfferCtaPath               string
+	StarterOfferTemplateDefaultsJSON  string
+
+	// At-risk paid re-engage (cron). AT_RISK_EMAIL_ENABLED=1.
+	AtRiskEmailEnabled          bool
+	AtRiskInactiveDaysMin       int
+	AtRiskInactiveDaysMax       int
+	AtRiskCooldownDays          int
+	AtRiskBatchLimit            int
+	AtRiskTemplateSlug          string
+	AtRiskHookLine              string
+	AtRiskCtaPath               string
+	AtRiskTemplateDefaultsJSON  string
+
+	// Lapsed buyer band before deep winback (cron). LAPSED_BUYER_EMAIL_ENABLED=1.
+	LapsedBuyerEmailEnabled         bool
+	LapsedInactiveDaysMin           int
+	LapsedInactiveDaysMax           int
+	LapsedBuyerCooldownDays         int
+	LapsedBuyerBatchLimit           int
+	LapsedBuyerTemplateSlug         string
+	LapsedBuyerHookLine             string
+	LapsedBuyerCtaPath              string
+	LapsedBuyerTemplateDefaultsJSON string
 }
 
 func Load() (*Config, error) {
@@ -191,6 +235,7 @@ func Load() (*Config, error) {
 		SMTPFrom:                          getEnvOrDefault("SMTP_FROM", "noreply@dyskiof.net"),
 		ResendAPIKey:                      strings.TrimSpace(getEnvOrDefault("RESEND_API_KEY", "")),
 		MarketingEmailFrom:                strings.TrimSpace(getEnvOrDefault("MARKETING_EMAIL_FROM", "")),
+		TransactionalEmailFrom:            strings.TrimSpace(getEnvOrDefault("TRANSACTIONAL_EMAIL_FROM", "")),
 		DiscordClientID:                   getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:               getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:                getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
@@ -233,6 +278,40 @@ func Load() (*Config, error) {
 		RepeatBuyerAbLinkSlugs:            strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_AB_LINK_SLUGS", "vip10-a,vip10-b,vip10-c")),
 		RepeatBuyerBatchLimit:             getEnvOrDefaultInt("REPEAT_BUYER_BATCH_LIMIT", 120),
 		RepeatBuyerTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_DEFAULTS_JSON", "")),
+		WelcomeEmailEnabled:               getEnvOrDefault("WELCOME_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("WELCOME_EMAIL_ENABLED", "") == "true",
+		WelcomeTemplateSlug:               strings.TrimSpace(getEnvOrDefault("WELCOME_TEMPLATE_SLUG", "welcome-value-stack")),
+		WelcomeHookLine:                   strings.TrimSpace(getEnvOrDefault("WELCOME_HOOK_LINE", "")),
+		WelcomeBenefitLine:                strings.TrimSpace(getEnvOrDefault("WELCOME_BENEFIT_LINE", "")),
+		WelcomeCtaPath:                    strings.TrimSpace(getEnvOrDefault("WELCOME_CTA_PATH", "/models")),
+		WelcomeTemplateDefaultsJSON:       strings.TrimSpace(getEnvOrDefault("WELCOME_TEMPLATE_DEFAULTS_JSON", "")),
+		StarterOfferEmailEnabled:          getEnvOrDefault("STARTER_OFFER_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("STARTER_OFFER_EMAIL_ENABLED", "") == "true",
+		StarterOfferDaysMin:               getEnvOrDefaultInt("STARTER_OFFER_DAYS_MIN", 3),
+		StarterOfferDaysMax:               getEnvOrDefaultInt("STARTER_OFFER_DAYS_MAX", 14),
+		StarterOfferCooldownDays:          getEnvOrDefaultInt("STARTER_OFFER_COOLDOWN_DAYS", 60),
+		StarterOfferBatchLimit:            getEnvOrDefaultInt("STARTER_OFFER_BATCH_LIMIT", 40),
+		StarterOfferTemplateSlug:          strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_TEMPLATE_SLUG", "starter-offer-welcome")),
+		StarterOfferHookLine:              strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_HOOK_LINE", "")),
+		StarterOfferUrgencyLine:           strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_URGENCY_LINE", "")),
+		StarterOfferCtaPath:               strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_CTA_PATH", "/purchase")),
+		StarterOfferTemplateDefaultsJSON:  strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_TEMPLATE_DEFAULTS_JSON", "")),
+		AtRiskEmailEnabled:                  getEnvOrDefault("AT_RISK_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("AT_RISK_EMAIL_ENABLED", "") == "true",
+		AtRiskInactiveDaysMin:             getEnvOrDefaultInt("AT_RISK_INACTIVE_DAYS_MIN", 7),
+		AtRiskInactiveDaysMax:             getEnvOrDefaultInt("AT_RISK_INACTIVE_DAYS_MAX", 14),
+		AtRiskCooldownDays:                getEnvOrDefaultInt("AT_RISK_COOLDOWN_DAYS", 30),
+		AtRiskBatchLimit:                  getEnvOrDefaultInt("AT_RISK_BATCH_LIMIT", 35),
+		AtRiskTemplateSlug:                strings.TrimSpace(getEnvOrDefault("AT_RISK_TEMPLATE_SLUG", "at-risk-retention")),
+		AtRiskHookLine:                    strings.TrimSpace(getEnvOrDefault("AT_RISK_HOOK_LINE", "")),
+		AtRiskCtaPath:                     strings.TrimSpace(getEnvOrDefault("AT_RISK_CTA_PATH", "/models")),
+		AtRiskTemplateDefaultsJSON:        strings.TrimSpace(getEnvOrDefault("AT_RISK_TEMPLATE_DEFAULTS_JSON", "")),
+		LapsedBuyerEmailEnabled:           getEnvOrDefault("LAPSED_BUYER_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("LAPSED_BUYER_EMAIL_ENABLED", "") == "true",
+		LapsedInactiveDaysMin:             getEnvOrDefaultInt("LAPSED_INACTIVE_DAYS_MIN", 22),
+		LapsedInactiveDaysMax:             getEnvOrDefaultInt("LAPSED_INACTIVE_DAYS_MAX", 55),
+		LapsedBuyerCooldownDays:           getEnvOrDefaultInt("LAPSED_BUYER_COOLDOWN_DAYS", 45),
+		LapsedBuyerBatchLimit:             getEnvOrDefaultInt("LAPSED_BUYER_BATCH_LIMIT", 35),
+		LapsedBuyerTemplateSlug:           strings.TrimSpace(getEnvOrDefault("LAPSED_BUYER_TEMPLATE_SLUG", "lapsed-buyer-comeback")),
+		LapsedBuyerHookLine:               strings.TrimSpace(getEnvOrDefault("LAPSED_BUYER_HOOK_LINE", "")),
+		LapsedBuyerCtaPath:                strings.TrimSpace(getEnvOrDefault("LAPSED_BUYER_CTA_PATH", "/models")),
+		LapsedBuyerTemplateDefaultsJSON:   strings.TrimSpace(getEnvOrDefault("LAPSED_BUYER_TEMPLATE_DEFAULTS_JSON", "")),
 	}
 
 	cfg.MarketingCronSpec = strings.TrimSpace(getEnvOrDefault("MARKETING_CRON", ""))
@@ -356,6 +435,75 @@ func clampMarketingCampaigns(cfg *Config) {
 	}
 	if cfg.RepeatBuyerBatchLimit > 500 {
 		cfg.RepeatBuyerBatchLimit = 500
+	}
+	if cfg.WelcomeTemplateSlug == "" {
+		cfg.WelcomeTemplateSlug = "welcome-value-stack"
+	}
+	if cfg.WelcomeCtaPath == "" {
+		cfg.WelcomeCtaPath = "/models"
+	}
+	if cfg.StarterOfferTemplateSlug == "" {
+		cfg.StarterOfferTemplateSlug = "starter-offer-welcome"
+	}
+	if cfg.StarterOfferDaysMin < 1 {
+		cfg.StarterOfferDaysMin = 1
+	}
+	if cfg.StarterOfferDaysMax < cfg.StarterOfferDaysMin+1 {
+		cfg.StarterOfferDaysMax = cfg.StarterOfferDaysMin + 1
+	}
+	if cfg.StarterOfferCooldownDays < 7 {
+		cfg.StarterOfferCooldownDays = 7
+	}
+	if cfg.StarterOfferBatchLimit < 1 {
+		cfg.StarterOfferBatchLimit = 1
+	}
+	if cfg.StarterOfferBatchLimit > 200 {
+		cfg.StarterOfferBatchLimit = 200
+	}
+	if cfg.StarterOfferCtaPath == "" {
+		cfg.StarterOfferCtaPath = "/purchase"
+	}
+	if cfg.AtRiskTemplateSlug == "" {
+		cfg.AtRiskTemplateSlug = "at-risk-retention"
+	}
+	if cfg.AtRiskInactiveDaysMin < 3 {
+		cfg.AtRiskInactiveDaysMin = 3
+	}
+	if cfg.AtRiskInactiveDaysMax <= cfg.AtRiskInactiveDaysMin {
+		cfg.AtRiskInactiveDaysMax = cfg.AtRiskInactiveDaysMin + 1
+	}
+	if cfg.AtRiskCooldownDays < 7 {
+		cfg.AtRiskCooldownDays = 7
+	}
+	if cfg.AtRiskBatchLimit < 1 {
+		cfg.AtRiskBatchLimit = 1
+	}
+	if cfg.AtRiskBatchLimit > 200 {
+		cfg.AtRiskBatchLimit = 200
+	}
+	if cfg.AtRiskCtaPath == "" {
+		cfg.AtRiskCtaPath = "/models"
+	}
+	if cfg.LapsedBuyerTemplateSlug == "" {
+		cfg.LapsedBuyerTemplateSlug = "lapsed-buyer-comeback"
+	}
+	if cfg.LapsedInactiveDaysMin <= cfg.AtRiskInactiveDaysMax {
+		cfg.LapsedInactiveDaysMin = cfg.AtRiskInactiveDaysMax + 1
+	}
+	if cfg.LapsedInactiveDaysMax <= cfg.LapsedInactiveDaysMin {
+		cfg.LapsedInactiveDaysMax = cfg.LapsedInactiveDaysMin + 1
+	}
+	if cfg.LapsedBuyerCooldownDays < 14 {
+		cfg.LapsedBuyerCooldownDays = 14
+	}
+	if cfg.LapsedBuyerBatchLimit < 1 {
+		cfg.LapsedBuyerBatchLimit = 1
+	}
+	if cfg.LapsedBuyerBatchLimit > 200 {
+		cfg.LapsedBuyerBatchLimit = 200
+	}
+	if cfg.LapsedBuyerCtaPath == "" {
+		cfg.LapsedBuyerCtaPath = "/models"
 	}
 }
 

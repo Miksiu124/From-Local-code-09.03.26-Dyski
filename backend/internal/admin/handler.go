@@ -273,12 +273,15 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 	}
 	defer tx.Rollback(ctx)
 
-	var userID, status string
+	var userID, userEmail, status string
 	var credits int
 	var paymentMethod string
 	err = tx.QueryRow(ctx, `
-		SELECT user_id, credits, status, payment_method::text FROM credit_purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&userID, &credits, &status, &paymentMethod)
+		SELECT cp.user_id, u.email, cp.credits, cp.status, cp.payment_method::text
+		FROM credit_purchases cp
+		JOIN users u ON u.id = cp.user_id
+		WHERE cp.id = $1 FOR UPDATE OF cp
+	`, purchaseID).Scan(&userID, &userEmail, &credits, &status, &paymentMethod)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return common.NotFound(c, "Purchase not found")
@@ -330,6 +333,19 @@ func (h *Handler) RejectPurchase(c echo.Context) error {
 
 	info := h.fetchPurchaseInfoForDiscord(ctx, purchaseID)
 	h.discord.NotifyPurchaseRejected(ctx, info, req.Reason)
+
+	if h.mailer != nil && h.mailer.IsConfigured() && strings.TrimSpace(userEmail) != "" {
+		go func(email string, cr int, reason string) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[RejectPurchase] Panic sending payment rejected email: %v", r)
+				}
+			}()
+			if err := h.mailer.SendPaymentRejected(email, cr, reason); err != nil {
+				log.Printf("[RejectPurchase] Failed to send payment rejected email to %s: %v", email, err)
+			}
+		}(userEmail, credits, req.Reason)
+	}
 
 	return common.Success(c, map[string]bool{"success": true})
 }

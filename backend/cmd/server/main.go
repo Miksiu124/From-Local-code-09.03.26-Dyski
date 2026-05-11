@@ -169,7 +169,8 @@ func main() {
 	}); err != nil {
 		log.Fatalf("checkout reminder cron: %v", err)
 	}
-	if cfg.WinbackEmailEnabled || cfg.SocialProofEmailEnabled || cfg.RepeatBuyerPromoEmailEnabled {
+	if cfg.WinbackEmailEnabled || cfg.SocialProofEmailEnabled || cfg.RepeatBuyerPromoEmailEnabled ||
+		cfg.StarterOfferEmailEnabled || cfg.AtRiskEmailEnabled || cfg.LapsedBuyerEmailEnabled {
 		if _, err := jobSched.AddJob(cfg.MarketingCronSpec, func() {
 			jctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 			campaigns.RunCronMarketing(jctx, pgPool, redisClient, mailService, cfg)
@@ -177,8 +178,9 @@ func main() {
 		}); err != nil {
 			log.Fatalf("marketing cron: %v", err)
 		}
-		log.Printf("[Jobs] Marketing cron=%s winback=%v social_proof=%v repeat_buyer_promo=%v",
-			cfg.MarketingCronSpec, cfg.WinbackEmailEnabled, cfg.SocialProofEmailEnabled, cfg.RepeatBuyerPromoEmailEnabled)
+		log.Printf("[Jobs] Marketing cron=%s winback=%v social_proof=%v repeat_buyer=%v starter=%v at_risk=%v lapsed=%v",
+			cfg.MarketingCronSpec, cfg.WinbackEmailEnabled, cfg.SocialProofEmailEnabled, cfg.RepeatBuyerPromoEmailEnabled,
+			cfg.StarterOfferEmailEnabled, cfg.AtRiskEmailEnabled, cfg.LapsedBuyerEmailEnabled)
 	}
 	if _, err := jobSchedPL.AddJob("0 0 * * *", func() {
 		jctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -191,7 +193,7 @@ func main() {
 	jobSchedPL.Start()
 
 	// Auth routes (public)
-	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient)
+	authHandler := auth.NewHandler(authService, cfg, rateLimiter, mailService, redisClient, pgPool)
 	authGroup := api.Group("/auth")
 	authGroup.POST("/register", authHandler.Register)
 	authGroup.POST("/login", authHandler.Login)

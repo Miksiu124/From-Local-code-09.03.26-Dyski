@@ -21,6 +21,9 @@ func RunCronMarketing(ctx context.Context, db *pgxpool.Pool, rdb *redis.Client, 
 	RunWinback(ctx, db, rdb, m, cfg)
 	RunSocialProofReengage(ctx, db, rdb, m, cfg)
 	RunRepeatBuyerPromo(ctx, db, rdb, m, cfg)
+	RunStarterOffer(ctx, db, rdb, m, cfg)
+	RunAtRiskPaid(ctx, db, rdb, m, cfg)
+	RunLapsedBuyer(ctx, db, rdb, m, cfg)
 }
 
 // GrowthHookAsync runs lightweight marketing reactions to funnel events (non-blocking).

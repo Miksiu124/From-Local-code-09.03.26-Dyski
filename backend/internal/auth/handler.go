@@ -17,11 +17,14 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/config"
+	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/mailer"
+	"content-platform-backend/internal/marketing/campaigns"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/security"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 )
@@ -32,10 +35,11 @@ type Handler struct {
 	rateLimiter *middleware.RateLimiter
 	mailer      *mailer.Mailer
 	redis       *redis.Client
+	db          *pgxpool.Pool
 }
 
-func NewHandler(service *Service, cfg *config.Config, rateLimiter *middleware.RateLimiter, m *mailer.Mailer, redisClient *redis.Client) *Handler {
-	return &Handler{service: service, cfg: cfg, rateLimiter: rateLimiter, mailer: m, redis: redisClient}
+func NewHandler(service *Service, cfg *config.Config, rateLimiter *middleware.RateLimiter, m *mailer.Mailer, redisClient *redis.Client, db *pgxpool.Pool) *Handler {
+	return &Handler{service: service, cfg: cfg, rateLimiter: rateLimiter, mailer: m, redis: redisClient, db: db}
 }
 
 // ── Register ─────────────────────────────────────────────────────────────────
@@ -433,9 +437,11 @@ func (h *Handler) VerifyEmail(c echo.Context) error {
 	if token == "" {
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/verify-email?error=missing_token")
 	}
-	if err := h.service.VerifyEmail(c.Request().Context(), token); err != nil {
+	userID, err := h.service.VerifyEmail(c.Request().Context(), token)
+	if err != nil {
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/verify-email?error=invalid_token")
 	}
+	campaigns.WelcomeEmailAfterVerifyAsync(h.db, h.redis, h.mailer, h.cfg, userID)
 	return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?verified=1")
 }
 
@@ -811,10 +817,16 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	}
 
 	// Find or create user (referral row only when account is newly created — same as email/password register)
-	token, user, _, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID, refCode, c.RealIP())
+	token, user, createdNew, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID, refCode, c.RealIP())
 	if err != nil {
 		log.Printf("[Discord] FindOrCreate failed: %v", err)
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
+	}
+	if createdNew && h.db != nil {
+		uid := user.ID
+		_ = growth.InsertEvent(ctx, h.db, "email_verified", &uid, map[string]interface{}{"source": "discord_oauth"})
+		growth.EmitJSON("email_verified", &uid, map[string]interface{}{"source": "discord_oauth"})
+		campaigns.WelcomeEmailAfterVerifyAsync(h.db, h.redis, h.mailer, h.cfg, user.ID)
 	}
 
 	h.service.StoreSessionIP(ctx, user.ID, c.RealIP(), h.cfg.JWTExpirySecs)
