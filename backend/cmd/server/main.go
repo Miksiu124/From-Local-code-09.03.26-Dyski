@@ -323,6 +323,7 @@ func main() {
 		}
 		ops := api.Group("/ops", opsGuard)
 		ops.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
+		ops.POST("/marketing/email-samples", adminHandler.SendEmailSamples)
 	}
 
 	adminGroup.GET("/credits/purchases", adminHandler.ListCreditPurchases)
@@ -373,6 +374,7 @@ func main() {
 	adminGroup.POST("/content/bulk-zip", adminHandler.BulkDownloadContentZip, echomw.BodyLimit("512k"))
 	adminGroup.GET("/content/:id/source-download", adminHandler.DownloadContentSource)
 	adminGroup.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
+	adminGroup.POST("/marketing/email-samples", adminHandler.SendEmailSamples)
 	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
 	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)

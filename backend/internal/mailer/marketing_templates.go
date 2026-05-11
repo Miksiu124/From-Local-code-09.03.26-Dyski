@@ -58,6 +58,15 @@ func (m *Mailer) MarketingTemplateVariableNames(slug string) ([]string, error) {
 // SendMarketingTemplate renders an embedded HTML template and sends via Resend or SMTP.
 // fromAddressOverride: optional; otherwise MarketingEmailFrom then SMTP_FROM (see config).
 func (m *Mailer) SendMarketingTemplate(to, slug, fromAddressOverride string, vars map[string]string) error {
+	return m.sendMarketingTemplate(to, slug, fromAddressOverride, vars, "")
+}
+
+// SendMarketingTemplateSample is like SendMarketingTemplate but prefixes the subject with "[SAMPLE] " for inbox tests.
+func (m *Mailer) SendMarketingTemplateSample(to, slug, fromAddressOverride string, vars map[string]string) error {
+	return m.sendMarketingTemplate(to, slug, fromAddressOverride, vars, "[SAMPLE] ")
+}
+
+func (m *Mailer) sendMarketingTemplate(to, slug, fromAddressOverride string, vars map[string]string, subjectPrefix string) error {
 	if !m.IsConfigured() {
 		return fmt.Errorf("mailer: email not configured (RESEND_API_KEY + SMTP_FROM or SMTP_HOST)")
 	}
@@ -75,7 +84,7 @@ func (m *Mailer) SendMarketingTemplate(to, slug, fromAddressOverride string, var
 	if from == "" {
 		return fmt.Errorf("marketing: no From address (set SMTP_FROM or MARKETING_EMAIL_FROM)")
 	}
-	subject := interpolateTemplate(subjectTpl, vars)
+	subject := subjectPrefix + interpolateTemplate(subjectTpl, vars)
 	html := interpolateTemplate(bodyTpl, vars)
 	observability.MailerPrintf("[Mailer] Marketing template slug=%s to=%s from=%s", slug, to, from)
 	return m.sendEmailWithFrom(to, from, subject, html)

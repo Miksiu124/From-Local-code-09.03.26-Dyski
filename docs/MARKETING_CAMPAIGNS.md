@@ -15,6 +15,28 @@ Wysyłka przez **`Mailer.SendMarketingTemplate`** (szablony wbudowane w backendz
 
 Segmenty, cap tygodniowy i zdarzenia audytu: **`docs/EMAIL_LIFECYCLE_SEGMENTS.md`**. A/B i KPI: **`docs/EMAIL_AB_TESTING_AND_KPIS.md`**.
 
+## Jednorazowy podgląd wszystkich szablonów (QA)
+
+**Nie** używaj `POST /api/admin/marketing/run-cron` do testów na swoją skrzynkę — wyśle kampanie do prawdziwych segmentów.
+
+Zamiast tego (po wdrożeniu API z tą funkcją):
+
+- **Sesja admin:** `POST /api/admin/marketing/email-samples` z JSON:
+  - `to` — adres docelowy (np. `dyskiof@proton.me`)
+  - `includeTransactional` — opcjonalnie `false`, domyślnie `true` (wysyłka też transakcyjnych: welcome, verify, reset, potwierdzenie płatności, porzucony koszyk, odrzucona wpłata, zmiana hasła, zmiana e-mail na `local+previewold@domena` jako „stary”).
+- **Bearer (ops):** gdy ustawiony `MARKETING_OPS_KEY`: `POST /api/ops/marketing/email-samples` z tym samym JSON i nagłówkiem `Authorization: Bearer …`.
+
+Marketingowe maile mają prefiks tematu **`[SAMPLE]`**; między wysyłkami jest ~400 ms, żeby nie trafiać w rate limit Resend.
+
+Przykład (curl, produkcja — podstaw host i klucz):
+
+```bash
+curl -sS -X POST "https://TWOJA_DOMENA/api/ops/marketing/email-samples" \
+  -H "Authorization: Bearer $MARKETING_OPS_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"dyskiof@proton.me","includeTransactional":true}'
+```
+
 ## Harmonogram (cron)
 
 - Jedna specyfikacja crona: **`MARKETING_CRON`** (np. `0 9 * * *` UTC). Jeśli pusta, używane jest **`WINBACK_CRON`** (kompatybilność wstecz).
