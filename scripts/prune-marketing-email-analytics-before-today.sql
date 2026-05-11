@@ -1,5 +1,11 @@
 -- One-off: trim marketing *analytics* so the admin dashboard starts from "today".
--- Run with: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/prune-marketing-email-analytics-before-today.sql
+--
+-- Host bez psql: odpal SQL z kontenera Postgres (nazwa jak w docker-compose: content-postgres):
+--   cd /opt/contentvault   # katalog z repo
+--   docker exec -i content-postgres psql -U platform -d content_platform -v ON_ERROR_STOP=1 < scripts/prune-marketing-email-analytics-before-today.sql
+--
+-- Gdy masz psql na hoście:
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/prune-marketing-email-analytics-before-today.sql
 --
 -- 1) marketing_email_click_events — safe to delete old rows (only affects CTR / unique clickers).
 -- 2) marketing_campaign_sends — OPTIONAL and DANGEROUS (see below). Commented out by default.
