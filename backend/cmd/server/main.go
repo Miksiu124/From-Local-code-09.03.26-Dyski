@@ -207,8 +207,8 @@ func main() {
 	authGroup.POST("/resend-verification-public", authHandler.ResendVerificationPublic)
 	authGroup.POST("/forgot-password", authHandler.ForgotPassword)
 	authGroup.POST("/reset-password", authHandler.ResetPassword)
-	authGroup.GET("/discord", authHandler.DiscordRedirect)
-	authGroup.GET("/discord/callback", authHandler.DiscordCallback)
+	authGroup.GET("/discord", authHandler.DiscordRedirect, authMW.OptionalAuth)
+	authGroup.GET("/discord/callback", authHandler.DiscordCallback, authMW.OptionalAuth)
 
 	// Models (public)
 	modelsHandler := models.NewHandler(pgPool, cfg, redisClient)
@@ -332,7 +332,14 @@ func main() {
 		opsGuard := func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c echo.Context) error {
 				raw := c.Request().Header.Get("Authorization")
-				token := strings.TrimSpace(strings.TrimPrefix(raw, "Bearer"))
+				const bearerPrefix = "Bearer "
+				if !strings.HasPrefix(raw, bearerPrefix) {
+					return echo.ErrUnauthorized
+				}
+				token := strings.TrimSpace(strings.TrimPrefix(raw, bearerPrefix))
+				if token == "" {
+					return echo.ErrUnauthorized
+				}
 				if subtle.ConstantTimeCompare([]byte(token), []byte(opsKey)) != 1 {
 					return echo.ErrUnauthorized
 				}

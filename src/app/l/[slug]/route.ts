@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchApi } from "@/lib/api-client";
 
+function resolveTrustedOrigin(request: NextRequest): string {
+    // Do not trust x-forwarded-host from end users to build redirect targets.
+    const fallback = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://dyskiof.net";
+    try {
+        const fallbackUrl = new URL(fallback);
+        const host = request.headers.get("host") || fallbackUrl.host;
+        const protoHeader = (request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "")).toLowerCase();
+        const proto = protoHeader === "http" || protoHeader === "https" ? protoHeader : fallbackUrl.protocol.replace(":", "");
+        return `${proto}://${host}`;
+    } catch {
+        return "https://dyskiof.net";
+    }
+}
+
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ slug: string }> }
@@ -38,12 +52,7 @@ export async function GET(
             let redirectUrlStr = data.destination;
             if (!redirectUrlStr.startsWith("http://") && !redirectUrlStr.startsWith("https://")) {
                 // It's a relative link, we need to construct the full URL
-                // We shouldn't use request.url here because behind Docker/Nginx it might be http://0.0.0.0:3000
-                const protocol = request.headers.get("x-forwarded-proto") || "https";
-                const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "dyskiof.net";
-
-                // Ensure proper absolute format
-                const baseUrl = `${protocol}://${host}`;
+                const baseUrl = resolveTrustedOrigin(request);
                 redirectUrlStr = new URL(redirectUrlStr, baseUrl).toString();
             }
 
@@ -68,9 +77,7 @@ export async function GET(
     }
 
     // Fallback if link not found or inactive
-    const protocol = request.headers.get("x-forwarded-proto") || "https";
-    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "dyskiof.net";
-    const fallbackUrl = `${protocol}://${host}/`;
+    const fallbackUrl = `${resolveTrustedOrigin(request)}/`;
 
     return NextResponse.redirect(fallbackUrl, 302);
 }

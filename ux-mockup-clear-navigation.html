@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dyskiof UI Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #121110;
+      --panel: #1a1918;
+      --panel-2: #201f1d;
+      --line: #2b2926;
+      --line-strong: #3a3733;
+      --text: #f2efea;
+      --muted: #bbb5ab;
+      --accent: #d2913b;
+      --accent-2: #f0c47e;
+      --ok: #4ea75f;
+      --danger: #c85a4b;
+      --radius: 10px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --max-w: 1260px;
+      --font: "IBM Plex Sans", "Manrope", "Noto Sans", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 var(--space-5);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(18, 17, 16, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(6px);
+    }
+
+    .topbar-row {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .primary-nav {
+      display: flex;
+      gap: var(--space-2);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav-link {
+      border: 1px solid transparent;
+      color: var(--muted);
+      padding: 8px 12px;
+      border-radius: 8px;
+      transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+      font-weight: 500;
+    }
+
+    .nav-link:hover {
+      color: var(--text);
+      border-color: var(--line-strong);
+      background: var(--panel);
+    }
+
+    .nav-link[aria-current="page"] {
+      color: var(--text);
+      border-color: var(--line-strong);
+      background: var(--panel);
+    }
+
+    .account-group {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .chip {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      padding: 6px 10px;
+      color: var(--text);
+      background: var(--panel);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .chip-muted {
+      color: var(--muted);
+    }
+
+    .btn {
+      border: 1px solid var(--line-strong);
+      color: var(--text);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 9px 13px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+
+    .btn:hover {
+      border-color: #4a4640;
+      background: #24221f;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: #cb8b38;
+      color: #1e1710;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-2);
+      border-color: #e9be73;
+    }
+
+    .quick-strip {
+      margin-top: var(--space-5);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: var(--space-4);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+
+    .quick-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      padding: var(--space-4);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .quick-card strong {
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .quick-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: var(--space-5);
+      margin-top: var(--space-5);
+      margin-bottom: var(--space-6);
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .panel-head {
+      border-bottom: 1px solid var(--line);
+      padding: var(--space-4);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--space-3);
+      flex-wrap: wrap;
+    }
+
+    .panel-head .title {
+      font-size: 16px;
+      font-weight: 650;
+    }
+
+    .filter-row {
+      padding: var(--space-4);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .field {
+      border: 1px solid var(--line-strong);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 8px;
+      min-height: 40px;
+      padding: 0 12px;
+      font: inherit;
+    }
+
+    .field-search {
+      flex: 1 1 260px;
+      min-width: 220px;
+    }
+
+    .active-filters {
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #5a5140;
+      color: #edd0a2;
+      background: #2b241b;
+      border-radius: 7px;
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .catalog-grid {
+      padding: var(--space-4);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+
+    .model {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .thumb {
+      aspect-ratio: 3 / 4;
+      background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0) 62%, rgba(0, 0, 0, 0.45) 100%),
+        linear-gradient(120deg, #2f2b26 0%, #1f1d1a 100%);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .model-meta {
+      padding: var(--space-3);
+      display: grid;
+      gap: 3px;
+    }
+
+    .model-meta strong {
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .model-meta span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .side-stack {
+      display: grid;
+      gap: var(--space-4);
+      align-content: start;
+    }
+
+    .todo {
+      padding: var(--space-4);
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .todo-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: var(--space-3);
+      background: var(--panel-2);
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .todo-item strong {
+      font-size: 14px;
+    }
+
+    .todo-item p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .ok { background: var(--ok); }
+    .warn { background: var(--accent); }
+    .danger { background: var(--danger); }
+
+    .section-actions {
+      display: flex;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 1100px) {
+      .quick-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .catalog-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .container {
+        padding: 0 var(--space-4);
+      }
+
+      .topbar-row {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: var(--space-3) 0;
+      }
+
+      .account-group {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      .quick-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .catalog-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-row">
+      <div class="brand">Dyskiof</div>
+
+      <nav class="primary-nav" aria-label="Główna nawigacja">
+        <a class="nav-link" aria-current="page" href="#">Katalog</a>
+        <a class="nav-link" href="#">Kup kredyty</a>
+        <a class="nav-link" href="#">Moje zakupy</a>
+        <a class="nav-link" href="#">Ulubione</a>
+        <a class="nav-link" href="#">Referral</a>
+      </nav>
+
+      <div class="account-group">
+        <div class="chip">
+          <span>Saldo</span>
+          <strong>245</strong>
+        </div>
+        <button class="btn">Konto</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="quick-strip" aria-label="Szybki start">
+      <article class="quick-card">
+        <strong>Kup paczkę kredytów</strong>
+        <p>Najkrótsza droga do odblokowania nowych modeli.</p>
+        <div><button class="btn btn-primary">Kup teraz</button></div>
+      </article>
+
+      <article class="quick-card">
+        <strong>Kontynuuj ostatnio oglądane</strong>
+        <p>Wracasz tam, gdzie przerwałeś bez szukania ręcznie.</p>
+        <div><button class="btn">Otwórz</button></div>
+      </article>
+
+      <article class="quick-card">
+        <strong>Sprawdź nowe profile</strong>
+        <p>Nowości są osobną ścieżką, nie chowają się w katalogu.</p>
+        <div><button class="btn">Pokaż nowości</button></div>
+      </article>
+
+      <article class="quick-card">
+        <strong>Odbierz bonus społeczności</strong>
+        <p>Połącz Discord i zgarnij jednorazowe kredyty.</p>
+        <div><button class="btn">Połącz</button></div>
+      </article>
+    </section>
+
+    <section class="main-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="title">Katalog modeli</div>
+          <div class="chip chip-muted">Wyniki: 247</div>
+        </div>
+
+        <div class="filter-row">
+          <input class="field field-search" type="search" value="anna" aria-label="Szukaj modelu">
+          <select class="field" aria-label="Filtr kraju">
+            <option>Polska</option>
+            <option>Niemcy</option>
+            <option>Czechy</option>
+          </select>
+          <button class="btn">Tylko kupione</button>
+          <button class="btn">Wyczyść wszystko</button>
+        </div>
+
+        <div class="active-filters">
+          <span class="filter-chip">Szukaj: anna</span>
+          <span class="filter-chip">Kraj: Polska</span>
+          <span class="filter-chip">Tylko kupione: nie</span>
+        </div>
+
+        <div class="catalog-grid">
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Anna V.</strong>
+              <span>42 filmy, 160 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Marta K.</strong>
+              <span>34 filmy, 114 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Ola N.</strong>
+              <span>26 filmy, 103 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Julia S.</strong>
+              <span>58 filmy, 201 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Kasia M.</strong>
+              <span>19 filmy, 87 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Ewa P.</strong>
+              <span>31 filmy, 129 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Natasha D.</strong>
+              <span>44 filmy, 176 zdjęć</span>
+            </div>
+          </article>
+          <article class="model">
+            <div class="thumb"></div>
+            <div class="model-meta">
+              <strong>Sonia R.</strong>
+              <span>22 filmy, 75 zdjęć</span>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="title">Co dalej</div>
+          </div>
+          <div class="todo">
+            <article class="todo-item">
+              <strong><span class="dot warn"></span>Masz kredyty na 2 odblokowania</strong>
+              <p>Najpierw profile z oznaczeniem TOP, żeby szybciej wykorzystać saldo.</p>
+            </article>
+            <article class="todo-item">
+              <strong><span class="dot ok"></span>2 profile czekają w ulubionych</strong>
+              <p>Możesz od razu wrócić do zapisanych pozycji.</p>
+            </article>
+            <article class="todo-item">
+              <strong><span class="dot danger"></span>Brak aktywnego pakietu 30 dni</strong>
+              <p>Przy większym przeglądaniu bardziej opłaca się pakiet niż pojedyncze wejścia.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="title">Skróty konta</div>
+          </div>
+          <div class="todo">
+            <div class="section-actions">
+              <button class="btn">Moje zakupy</button>
+              <button class="btn">Ulubione</button>
+              <button class="btn">Referral</button>
+              <button class="btn">Ustawienia</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

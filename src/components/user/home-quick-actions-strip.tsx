@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Coins, Heart, LayoutDashboard, ShoppingCart, UserPlus } from "lucide-react";
+import { Coins, LayoutDashboard, ShoppingCart } from "lucide-react";
 import { formatCredits } from "@/lib/utils";
 
 type HomeQuickActionsStripProps = {
@@ -50,37 +50,21 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
         </div>
       </div>
 
-      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
-        <Link
-          href="/my-purchases"
-          className={actionCardClass}
-        >
-          <span className="text-sm font-medium">{tNav("myPurchases")}</span>
-          <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-        </Link>
-
-        <Link
-          href="/favorites"
-          className={actionCardClass}
-        >
-          <span className="text-sm font-medium">{tNav("favorites")}</span>
-          <Heart className="h-4 w-4 text-muted-foreground" />
-        </Link>
-
-        <Link
-          href="/referral"
-          className={actionCardClass}
-        >
-          <span className="text-sm font-medium">{tNav("referral")}</span>
-          <UserPlus className="h-4 w-4 text-muted-foreground" />
-        </Link>
-
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0">
         <Link
           href="/custom-orders"
           className={actionCardClass}
         >
           <span className="text-sm font-medium">{tNav("customOrders")}</span>
           <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+        </Link>
+
+        <Link
+          href="/games/coinflip"
+          className={actionCardClass}
+        >
+          <span className="text-sm font-medium">{tNav("coinflip")}</span>
+          <Coins className="h-4 w-4 text-muted-foreground" />
         </Link>
       </div>
     </section>

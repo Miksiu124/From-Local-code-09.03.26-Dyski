@@ -2,24 +2,18 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Coins,
   User,
   LogOut,
-  LayoutDashboard,
-  ShieldCheck,
   Heart,
-  Menu,
-  X,
-  ChevronDown,
   ShoppingCart,
   UserPlus,
 } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { trackLogout } from "@/lib/growth-analytics";
@@ -47,11 +41,8 @@ export function Header() {
   const t = useTranslations();
   const router = useRouter();
   const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
-  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -100,21 +91,6 @@ export function Header() {
     return () => clearInterval(interval);
   }, [user]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setUserMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    setMobileMenuOpen(false);
-    setUserMenuOpen(false);
-  }, [pathname]);
-
   const handleLogout = async () => {
     try {
       trackLogout({ role: user?.role === "ADMIN" ? "admin" : "user" });
@@ -156,6 +132,12 @@ export function Header() {
     { href: "/favorites", label: t("nav.favorites") },
     { href: "/referral", label: t("nav.referral") },
   ];
+  const mobilePrimaryLinks = [
+    { href: "/", label: t("nav.models"), show: true },
+    { href: "/purchase", label: t("nav.buyCredits"), show: true },
+    { href: "/dashboard", label: t("nav.dashboard"), show: !!user },
+    { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
+  ].filter((l) => l.show);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md">
@@ -202,7 +184,7 @@ export function Header() {
             );
           })}
           {user && (
-            <div className="ml-2 hidden items-center gap-1 2xl:flex">
+            <div className="ml-2 hidden items-center gap-1 xl:flex">
               {quickUserLinks.map((link) => (
                 <Link
                   key={link.href}
@@ -270,79 +252,27 @@ export function Header() {
           {loading ? (
             <div className="h-9 w-20 animate-pulse rounded-xl bg-white/[0.05]" />
           ) : user ? (
-              <div className="relative hidden lg:block" ref={userMenuRef}>
-                <button
-                  type="button"
-                  data-tour="tour-account"
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  aria-label={t("nav.userMenu")}
-                  aria-expanded={userMenuOpen}
-                  aria-haspopup="menu"
-                  className={cn(
-                    "flex min-h-9 min-w-0 items-center justify-start gap-2 rounded-xl px-2.5 py-1.5 transition-all cursor-pointer",
-                    userMenuOpen ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"
-                  )}
-                >
-                  <div className="h-7 w-7 rounded-lg bg-primary/25 flex items-center justify-center border border-primary/25">
-                    <User className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <ChevronDown
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
-                      userMenuOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-
-                <AnimatePresence>
-                  {userMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                      transition={{ type: "spring", damping: 25, stiffness: 400 }}
-                      className="absolute right-0 mt-2 w-60 rounded-xl border border-white/[0.08] bg-card shadow-2xl shadow-black/40 py-1 overflow-hidden"
-                    >
-                    <div className="px-4 py-3 border-b border-white/[0.06]">
-                      <p className="text-sm font-medium truncate">{user.name || user.email}</p>
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <Coins className="h-3.5 w-3.5 text-primary" />
-                        <span className="text-xs text-muted-foreground">{formatCredits(user.creditBalance)} {t("common.credits")}</span>
-                      </div>
-                    </div>
-
-                    <div className="py-1">
-                      {[
-                        { href: "/dashboard", icon: LayoutDashboard, label: t("nav.dashboard") },
-                        { href: "/custom-orders", icon: ShoppingCart, label: t("nav.customOrders") },
-                        { href: "/games/coinflip", icon: Coins, label: t("nav.coinflip") },
-                        ...(isAdmin ? [{ href: adminHomeHref, icon: ShieldCheck, label: t("nav.admin") }] : []),
-                      ].map((item) => (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
-                          onClick={() => setUserMenuOpen(false)}
-                        >
-                          <item.icon className="h-4 w-4" />
-                          {item.label}
-                        </Link>
-                      ))}
-                    </div>
-
-                    <div className="border-t border-white/[0.06] py-1">
-                      <button
-                        onClick={handleLogout}
-                        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-white/[0.04] transition-colors cursor-pointer"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        {t("nav.logout")}
-                      </button>
-                    </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+            <div className="hidden items-center gap-1 lg:flex">
+              <Link
+                href="/dashboard"
+                data-tour="tour-account"
+                aria-label={t("nav.dashboard")}
+                className={cn(
+                  "flex min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 transition-colors",
+                  pathname === "/dashboard" ? "text-foreground bg-white/[0.08]" : "hover:bg-white/[0.08] text-muted-foreground"
+                )}
+              >
+                <User className="h-4 w-4" />
+              </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 text-destructive transition-colors hover:bg-white/[0.08] cursor-pointer"
+                aria-label={t("nav.logout")}
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           ) : (
             <div className="flex shrink-0 items-center" data-tour="tour-guest-auth">
               <Link
@@ -357,131 +287,90 @@ export function Header() {
             </div>
           )}
 
-          {/* Mobile menu toggle */}
-          <button
-            type="button"
-            className="cursor-pointer flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:bg-white/[0.05] lg:hidden"
-            onClick={() => {
-              setUserMenuOpen(false);
-              setMobileMenuOpen(!mobileMenuOpen);
-            }}
-            aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
-            aria-expanded={mobileMenuOpen}
-            data-tour={user ? "tour-account" : undefined}
-          >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
         </div>
       </div>
-
-      {/* Mobile Navigation - grid-template-rows avoids layout thrashing from height animation */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ gridTemplateRows: "0fr", opacity: 0 }}
-            animate={{ gridTemplateRows: "1fr", opacity: 1 }}
-            exit={{ gridTemplateRows: "0fr", opacity: 0 }}
-            transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-            className="grid border-t border-white/[0.06] bg-background lg:hidden"
-          >
-            <nav className="flex flex-col gap-0.5 overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] min-h-0">
-              {navLinks.map((link) => {
-                const navActive =
-                  link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
-                return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  data-tour={
-                    link.href === "/purchase"
-                      ? user
-                        ? "tour-buy-mobile"
-                        : "tour-guest-credits"
-                      : undefined
-                  }
-                  className={cn(
-                    "px-4 py-3 rounded-xl text-sm font-medium transition-colors",
-                    navActive
-                      ? "bg-white/[0.06] text-foreground"
-                      : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
-                  )}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {link.label}
-                </Link>
-                );
-              })}
-              {DISCORD_SERVER_URL ? (
-                <a
-                  href={DISCORD_SERVER_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-[#5865F2] hover:bg-white/[0.04] transition-colors touch-manipulation"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  <DiscordGlyph className="h-5 w-5 shrink-0" />
-                  {t("nav.discordServer")}
-                </a>
-              ) : null}
-              {user && (
-                <>
-                  <Link
-                    href="/my-purchases"
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <ShoppingCart className="h-4 w-4 shrink-0" />
-                    {t("nav.myPurchases")}
-                  </Link>
-                  <Link
-                    href="/favorites"
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <Heart className="h-4 w-4 shrink-0" />
-                    {t("nav.favorites")}
-                  </Link>
-                  <Link
-                    href="/referral"
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <UserPlus className="h-4 w-4 shrink-0" />
-                    {t("nav.referral")}
-                  </Link>
-                  <Link
-                    href="/custom-orders"
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <ShoppingCart className="h-4 w-4 shrink-0" />
-                    {t("nav.customOrders")}
-                  </Link>
-                  <Link
-                    href="/games/coinflip"
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <Coins className="h-4 w-4 shrink-0" />
-                    {t("nav.coinflip")}
-                  </Link>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2.5 px-4 py-3 rounded-xl text-left text-sm font-medium text-destructive hover:bg-white/[0.04] transition-colors touch-manipulation"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handleLogout();
-                    }}
-                  >
-                    <LogOut className="h-4 w-4 shrink-0" />
-                    {t("nav.logout")}
-                  </button>
-                </>
+      <div className="border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-2 pr-[max(0.75rem,env(safe-area-inset-right,0px))] lg:hidden">
+        <nav className="flex items-center gap-2 overflow-x-auto pb-1">
+          {mobilePrimaryLinks.map((link) => {
+            const navActive =
+              link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={cn(
+                  "whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                  navActive
+                    ? "border-white/[0.14] bg-white/[0.08] text-foreground"
+                    : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                )}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+          {DISCORD_SERVER_URL ? (
+            <a
+              href={DISCORD_SERVER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[#5865F2] hover:bg-white/[0.05]"
+              aria-label={t("nav.discordServer")}
+              title={t("nav.discordServer")}
+            >
+              <DiscordGlyph className="h-4 w-4" />
+            </a>
+          ) : null}
+        </nav>
+        {user ? (
+          <nav className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
+            <Link
+              href="/my-purchases"
+              className={cn(
+                "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium transition-colors",
+                pathname === "/my-purchases"
+                  ? "text-foreground bg-white/[0.08] border-white/[0.14]"
+                  : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
               )}
-            </nav>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            >
+              <ShoppingCart className="h-3.5 w-3.5" />
+              {t("nav.myPurchases")}
+            </Link>
+            <Link
+              href="/favorites"
+              className={cn(
+                "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium transition-colors",
+                pathname === "/favorites"
+                  ? "text-foreground bg-white/[0.08] border-white/[0.14]"
+                  : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+              )}
+            >
+              <Heart className="h-3.5 w-3.5" />
+              {t("nav.favorites")}
+            </Link>
+            <Link
+              href="/referral"
+              className={cn(
+                "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium transition-colors",
+                pathname === "/referral"
+                  ? "text-foreground bg-white/[0.08] border-white/[0.14]"
+                  : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+              )}
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              {t("nav.referral")}
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-white/[0.05]"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              {t("nav.logout")}
+            </button>
+          </nav>
+        ) : null}
+      </div>
     </header>
   );
 }

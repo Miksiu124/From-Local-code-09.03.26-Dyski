@@ -575,6 +575,9 @@ func (c *Config) Validate() error {
 	if len(c.StreamingTokenSecret) < 32 {
 		return errors.New("STREAMING_TOKEN_SECRET must be at least 32 characters")
 	}
+	if c.MarketingOpsKey != "" && len(strings.TrimSpace(c.MarketingOpsKey)) < 32 {
+		return errors.New("MARKETING_OPS_KEY must be at least 32 characters when set")
+	}
 	// Password reset link TTL (Redis): clamp 5 min … 7 days
 	if c.PasswordResetTokenTTLSecs <= 0 {
 		c.PasswordResetTokenTTLSecs = 3600

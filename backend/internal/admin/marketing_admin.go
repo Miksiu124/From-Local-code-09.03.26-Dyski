@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"net/http"
 	"regexp"
@@ -12,7 +11,6 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/mailer"
-	"content-platform-backend/internal/marketing"
 	"content-platform-backend/internal/marketing/campaigns"
 
 	"github.com/labstack/echo/v4"
@@ -197,120 +195,5 @@ ORDER BY sends DESC, clicks DESC
 // SendPriceUpdateCampaign sends a one-off marketing email about new credit prices.
 // POST /api/admin/marketing/price-update {"dryRun":false,"limit":500}
 func (h *Handler) SendPriceUpdateCampaign(c echo.Context) error {
-	if h.mailer == nil || !h.mailer.MarketingEmailConfigured() {
-		return common.JSONError(c, http.StatusBadRequest, "not_configured", "Outbound email is not configured")
-	}
-	if h.redis == nil {
-		return common.JSONError(c, http.StatusBadRequest, "redis_required", "Redis is required for unsubscribe links")
-	}
-
-	var body struct {
-		DryRun *bool `json:"dryRun"`
-		Limit  *int  `json:"limit"`
-	}
-	_ = c.Bind(&body)
-	dryRun := false
-	if body.DryRun != nil {
-		dryRun = *body.DryRun
-	}
-	limit := 500
-	if body.Limit != nil && *body.Limit > 0 && *body.Limit <= 5000 {
-		limit = *body.Limit
-	}
-
-	type recipient struct {
-		ID    string
-		Email string
-		Name  *string
-	}
-
-	ctx := c.Request().Context()
-	rows, err := h.db.Query(ctx, `
-		SELECT id, email, name
-		FROM users
-		WHERE COALESCE(is_banned, false) = false
-		  AND COALESCE(email_verified, false) = true
-		  AND COALESCE(marketing_email_opt_in, true) = true
-		ORDER BY created_at DESC
-		LIMIT $1
-	`, limit)
-	if err != nil {
-		return common.InternalError(c)
-	}
-	defer rows.Close()
-
-	recipients := make([]recipient, 0, limit)
-	for rows.Next() {
-		var r recipient
-		if scanErr := rows.Scan(&r.ID, &r.Email, &r.Name); scanErr == nil {
-			recipients = append(recipients, r)
-		}
-	}
-
-	sent := 0
-	failed := 0
-	type sample struct {
-		Email string `json:"email"`
-		Error string `json:"error,omitempty"`
-	}
-	samples := make([]sample, 0, 20)
-	for _, r := range recipients {
-		siteName := "Dyskiof"
-		supportEmail := strings.TrimSpace(h.cfg.SMTPFrom)
-		if supportEmail == "" {
-			supportEmail = "support@dyskiof.net"
-		}
-		firstName := "there"
-		if r.Name != nil && strings.TrimSpace(*r.Name) != "" {
-			firstName = strings.TrimSpace(*r.Name)
-		}
-		token, terr := marketing.StoreUnsubscribeToken(ctx, h.redis, r.ID)
-		if terr != nil || token == "" {
-			failed++
-			if len(samples) < 20 {
-				samples = append(samples, sample{Email: r.Email, Error: "unsubscribe_token_failed"})
-			}
-			continue
-		}
-		unsub := marketing.UnsubscribeLinkForEmail(h.cfg, token)
-		vars := map[string]string{
-			"firstName":      firstName,
-			"siteName":       siteName,
-			"ctaUrl":         strings.TrimRight(h.cfg.FrontendURL, "/") + "/purchase",
-			"unsubscribeUrl": unsub,
-			"effectiveDate":  "2026-06-01",
-			"priceSummary":   "Packages were updated to match payment costs and processing overhead.",
-			"supportEmail":   supportEmail,
-		}
-		if dryRun {
-			sent++
-			if len(samples) < 20 {
-				samples = append(samples, sample{Email: r.Email})
-			}
-			continue
-		}
-		if sendErr := h.mailer.SendMarketingTemplate(r.Email, "price-update-2026", "", vars); sendErr != nil {
-			failed++
-			marketing.DeleteUnsubscribeToken(ctx, h.redis, token)
-			if len(samples) < 20 {
-				samples = append(samples, sample{Email: r.Email, Error: sendErr.Error()})
-			}
-		} else {
-			sent++
-			if len(samples) < 20 {
-				samples = append(samples, sample{Email: r.Email})
-			}
-		}
-		time.Sleep(220 * time.Millisecond)
-	}
-
-	return common.Success(c, map[string]interface{}{
-		"dryRun":        dryRun,
-		"selected":      len(recipients),
-		"sent":          sent,
-		"failed":        failed,
-		"templateSlug":  "price-update-2026",
-		"batchSummary":  fmt.Sprintf("selected=%d sent=%d failed=%d", len(recipients), sent, failed),
-		"sampleResults": samples,
-	})
+	return common.JSONError(c, http.StatusGone, "campaign_disabled", "Price update campaign is disabled")
 }
