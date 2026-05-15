@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Coins, Gamepad2, Heart, ShoppingCart, UserPlus } from "lucide-react";
+import { Coins, Heart, ShoppingCart, UserPlus } from "lucide-react";
 import { formatCredits } from "@/lib/utils";
 
 type HomeQuickActionsStripProps = {
@@ -71,14 +71,6 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
         >
           <ShoppingCart className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {tNav("customOrders")}
-        </Link>
-
-        <Link
-          href="/games/coinflip"
-          className={actionCardClass}
-        >
-          <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {tNav("coinflip")}
         </Link>
 
         <Link href="/purchase" className={actionCardClass}>

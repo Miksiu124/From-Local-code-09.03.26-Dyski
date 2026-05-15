@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   Bell,
+  ChevronRight,
+  CircleHelp,
   Coins,
-  Gamepad2,
   Heart,
   List,
   User,
@@ -258,7 +259,6 @@ export function Header() {
     { href: "/my-purchases", label: t("nav.myPurchases"), icon: ShoppingCart, show: !!user },
     { href: "/favorites", label: t("nav.favorites"), icon: Heart, show: !!user },
     { href: "/custom-orders", label: t("nav.customOrders"), icon: ShoppingCart, show: !!user },
-    { href: "/games/coinflip", label: t("nav.coinflip"), icon: Gamepad2, show: !!user },
     { href: "/referral", label: t("nav.referral"), icon: UserPlus, show: !!user },
     { href: adminHomeHref, label: t("nav.admin"), icon: ShieldCheck, show: isAdmin },
   ].filter((l) => l.show);
@@ -503,23 +503,39 @@ export function Header() {
         <div className="fixed inset-0 z-50 md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/88"
+            className="absolute inset-0 bg-black/82"
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[92vw] max-w-[360px] flex-col border-r border-white/[0.14] bg-[#11151d] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(1rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
-            <div className="mb-3 shrink-0 flex items-center justify-between px-1">
-              <span className="text-sm font-semibold text-foreground">Menu</span>
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border border-white/[0.14] bg-[#171d27] text-muted-foreground hover:bg-[#202838] hover:text-foreground"
-                aria-label={t("nav.closeMenu")}
-              >
-                <X className="h-4 w-4" />
-              </button>
+          <aside className="absolute inset-y-0 left-0 flex w-[86vw] max-w-[340px] flex-col border-r border-white/[0.1] bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(1.15rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/50">
+            <div className="mb-5 shrink-0 flex items-center justify-between">
+              <div className="inline-flex items-center gap-2.5">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-[6px] border border-primary/30 bg-primary/10 text-primary">
+                  <span className="h-2 w-2 rounded-full bg-primary" />
+                </span>
+                <span className="text-[0.82rem] font-semibold uppercase tracking-[0.14em] text-foreground/90">
+                  Menu
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-md border border-white/[0.12] bg-card/80 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label="Help"
+                >
+                  <CircleHelp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-md border border-white/[0.12] bg-card/80 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={t("nav.closeMenu")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
-            <nav className="min-h-0 flex-1 space-y-1.5 overflow-y-auto rounded-md bg-[#171d27] p-1.5">
+            <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
                 return (
@@ -528,14 +544,17 @@ export function Header() {
                     href={link.href}
                     onClick={() => setMobileMenuOpen(false)}
                     className={cn(
-                      "flex min-h-[44px] items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors",
+                      "flex min-h-[50px] items-center gap-2.5 rounded-lg border px-3.5 text-[0.95rem] font-medium transition-colors",
                       navActive
-                        ? "border-white/[0.18] bg-[#202838] text-foreground"
-                        : "border-white/[0.14] bg-[#1b2230] text-muted-foreground hover:bg-[#202838] hover:text-foreground"
+                        ? "border-primary/35 bg-primary/10 text-foreground"
+                        : "border-white/[0.1] bg-card/65 text-muted-foreground hover:border-white/[0.16] hover:text-foreground"
                     )}
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
-                    <span>{link.label}</span>
+                    <span className="truncate">{link.label}</span>
+                    <span className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.14] text-muted-foreground/85">
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </span>
                   </Link>
                 );
               })}
@@ -544,14 +563,17 @@ export function Header() {
                   href={DISCORD_SERVER_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#1b2230] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-[#202838]"
+                  className="flex min-h-[50px] items-center gap-2.5 rounded-lg border border-white/[0.1] bg-card/65 px-3.5 text-[0.95rem] font-medium text-[#5865F2] transition-colors hover:border-white/[0.16]"
                 >
                   <DiscordGlyph className="h-4 w-4" />
                   <span>{t("nav.discordServer")}</span>
+                  <span className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.14] text-muted-foreground/85">
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </span>
                 </a>
               )}
             </nav>
-            <div className="mt-3 shrink-0 border-t border-white/[0.1] pt-3">
+            <div className="mt-4 shrink-0 border-t border-white/[0.08] pt-4">
               {user ? (
                 <button
                   type="button"
@@ -559,7 +581,7 @@ export function Header() {
                     setMobileMenuOpen(false);
                     handleLogout();
                   }}
-                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#1b2230] px-3 text-sm font-medium text-destructive transition-colors hover:bg-[#202838]"
+                  className="flex min-h-[54px] w-full items-center justify-center gap-2.5 rounded-lg border border-destructive/40 bg-destructive/12 px-3.5 text-[0.95rem] font-semibold text-destructive transition-colors hover:bg-destructive/16"
                 >
                   <LogOut className="h-4 w-4 shrink-0" />
                   <span>{t("nav.logout")}</span>
@@ -568,7 +590,10 @@ export function Header() {
                 <Link
                   href="/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className={cn(buttonVariants({ size: "sm", variant: "default" }), "min-h-[44px] w-full")}
+                  className={cn(
+                    buttonVariants({ size: "sm", variant: "default" }),
+                    "min-h-[54px] w-full rounded-lg border border-primary/40 bg-primary/85 text-[0.95rem] font-semibold text-primary-foreground hover:bg-primary"
+                  )}
                 >
                   {t("auth.loginTitle")}
                 </Link>

@@ -6,7 +6,6 @@ import { useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 import {
   Coins,
-  Gamepad2,
   Heart,
   LayoutDashboard,
   List,
@@ -35,7 +34,6 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
         { href: "/my-purchases", label: t("myPurchases"), icon: ShoppingCart },
         { href: "/favorites", label: t("favorites"), icon: Heart },
         { href: "/custom-orders", label: t("customOrders"), icon: List },
-        { href: "/games/coinflip", label: t("coinflip"), icon: Gamepad2 },
         { href: "/referral", label: t("referral"), icon: UserPlus },
         { href: "/purchase", label: t("buyCredits"), icon: Coins },
         ...(isAdmin ? [{ href: "/admin/payments", label: t("admin"), icon: ShieldCheck }] : []),
