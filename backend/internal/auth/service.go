@@ -34,6 +34,7 @@ func NewService(cfg *config.Config, db *pgxpool.Pool, redis *redis.Client) *Serv
 
 // ErrEmailNotVerified is returned from Login when the account password is valid but email is not verified.
 var ErrEmailNotVerified = errors.New("email not verified")
+var ErrDiscordLoginDisabledForPasswordAccount = errors.New("discord login disabled for password account")
 
 type UserRow struct {
 	ID            string
@@ -371,10 +372,12 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 
 	if err != nil {
 		// Try by email
+		var existingDiscordID *string
 		err = s.db.QueryRow(ctx, `
 			SELECT id, email, password, name, role, credit_balance, avatar_url, autoplay, COALESCE(is_banned, false), COALESCE(email_verified, false)
+			       , discord_id
 			FROM users WHERE email = $1
-		`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified)
+		`, email).Scan(&user.ID, &user.Email, &user.Password, &user.Name, &user.Role, &user.CreditBalance, &user.AvatarURL, &user.Autoplay, &user.IsBanned, &user.EmailVerified, &existingDiscordID)
 
 		if err != nil {
 			// Create new user – Discord verifies email, so email_verified = true
@@ -415,8 +418,14 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 			}
 			createdNew = true
 		} else {
-			// Link discord_id to existing user; Discord verifies email
-			_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1, email_verified = true WHERE id = $2`, discordID, user.ID)
+			// Security hardening: do not auto-link Discord login to password-created accounts.
+			// Users must continue using their original auth method unless discord_id was linked before.
+			if user.Password != nil && (existingDiscordID == nil || strings.TrimSpace(*existingDiscordID) == "") {
+				return "", nil, false, ErrDiscordLoginDisabledForPasswordAccount
+			}
+			if existingDiscordID == nil || strings.TrimSpace(*existingDiscordID) == "" {
+				_, _ = s.db.Exec(ctx, `UPDATE users SET discord_id = $1, email_verified = true WHERE id = $2`, discordID, user.ID)
+			}
 			user.EmailVerified = true
 		}
 	}

@@ -819,6 +819,9 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	// Find or create user (referral row only when account is newly created — same as email/password register)
 	token, user, createdNew, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID, refCode, c.RealIP())
 	if err != nil {
+		if errors.Is(err, ErrDiscordLoginDisabledForPasswordAccount) {
+			return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_password_account")
+		}
 		log.Printf("[Discord] FindOrCreate failed: %v", err)
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}

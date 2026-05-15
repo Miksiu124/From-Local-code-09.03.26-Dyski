@@ -101,7 +101,10 @@ type Config struct {
 	DiscordClientID     string
 	DiscordClientSecret string
 	DiscordRedirectURI  string
-	TurnstileSecretKey  string
+	// Discord server membership verification for social rewards.
+	DiscordBotToken      string
+	DiscordRewardGuildID string
+	TurnstileSecretKey   string
 
 	// Growth: abandoned checkout reminder (cron). Mailer must be configured (Resend or SMTP).
 	CheckoutReminderDisabled     bool
@@ -249,6 +252,8 @@ func Load() (*Config, error) {
 		DiscordClientID:                   getEnvOrDefault("DISCORD_CLIENT_ID", ""),
 		DiscordClientSecret:               getEnvOrDefault("DISCORD_CLIENT_SECRET", ""),
 		DiscordRedirectURI:                getEnvOrDefault("DISCORD_REDIRECT_URI", ""),
+		DiscordBotToken:                   strings.TrimSpace(getEnvOrDefault("DISCORD_BOT_TOKEN", "")),
+		DiscordRewardGuildID:              strings.TrimSpace(getEnvOrDefault("DISCORD_REWARD_GUILD_ID", "")),
 		TurnstileSecretKey:                getEnvOrDefault("TURNSTILE_SECRET_KEY", ""),
 		PasswordResetTokenTTLSecs:         getEnvOrDefaultInt("PASSWORD_RESET_TOKEN_TTL_SEC", 3600),
 		EmailVerificationTokenTTLSecs:     getEnvOrDefaultInt("EMAIL_VERIFICATION_TOKEN_TTL_SEC", 86400),

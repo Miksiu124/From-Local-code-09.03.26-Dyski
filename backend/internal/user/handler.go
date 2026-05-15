@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -337,10 +339,11 @@ func (h *Handler) GetSocialRewards(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
 
-	var hasDiscord bool
-	if err := h.db.QueryRow(ctx, `SELECT (discord_id IS NOT NULL) FROM users WHERE id = $1`, userID).Scan(&hasDiscord); err != nil {
+	var discordID *string
+	if err := h.db.QueryRow(ctx, `SELECT discord_id FROM users WHERE id = $1`, userID).Scan(&discordID); err != nil {
 		return common.InternalError(c)
 	}
+	hasDiscord := discordID != nil && strings.TrimSpace(*discordID) != ""
 
 	var claimed bool
 	if err := h.db.QueryRow(ctx, `
@@ -352,9 +355,20 @@ func (h *Handler) GetSocialRewards(c echo.Context) error {
 		return common.InternalError(c)
 	}
 
+	joinedServer := false
+	if hasDiscord {
+		joined, err := h.isDiscordGuildMember(ctx, strings.TrimSpace(*discordID))
+		if err != nil {
+			log.Printf("[social-reward] guild membership check failed user=%s: %v", userID, err)
+		} else {
+			joinedServer = joined
+		}
+	}
+
 	return common.Success(c, map[string]interface{}{
 		"discordConnected": hasDiscord,
 		"discordClaimed":   claimed,
+		"joinedServer":     joinedServer,
 		"rewardCredits":    5,
 	})
 }
@@ -381,6 +395,14 @@ func (h *Handler) ClaimDiscordReward(c echo.Context) error {
 	}
 	if discordID == nil || strings.TrimSpace(*discordID) == "" {
 		return common.BadRequest(c, "Connect your Discord account first")
+	}
+	joinedServer, guildErr := h.isDiscordGuildMember(ctx, strings.TrimSpace(*discordID))
+	if guildErr != nil {
+		log.Printf("[social-reward] guild membership check failed user=%s: %v", userID, guildErr)
+		return common.JSONError(c, http.StatusBadGateway, "DISCORD_CHECK_FAILED", "Could not verify Discord server membership")
+	}
+	if !joinedServer {
+		return common.BadRequest(c, "Join our Discord server first, then claim reward")
 	}
 
 	var alreadyClaimed bool
@@ -437,4 +459,41 @@ func (h *Handler) ClaimDiscordReward(c echo.Context) error {
 		"rewardCredits": rewardCredits,
 		"creditBalance": newBalance,
 	})
+}
+
+func (h *Handler) isDiscordGuildMember(ctx context.Context, discordUserID string) (bool, error) {
+	if h.cfg == nil {
+		return false, fmt.Errorf("missing config")
+	}
+	guildID := strings.TrimSpace(h.cfg.DiscordRewardGuildID)
+	botToken := strings.TrimSpace(h.cfg.DiscordBotToken)
+	if guildID == "" || botToken == "" || strings.TrimSpace(discordUserID) == "" {
+		return false, fmt.Errorf("discord membership check not configured")
+	}
+
+	url := fmt.Sprintf("https://discord.com/api/v10/guilds/%s/members/%s", guildID, strings.TrimSpace(discordUserID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bot "+botToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("unexpected discord status %d", resp.StatusCode)
+	}
+	var member map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&member); err != nil {
+		return false, err
+	}
+	return true, nil
 }

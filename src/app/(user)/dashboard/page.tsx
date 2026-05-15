@@ -50,6 +50,7 @@ type StatsResponse = {
 type SocialRewardsResponse = {
   discordConnected: boolean;
   discordClaimed: boolean;
+  joinedServer: boolean;
   rewardCredits: number;
 };
 
@@ -109,6 +110,7 @@ export default function DashboardPage() {
   const [socialRewards, setSocialRewards] = useState<SocialRewardsResponse | null>(null);
   const [claimingDiscordReward, setClaimingDiscordReward] = useState(false);
   const [socialRewardStatus, setSocialRewardStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const discordServerUrl = process.env.NEXT_PUBLIC_DISCORD_SERVER_URL || "";
 
   useEffect(() => {
     if (resendVerifyCooldownSec <= 0) return;
@@ -353,7 +355,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-3xl">
+    <div className="container mx-auto px-4 py-8 max-w-5xl">
       {me && !me.emailVerified && (
         <div className="mb-6 rounded-xl bg-yellow-500/10 border border-yellow-500/20 p-4 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -440,7 +442,7 @@ export default function DashboardPage() {
                 Social rewards
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Connect Discord and claim +{socialRewards.rewardCredits} credits once.
+                Connect Discord, join our server, then claim +{socialRewards.rewardCredits} credits once.
               </p>
             </div>
             {socialRewards.discordClaimed ? (
@@ -448,7 +450,7 @@ export default function DashboardPage() {
                 <Check className="h-4 w-4" />
                 Claimed
               </span>
-            ) : socialRewards.discordConnected ? (
+            ) : socialRewards.discordConnected && socialRewards.joinedServer ? (
               <Button
                 type="button"
                 size="sm"
@@ -459,6 +461,16 @@ export default function DashboardPage() {
                 {claimingDiscordReward ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gift className="h-4 w-4" />}
                 Claim +{socialRewards.rewardCredits}
               </Button>
+            ) : socialRewards.discordConnected ? (
+              discordServerUrl ? (
+                <a href={discordServerUrl} className="inline-flex text-sm text-primary hover:underline" target="_blank" rel="noreferrer">
+                  Join Discord server to claim
+                </a>
+              ) : (
+                <span className="inline-flex text-sm text-muted-foreground">
+                  Join our Discord server to claim
+                </span>
+              )
             ) : (
               <a href="/api/auth/discord" className="inline-flex text-sm text-primary hover:underline">
                 Connect Discord to claim

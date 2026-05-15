@@ -31,6 +31,7 @@ export default function LoginPage() {
 
   const registered = searchParams.get("registered") === "1";
   const verified = searchParams.get("verified") === "1";
+  const oauthError = searchParams.get("error") || "";
   /** `redirect` is canonical; `callbackUrl` kept for older links (e.g. server redirects). */
   const redirectParam = searchParams.get("redirect") ?? searchParams.get("callbackUrl");
 
@@ -44,7 +45,10 @@ export default function LoginPage() {
   useEffect(() => {
     if (registered) setSuccessMessage(t("checkEmailVerify"));
     if (verified) setSuccessMessage(t("emailVerifiedSuccess"));
-  }, [registered, verified, t]);
+    if (oauthError === "discord_password_account") {
+      setError("This account was created with password login. Use email + password to sign in.");
+    }
+  }, [registered, verified, oauthError, t]);
 
   useEffect(() => {
     trackLoginPageViewed({
