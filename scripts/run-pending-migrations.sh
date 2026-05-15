@@ -100,3 +100,22 @@ else
   echo "[WARN] marketing_email_click_events still missing. Run manually:"
   echo "  PGPASSWORD=\$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f backend/migrations/20260511120000_marketing_email_tracking.up.sql"
 fi
+
+# ADMIN_BROADCAST notification type (admin /admin/settings - send notification)
+check_enum_value() {
+  local type_name="$1"
+  local value="$2"
+  PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
+    "SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid WHERE t.typname = '$type_name' AND e.enumlabel = '$value'" 2>/dev/null | grep -q 1
+}
+
+if ! check_enum_value notification_type ADMIN_BROADCAST; then
+  echo "[Pending] ADMIN_BROADCAST missing from notification_type enum - applying 20260515210000..."
+  run_sql "$MIGRATIONS_DIR/20260515210000_add_admin_broadcast_notification_type.up.sql" || true
+fi
+if check_enum_value notification_type ADMIN_BROADCAST; then
+  echo "[OK] ADMIN_BROADCAST in notification_type ready"
+else
+  echo "[WARN] ADMIN_BROADCAST still missing. Run manually:"
+  echo "  PGPASSWORD=\$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f backend/migrations/20260515210000_add_admin_broadcast_notification_type.up.sql"
+fi
