@@ -12,7 +12,14 @@ type Row = {
   title: string;
   details: string;
   contact: string;
+  onlyFansLink: string;
+  modelName: string;
+  requestScope: "MAIN_ONLY" | "MAIN_AND_PPV";
+  requestTarget: "PRIVATE_ONLY" | "PUBLISH_TO_SITE";
   budgetCredits?: number | null;
+  chargedCredits: number;
+  chargedAt?: string | null;
+  refundedAt?: string | null;
   status: "OPEN" | "REVIEWING" | "APPROVED" | "REJECTED" | "FULFILLED";
   adminNotes?: string;
   createdAt: string;
@@ -72,7 +79,7 @@ export default function AdminCustomOrdersPage() {
       <div>
         <h1 className="text-2xl font-semibold">Custom orders</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review user custom requests and update their status.
+          Review custom jobs, pricing choice, and auto-refund status.
         </p>
       </div>
 
@@ -90,11 +97,12 @@ export default function AdminCustomOrdersPage() {
           <p className="px-4 py-8 text-sm text-muted-foreground">No custom order requests.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[940px] text-sm">
+            <table className="w-full min-w-[1180px] text-sm">
               <thead className="bg-muted/20 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-3 text-left font-medium">User</th>
-                  <th className="px-3 py-3 text-left font-medium">Request</th>
+                  <th className="px-3 py-3 text-left font-medium">Custom</th>
+                  <th className="px-3 py-3 text-left font-medium">Pricing</th>
                   <th className="px-3 py-3 text-left font-medium">Contact</th>
                   <th className="px-3 py-3 text-left font-medium">Status</th>
                 </tr>
@@ -107,8 +115,21 @@ export default function AdminCustomOrdersPage() {
                       <p className="text-xs text-muted-foreground">{row.userEmail}</p>
                     </td>
                     <td className="px-3 py-3">
-                      <p className="font-medium">{row.title}</p>
+                      <p className="font-medium">{row.modelName || row.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground break-all">{row.onlyFansLink}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {row.requestScope === "MAIN_AND_PPV" ? "Main + PPV" : "Main only"} ·{" "}
+                        {row.requestTarget === "PUBLISH_TO_SITE" ? "Publish to site" : "Private only"}
+                      </p>
                       <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{row.details}</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <p className="text-sm font-medium">{row.chargedCredits} credits</p>
+                      {row.refundedAt ? (
+                        <p className="mt-1 text-xs text-emerald-500">Refunded automatically</p>
+                      ) : (
+                        <p className="mt-1 text-xs text-muted-foreground">Charged at submit</p>
+                      )}
                       {typeof row.budgetCredits === "number" ? (
                         <p className="mt-1 text-xs text-foreground/90">Budget: {row.budgetCredits} credits</p>
                       ) : null}

@@ -608,14 +608,22 @@ func (h *Handler) GetPublicSettings(c echo.Context) error {
 		"bundle_credit_cost_14d",
 		"bundle_credit_cost_30d",
 		"blik_enabled",
+		"custom_order_price_main_private",
+		"custom_order_price_main_public",
+		"custom_order_price_main_ppv_private",
+		"custom_order_price_main_ppv_public",
 	}
 
 	result := map[string]interface{}{
-		"model_credit_cost_7d":   200,
-		"model_credit_cost_30d":  350,
-		"bundle_credit_cost_14d": 500,
-		"bundle_credit_cost_30d": 900,
-		"blik_enabled":           true,
+		"model_credit_cost_7d":                200,
+		"model_credit_cost_30d":               350,
+		"bundle_credit_cost_14d":              500,
+		"bundle_credit_cost_30d":              900,
+		"blik_enabled":                        true,
+		"custom_order_price_main_private":     250,
+		"custom_order_price_main_public":      450,
+		"custom_order_price_main_ppv_private": 400,
+		"custom_order_price_main_ppv_public":  650,
 	}
 
 	rows, err := h.db.Query(ctx, `SELECT key, value FROM settings WHERE key = ANY($1)`, publicKeys)

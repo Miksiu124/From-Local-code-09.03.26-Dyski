@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Save, Webhook, CreditCard, Timer, Package, Coins, UserPlus } from "lucide-react";
+import { Save, Webhook, CreditCard, Timer, Package, Coins, UserPlus, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,10 @@ const FEATURED_KEYS = [
   "referral_max_per_user",
   "referral_min_purchase_amount",
   "referral_cooldown_hours",
+  "custom_order_price_main_private",
+  "custom_order_price_main_public",
+  "custom_order_price_main_ppv_private",
+  "custom_order_price_main_ppv_public",
 ];
 const HIDDEN_KEYS = ["blik_enabled"];
 
@@ -178,6 +182,10 @@ export default function AdminSettingsPage() {
   const referralMaxPerUser = settings.find((s) => s.key === "referral_max_per_user");
   const referralMinPurchase = settings.find((s) => s.key === "referral_min_purchase_amount");
   const referralCooldown = settings.find((s) => s.key === "referral_cooldown_hours");
+  const customPriceMainPrivate = settings.find((s) => s.key === "custom_order_price_main_private");
+  const customPriceMainPublic = settings.find((s) => s.key === "custom_order_price_main_public");
+  const customPriceMainPpvPrivate = settings.find((s) => s.key === "custom_order_price_main_ppv_private");
+  const customPriceMainPpvPublic = settings.find((s) => s.key === "custom_order_price_main_ppv_public");
   const otherSettings = settings.filter((s) => !FEATURED_KEYS.includes(s.key) && !HIDDEN_KEYS.includes(s.key));
 
   return (
@@ -430,6 +438,83 @@ export default function AdminSettingsPage() {
                       </div>
                     );})}
                   </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Custom Orders Pricing */}
+      {(customPriceMainPrivate || customPriceMainPublic || customPriceMainPpvPrivate || customPriceMainPpvPublic) && (
+        <Card className="mb-6 border-2 border-fuchsia-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-fuchsia-500/10">
+                <ClipboardList className="h-6 w-6 text-fuchsia-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">Custom orders pricing</h3>
+                <p className="text-sm text-muted-foreground">
+                  Pricing shown on user Customs tab and charged instantly on submit.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {customPriceMainPrivate && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Main only · Private
+                  </label>
+                  <Input
+                    type="number"
+                    value={customPriceMainPrivate.value != null ? Number(customPriceMainPrivate.value) : ""}
+                    onChange={(e) => updateSetting("custom_order_price_main_private", Number(e.target.value))}
+                    placeholder="250"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {customPriceMainPublic && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Main only · Publish to site
+                  </label>
+                  <Input
+                    type="number"
+                    value={customPriceMainPublic.value != null ? Number(customPriceMainPublic.value) : ""}
+                    onChange={(e) => updateSetting("custom_order_price_main_public", Number(e.target.value))}
+                    placeholder="450"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {customPriceMainPpvPrivate && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Main + PPV · Private
+                  </label>
+                  <Input
+                    type="number"
+                    value={customPriceMainPpvPrivate.value != null ? Number(customPriceMainPpvPrivate.value) : ""}
+                    onChange={(e) => updateSetting("custom_order_price_main_ppv_private", Number(e.target.value))}
+                    placeholder="400"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {customPriceMainPpvPublic && (
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                    Main + PPV · Publish to site
+                  </label>
+                  <Input
+                    type="number"
+                    value={customPriceMainPpvPublic.value != null ? Number(customPriceMainPpvPublic.value) : ""}
+                    onChange={(e) => updateSetting("custom_order_price_main_ppv_public", Number(e.target.value))}
+                    placeholder="650"
+                    className="font-mono text-sm"
+                  />
                 </div>
               )}
             </div>
