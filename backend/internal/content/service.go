@@ -16,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const maxR2TextObjectBytes = 10 * 1024 * 1024 // 10 MiB guardrail for playlists/metadata text files
+
 var ErrContentNotFound = errors.New("content item not found")
 
 // resolutionPPlaylistBase returns pixel height for variant playlists like 720p.m3u8, 360p.m3u8, 916p.m3u8.
@@ -369,9 +371,12 @@ func (s *Service) readR2Text(ctx context.Context, key string) (string, error) {
 		return "", err
 	}
 	defer reader.Close()
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(io.LimitReader(reader, maxR2TextObjectBytes+1))
 	if err != nil {
 		return "", err
+	}
+	if len(data) > maxR2TextObjectBytes {
+		return "", fmt.Errorf("r2 text object too large: %s", key)
 	}
 	return string(data), nil
 }

@@ -90,6 +90,7 @@ func retryAfterSeconds(resetAtMs int64) int {
 
 // Minimum time between verification emails to the same address (blocks rapid resend loops).
 const verifyEmailResendCooldownSecs = 120
+const thirdPartyResponseMaxBytes = 1 << 20 // 1 MiB safety cap for external API responses
 
 func verifyResendCooldownRedisKey(email string) string {
 	return "verify-email-resend-cooldown:" + strings.ToLower(strings.TrimSpace(email))
@@ -145,7 +146,8 @@ func (h *Handler) Register(c echo.Context) error {
 			return common.BadRequest(c, "Verification expired. Please complete the challenge again and submit.")
 		}
 
-		resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", url.Values{
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", url.Values{
 			"secret":   {h.cfg.TurnstileSecretKey},
 			"response": {req.TurnstileToken},
 			"remoteip": {ip},
@@ -160,7 +162,7 @@ func (h *Handler) Register(c echo.Context) error {
 			Success    bool     `json:"success"`
 			ErrorCodes []string `json:"error-codes"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, thirdPartyResponseMaxBytes)).Decode(&result); err != nil {
 			log.Printf("[Turnstile] Decode error: %v", err)
 			return common.BadRequest(c, "Verification failed. Please complete the challenge again and submit.")
 		}
@@ -677,6 +679,12 @@ func (h *Handler) DiscordRedirect(c echo.Context) error {
 	state := hex.EncodeToString(stateBytes)
 
 	h.redis.Set(c.Request().Context(), "oauth-state:"+state, "1", 10*time.Minute)
+	if sessionUserID := middleware.GetUserID(c); strings.TrimSpace(sessionUserID) != "" {
+		// Preserve the currently authenticated account across external OAuth redirect.
+		// Some browsers/proxy setups may drop session_token on callback; with this key
+		// we can still link Discord to the initiating account after validating state.
+		h.redis.Set(c.Request().Context(), "oauth-link-user:"+state, sessionUserID, 10*time.Minute)
+	}
 
 	cookie := new(http.Cookie)
 	cookie.Name = discordStateCookie
@@ -757,9 +765,11 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 		log.Printf("[Discord] Invalid or expired OAuth state parameter")
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
+	linkUserID, _ := h.redis.GetDel(c.Request().Context(), "oauth-link-user:"+state).Result()
 
 	// Exchange code for token
-	tokenResp, err := http.PostForm("https://discord.com/api/oauth2/token", url.Values{
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	tokenResp, err := httpClient.PostForm("https://discord.com/api/oauth2/token", url.Values{
 		"client_id":     {h.cfg.DiscordClientID},
 		"client_secret": {h.cfg.DiscordClientSecret},
 		"grant_type":    {"authorization_code"},
@@ -772,7 +782,7 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	}
 	defer tokenResp.Body.Close()
 
-	body, _ := io.ReadAll(tokenResp.Body)
+	body, _ := io.ReadAll(io.LimitReader(tokenResp.Body, thirdPartyResponseMaxBytes))
 	var tokenData discordTokenResponse
 	if err := json.Unmarshal(body, &tokenData); err != nil || tokenData.AccessToken == "" {
 		log.Printf("[Discord] Invalid token response (do not log body - may contain tokens)")
@@ -780,16 +790,20 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	}
 
 	// Fetch Discord user info
-	req, _ := http.NewRequest("GET", "https://discord.com/api/users/@me", nil)
+	req, err := http.NewRequest("GET", "https://discord.com/api/users/@me", nil)
+	if err != nil {
+		log.Printf("[Discord] Failed to build user info request: %v", err)
+		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
+	}
 	req.Header.Set("Authorization", tokenData.TokenType+" "+tokenData.AccessToken)
-	userResp, err := http.DefaultClient.Do(req)
+	userResp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("[Discord] User info fetch failed: %v", err)
 		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/login?error=discord_failed")
 	}
 	defer userResp.Body.Close()
 
-	body, _ = io.ReadAll(userResp.Body)
+	body, _ = io.ReadAll(io.LimitReader(userResp.Body, thirdPartyResponseMaxBytes))
 	var dUser discordUser
 	if err := json.Unmarshal(body, &dUser); err != nil || dUser.ID == "" {
 		log.Printf("[Discord] Invalid user response (do not log body - may contain PII)")
@@ -817,6 +831,22 @@ func (h *Handler) DiscordCallback(c echo.Context) error {
 	}
 
 	// Find or create user (referral row only when account is newly created — same as email/password register)
+	sessionUserID := middleware.GetUserID(c)
+	if sessionUserID == "" && strings.TrimSpace(linkUserID) != "" {
+		sessionUserID = strings.TrimSpace(linkUserID)
+	}
+	if sessionUserID != "" {
+		if err := h.service.LinkDiscordToUser(ctx, sessionUserID, dUser.ID, dUser.Avatar); err != nil {
+			if errors.Is(err, ErrDiscordAlreadyLinkedToAnotherAccount) {
+				return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/dashboard?error=discord_already_linked")
+			}
+			log.Printf("[Discord] LinkDiscordToUser failed: %v", err)
+			return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/dashboard?error=discord_failed")
+		}
+		return c.Redirect(http.StatusTemporaryRedirect, h.cfg.FrontendURL+"/dashboard?discord=connected")
+	}
+
+	// Find or create user for Discord login/signup (anonymous flow).
 	token, user, createdNew, err := h.service.FindOrCreateDiscordUser(ctx, email, dUser.ID, dUser.GlobalName, dUser.Avatar, customLinkID, refCode, c.RealIP())
 	if err != nil {
 		if errors.Is(err, ErrDiscordLoginDisabledForPasswordAccount) {

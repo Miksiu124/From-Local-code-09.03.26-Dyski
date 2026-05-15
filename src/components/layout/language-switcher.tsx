@@ -21,7 +21,8 @@ export function LanguageSwitcher() {
   const switchLocale = () => {
     const next = locale === "en" ? "pl" : "en";
     startTransition(() => {
-      document.cookie = `locale=${next};path=/;max-age=31536000`;
+      const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+      document.cookie = `locale=${next};path=/;max-age=31536000;SameSite=Lax${isHttps ? ";Secure" : ""}`;
       window.location.reload();
     });
   };

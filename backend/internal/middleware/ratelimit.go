@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,6 +13,8 @@ import (
 type RateLimiter struct {
 	redis *redis.Client
 }
+
+var rateLimitSeq uint64
 
 func NewRateLimiter(redis *redis.Client) *RateLimiter {
 	return &RateLimiter{redis: redis}
@@ -40,8 +43,10 @@ func (rl *RateLimiter) Check(key string, limit int, windowMs int64) (*RateLimitR
 	// Count current entries
 	countCmd := pipe.ZCard(ctx, redisKey)
 
-	// Add current request
-	pipe.ZAdd(ctx, redisKey, redis.Z{Score: float64(now), Member: now})
+	// Add current request with a unique member value.
+	// Using only `now` would overwrite requests that hit in the same millisecond.
+	member := fmt.Sprintf("%d:%d", now, atomic.AddUint64(&rateLimitSeq, 1))
+	pipe.ZAdd(ctx, redisKey, redis.Z{Score: float64(now), Member: member})
 
 	// Set expiry on the key
 	pipe.PExpire(ctx, redisKey, time.Duration(windowMs)*time.Millisecond)
