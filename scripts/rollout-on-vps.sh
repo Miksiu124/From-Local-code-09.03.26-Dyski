@@ -53,18 +53,32 @@ echo "Bring stack up (--wait honours service healthchecks)..."
 docker compose $COMPOSE_FILES up -d --remove-orphans --build --wait $WT
 
 echo "Apply pending SQL migrations required by latest release..."
-MIGRATION_FILE="backend/migrations/20260515154500_social_custom_coinflip_features.up.sql"
-if [[ -f "$MIGRATION_FILE" ]]; then
-	docker compose $COMPOSE_FILES exec -T postgres \
-		psql -U platform -d content_platform -v ON_ERROR_STOP=1 < "$MIGRATION_FILE"
-else
-	echo "[WARN] Missing migration file: $MIGRATION_FILE"
-fi
+MIGRATION_FILES=(
+	"backend/migrations/20260515154500_social_custom_coinflip_features.up.sql"
+	"backend/migrations/20260515165500_custom_orders_pricing_and_refunds.up.sql"
+)
+for migration_file in "${MIGRATION_FILES[@]}"; do
+	if [[ -f "$migration_file" ]]; then
+		echo "Applying $(basename "$migration_file")"
+		docker compose $COMPOSE_FILES exec -T postgres \
+			psql -U platform -d content_platform -v ON_ERROR_STOP=1 < "$migration_file"
+	else
+		echo "[WARN] Missing migration file: $migration_file"
+	fi
+done
 
 echo "Verify social/custom/coinflip tables exist..."
 docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
 	"SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('social_reward_claims','custom_order_requests','coinflip_rounds');" \
 	| tr -d '[:space:]' | grep -qx "3"
+
+echo "Verify custom-orders pricing migration columns and settings..."
+docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
+	"SELECT COUNT(*) FROM information_schema.columns WHERE table_name='custom_order_requests' AND column_name IN ('onlyfans_link','model_name','request_scope','request_target','charged_credits','charge_credit_transaction_id','refund_credit_transaction_id','charged_at','refunded_at');" \
+	| tr -d '[:space:]' | grep -qx "9"
+docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
+	"SELECT COUNT(*) FROM settings WHERE key IN ('custom_order_price_main_private','custom_order_price_main_public','custom_order_price_main_ppv_private','custom_order_price_main_ppv_public');" \
+	| tr -d '[:space:]' | grep -qx "4"
 
 echo "Reload nginx configs (avoid stale nginx.conf bind-mount inode quirks)..."
 docker compose $COMPOSE_FILES up -d --no-deps --force-recreate nginx nginx-exporter 2>/dev/null || true
