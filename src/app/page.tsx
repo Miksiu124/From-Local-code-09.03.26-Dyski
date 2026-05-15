@@ -1,4 +1,5 @@
 import { ModelsGrid } from "@/components/user/models-grid";
+import { HomeQuickActionsStrip } from "@/components/user/home-quick-actions-strip";
 import { fetchApi } from "@/lib/api-client";
 
 type Model = {
@@ -97,6 +98,10 @@ export default async function HomePage() {
   return (
     <>
       <div className="mx-auto w-full min-w-0 max-w-[96rem] py-4 pl-[max(0.9rem,env(safe-area-inset-left,0px))] pr-[max(0.9rem,env(safe-area-inset-right,0px))] sm:py-6 md:pl-[max(1.2rem,env(safe-area-inset-left,0px))] md:pr-[max(1.2rem,env(safe-area-inset-right,0px))]">
+      <HomeQuickActionsStrip
+        isAuthenticated={!!me}
+        creditBalance={realCreditBalance}
+      />
       <ModelsGrid
         initialModels={modelsData.models.map((m) => ({
           id: m.id,

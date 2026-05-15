@@ -151,6 +151,12 @@ export function Header() {
     { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
 
+  const quickUserLinks = [
+    { href: "/my-purchases", label: t("nav.myPurchases") },
+    { href: "/favorites", label: t("nav.favorites") },
+    { href: "/referral", label: t("nav.referral") },
+  ];
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md">
       <div className="mx-auto flex h-14 w-full min-w-0 max-w-7xl items-center justify-between pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:h-16 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))]">
@@ -195,6 +201,24 @@ export function Header() {
             </Link>
             );
           })}
+          {user && (
+            <div className="ml-2 flex items-center gap-1">
+              {quickUserLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    pathname === link.href
+                      ? "text-foreground bg-white/[0.06]"
+                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                  )}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          )}
         </nav>
 
         {/* Right side */}
@@ -290,9 +314,6 @@ export function Header() {
                     <div className="py-1">
                       {[
                         { href: "/dashboard", icon: LayoutDashboard, label: t("nav.dashboard") },
-                        { href: "/my-purchases", icon: ShoppingCart, label: t("nav.myPurchases") },
-                        { href: "/favorites", icon: Heart, label: t("nav.favorites") },
-                        { href: "/referral", icon: UserPlus, label: t("nav.referral") },
                         { href: "/custom-orders", icon: ShoppingCart, label: t("nav.customOrders") },
                         { href: "/games/coinflip", icon: Coins, label: t("nav.coinflip") },
                         ...(isAdmin ? [{ href: adminHomeHref, icon: ShieldCheck, label: t("nav.admin") }] : []),

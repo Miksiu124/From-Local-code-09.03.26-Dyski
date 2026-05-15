@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, memo } from "react";
+import Link from "next/link";
 import { CatalogNavLink } from "@/components/user/catalog-nav-link";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
@@ -256,6 +257,7 @@ export function ModelsGrid({
   creditBalance,
 }: ModelsGridProps) {
   const t = useTranslations("models");
+  const tGlobal = useTranslations();
 
   useEffect(() => {
     try {
@@ -612,6 +614,29 @@ export function ModelsGrid({
     ? models.filter((m) => hasAccess(m.id))
     : models;
 
+  const hasActiveFilters =
+    search.trim().length > 0 || selectedCountry !== null || showPurchasedOnly;
+  const activeCountryName = selectedCountry
+    ? countriesWithModels.find((country) => country.id === selectedCountry)?.name ?? null
+    : null;
+
+  const clearAllFilters = useCallback(() => {
+    setSearch("");
+    setSelectedCountry(null);
+    setShowPurchasedOnly(false);
+    hasFetchedFilteredRef.current = false;
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("models_search");
+      sessionStorage.removeItem("models_country");
+      sessionStorage.removeItem("models_purchased_only");
+    }
+    if (initialModels.length > 0) {
+      setFilteredMode(false);
+      setModels(initialModels);
+      setCursor(initialCursor);
+    }
+  }, [initialCursor, initialModels]);
+
   return (
     <>
       {/* Featured Section */}
@@ -830,6 +855,52 @@ export function ModelsGrid({
         </motion.div>
       )}
 
+      {/* What next: keep core actions visible instead of hiding in account menu */}
+      {isAuthenticated && (
+        <section className="mb-6 rounded-2xl border border-white/[0.08] bg-card p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-foreground/90">{tGlobal("nav.dashboard")}</h2>
+            <Link
+              href="/dashboard"
+              className="text-xs font-medium text-primary hover:text-primary/85 transition-colors"
+            >
+              {tGlobal("nav.dashboard")}
+            </Link>
+          </div>
+
+          <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+            <Link
+              href="/purchase"
+              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
+            >
+              {tGlobal("nav.buyCredits")}
+              <span aria-hidden className="text-muted-foreground">→</span>
+            </Link>
+            <Link
+              href="/my-purchases"
+              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
+            >
+              {tGlobal("nav.myPurchases")}
+              <span aria-hidden className="text-muted-foreground">→</span>
+            </Link>
+            <Link
+              href="/favorites"
+              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
+            >
+              {tGlobal("nav.favorites")}
+              <span aria-hidden className="text-muted-foreground">→</span>
+            </Link>
+            <Link
+              href="/referral"
+              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
+            >
+              {tGlobal("nav.referral")}
+              <span aria-hidden className="text-muted-foreground">→</span>
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* Search + country on one row (narrower search); filters beside */}
       <div className="catalog-control-shelf sticky top-[4.55rem] z-30 mb-6 flex flex-col gap-3 rounded-xl border border-white/[0.07] px-2.5 py-2.5 slide-up" style={{ animationDelay: "0.15s" }}>
         <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center min-[480px]:gap-3">
@@ -898,9 +969,38 @@ export function ModelsGrid({
                   </select>
                 </div>
               )}
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="min-h-[44px] rounded-lg border border-white/[0.08] bg-white/[0.03] px-3.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground min-[480px]:min-h-0 touch-manipulation"
+                >
+                  {t("resetFilters")}
+                </button>
+              )}
             </div>
           )}
         </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-2">
+            {search.trim().length > 0 && (
+              <span className="rounded-md border border-primary/35 bg-primary/12 px-2 py-1 text-[11px] font-medium text-primary">
+                {t("searchLabel")}: {search.trim().slice(0, 24)}
+              </span>
+            )}
+            {activeCountryName && (
+              <span className="rounded-md border border-primary/35 bg-primary/12 px-2 py-1 text-[11px] font-medium text-primary">
+                {t("filterByCountry")}: {activeCountryName}
+              </span>
+            )}
+            {showPurchasedOnly && (
+              <span className="rounded-md border border-success/35 bg-success/12 px-2 py-1 text-[11px] font-medium text-success">
+                {t("purchasedTab")}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Models Grid */}

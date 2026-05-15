@@ -150,7 +150,8 @@
     "carouselNext": "Następny slajd",
     "carouselSlide": "Slajd {current} z {total}",
     "purchasedTab": "Kupione",
-    "modelsCount": "twórców"
+    "modelsCount": "twórców",
+    "resetFilters": "Wyczyść filtry"
   },
   "videoPlayer": {
     "back": "Wróć",

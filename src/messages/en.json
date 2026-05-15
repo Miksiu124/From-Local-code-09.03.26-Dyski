@@ -150,7 +150,8 @@
     "carouselNext": "Next slide",
     "carouselSlide": "Slide {current} of {total}",
     "purchasedTab": "Purchased",
-    "modelsCount": "creators"
+    "modelsCount": "creators",
+    "resetFilters": "Reset filters"
   },
   "videoPlayer": {
     "back": "Back",
