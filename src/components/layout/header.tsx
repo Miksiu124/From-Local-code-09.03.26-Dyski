@@ -6,9 +6,6 @@ import {
   Coins,
   User,
   LogOut,
-  Heart,
-  ShoppingCart,
-  UserPlus,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
@@ -127,11 +124,6 @@ export function Header() {
     { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
 
-  const quickUserLinks = [
-    { href: "/my-purchases", label: t("nav.myPurchases") },
-    { href: "/favorites", label: t("nav.favorites") },
-    { href: "/referral", label: t("nav.referral") },
-  ];
   const mobilePrimaryLinks = [
     { href: "/", label: t("nav.models"), show: true },
     { href: "/purchase", label: t("nav.buyCredits"), show: true },
@@ -183,24 +175,6 @@ export function Header() {
             </Link>
             );
           })}
-          {user && (
-            <div className="ml-2 hidden items-center gap-1 xl:flex">
-              {quickUserLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                    pathname === link.href
-                      ? "text-foreground bg-white/[0.06]"
-                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-          )}
         </nav>
 
         {/* Right side */}
@@ -290,7 +264,7 @@ export function Header() {
         </div>
       </div>
       <div className="border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-2 pr-[max(0.75rem,env(safe-area-inset-right,0px))] lg:hidden">
-        <nav className="flex items-center gap-2 overflow-x-auto pb-1">
+        <nav className="grid grid-cols-2 gap-2">
           {mobilePrimaryLinks.map((link) => {
             const navActive =
               link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
@@ -299,7 +273,7 @@ export function Header() {
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  "whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                  "rounded-lg border px-3 py-2 text-center text-xs font-medium transition-colors",
                   navActive
                     ? "border-white/[0.14] bg-white/[0.08] text-foreground"
                     : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
@@ -309,66 +283,18 @@ export function Header() {
               </Link>
             );
           })}
-          {DISCORD_SERVER_URL ? (
-            <a
-              href={DISCORD_SERVER_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[#5865F2] hover:bg-white/[0.05]"
-              aria-label={t("nav.discordServer")}
-              title={t("nav.discordServer")}
-            >
-              <DiscordGlyph className="h-4 w-4" />
-            </a>
-          ) : null}
         </nav>
         {user ? (
-          <nav className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
-            <Link
-              href="/my-purchases"
-              className={cn(
-                "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium transition-colors",
-                pathname === "/my-purchases"
-                  ? "text-foreground bg-white/[0.08] border-white/[0.14]"
-                  : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-              )}
-            >
-              <ShoppingCart className="h-3.5 w-3.5" />
-              {t("nav.myPurchases")}
-            </Link>
-            <Link
-              href="/favorites"
-              className={cn(
-                "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium transition-colors",
-                pathname === "/favorites"
-                  ? "text-foreground bg-white/[0.08] border-white/[0.14]"
-                  : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-              )}
-            >
-              <Heart className="h-3.5 w-3.5" />
-              {t("nav.favorites")}
-            </Link>
-            <Link
-              href="/referral"
-              className={cn(
-                "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium transition-colors",
-                pathname === "/referral"
-                  ? "text-foreground bg-white/[0.08] border-white/[0.14]"
-                  : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-              )}
-            >
-              <UserPlus className="h-3.5 w-3.5" />
-              {t("nav.referral")}
-            </Link>
+          <div className="mt-2">
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-white/[0.05]"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-white/[0.05]"
             >
               <LogOut className="h-3.5 w-3.5" />
               {t("nav.logout")}
             </button>
-          </nav>
+          </div>
         ) : null}
       </div>
     </header>
