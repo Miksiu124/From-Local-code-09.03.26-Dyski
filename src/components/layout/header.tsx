@@ -5,8 +5,16 @@ import { useTranslations } from "next-intl";
 import {
   Bell,
   Coins,
+  Gamepad2,
+  Heart,
+  List,
   User,
+  Menu,
   LogOut,
+  ShoppingCart,
+  UserPlus,
+  X,
+  ShieldCheck,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
@@ -51,6 +59,7 @@ export function Header() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -162,6 +171,10 @@ export function Header() {
     return () => document.removeEventListener("mousedown", closeOnOutside);
   }, []);
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   const handleLogout = async () => {
     try {
       trackLogout({ role: user?.role === "ADMIN" ? "admin" : "user" });
@@ -228,10 +241,33 @@ export function Header() {
     { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
   const isOddMobilePrimaryCount = mobilePrimaryLinks.length % 2 === 1;
+  const useSideRailNavigation = !!user;
+  const mobileDrawerLinks = [
+    { href: "/", label: t("nav.models"), icon: List, show: true },
+    { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: true },
+    { href: "/dashboard", label: t("nav.dashboard"), icon: User, show: !!user },
+    { href: "/my-purchases", label: t("nav.myPurchases"), icon: ShoppingCart, show: !!user },
+    { href: "/favorites", label: t("nav.favorites"), icon: Heart, show: !!user },
+    { href: "/custom-orders", label: t("nav.customOrders"), icon: ShoppingCart, show: !!user },
+    { href: "/games/coinflip", label: t("nav.coinflip"), icon: Gamepad2, show: !!user },
+    { href: "/referral", label: t("nav.referral"), icon: UserPlus, show: !!user },
+    { href: adminHomeHref, label: t("nav.admin"), icon: ShieldCheck, show: isAdmin },
+  ].filter((l) => l.show);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md">
       <div className="mx-auto flex h-14 w-full min-w-0 max-w-7xl items-center justify-between pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:h-16 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))]">
+        <div className="mr-2 flex items-center gap-2 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+            aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </button>
+        </div>
         {/* Logo — resets search and returns to main page */}
         <Link
           href="/"
@@ -246,33 +282,34 @@ export function Header() {
 
         {/* Desktop Navigation */}
         <nav className="ml-8 hidden items-center gap-1 lg:flex">
-          {navLinks.map((link) => {
-            const navActive =
-              link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
-            return (
-            <Link
-              key={link.href}
-              href={link.href}
-              data-tour={
-                link.href === "/"
-                  ? "tour-models"
-                  : link.href === "/purchase"
-                    ? user
-                      ? "tour-buy"
-                      : "tour-guest-credits"
-                    : undefined
-              }
-              className={cn(
-                "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                navActive
-                  ? "text-foreground bg-white/[0.06]"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
-              )}
-            >
-              {link.label}
-            </Link>
-            );
-          })}
+          {!useSideRailNavigation &&
+            navLinks.map((link) => {
+              const navActive =
+                link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  data-tour={
+                    link.href === "/"
+                      ? "tour-models"
+                      : link.href === "/purchase"
+                        ? user
+                          ? "tour-buy"
+                          : "tour-guest-credits"
+                        : undefined
+                  }
+                  className={cn(
+                    "px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                    navActive
+                      ? "text-foreground bg-white/[0.06]"
+                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                  )}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
         </nav>
 
         {/* Right side */}
@@ -423,6 +460,7 @@ export function Header() {
 
         </div>
       </div>
+      {!useSideRailNavigation && (
       <div className="border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-1.5 pr-[max(0.75rem,env(safe-area-inset-right,0px))] lg:hidden">
         <nav className="grid grid-cols-2 gap-1.5">
           {mobilePrimaryLinks.map((link, index) => {
@@ -447,6 +485,86 @@ export function Header() {
           })}
         </nav>
       </div>
+      )}
+
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label={t("common.closeDialog")}
+          />
+          <aside className="absolute left-0 top-0 h-full w-[82vw] max-w-[320px] border-r border-white/[0.08] bg-card px-3 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/45">
+            <div className="mb-3 flex items-center justify-between px-1">
+              <span className="text-sm font-semibold text-foreground/90">Menu</span>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                aria-label={t("nav.closeMenu")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <nav className="space-y-1.5">
+              {mobileDrawerLinks.map((link) => {
+                const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn(
+                      "flex min-h-[44px] items-center gap-2.5 rounded-lg border px-3 text-sm font-medium transition-colors",
+                      navActive
+                        ? "border-white/[0.14] bg-white/[0.08] text-foreground"
+                        : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                    )}
+                  >
+                    <link.icon className="h-4 w-4 shrink-0" />
+                    <span>{link.label}</span>
+                  </Link>
+                );
+              })}
+              {DISCORD_SERVER_URL && (
+                <a
+                  href={DISCORD_SERVER_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-h-[44px] items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-white/[0.06]"
+                >
+                  <DiscordGlyph className="h-4 w-4" />
+                  <span>{t("nav.discordServer")}</span>
+                </a>
+              )}
+            </nav>
+            <div className="mt-3 border-t border-white/[0.06] pt-3">
+              {user ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-sm font-medium text-destructive transition-colors hover:bg-white/[0.06]"
+                >
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  <span>{t("nav.logout")}</span>
+                </button>
+              ) : (
+                <Link
+                  href="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={cn(buttonVariants({ size: "sm", variant: "default" }), "min-h-[44px] w-full")}
+                >
+                  {t("auth.loginTitle")}
+                </Link>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
     </header>
   );
 }

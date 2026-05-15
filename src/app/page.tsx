@@ -1,5 +1,4 @@
 import { ModelsGrid } from "@/components/user/models-grid";
-import { HomeQuickActionsStrip } from "@/components/user/home-quick-actions-strip";
 import { HomeSideRail } from "@/components/layout/home-side-rail";
 import { fetchApi } from "@/lib/api-client";
 
@@ -98,16 +97,10 @@ export default async function HomePage() {
 
   return (
     <>
-      <div className="mx-auto w-full min-w-0 max-w-[96rem] py-4 pl-[max(0.9rem,env(safe-area-inset-left,0px))] pr-[max(0.9rem,env(safe-area-inset-right,0px))] sm:py-6 md:pl-[max(1.2rem,env(safe-area-inset-left,0px))] md:pr-[max(1.2rem,env(safe-area-inset-right,0px))]">
+      <div className="w-full min-w-0 py-4 pl-[max(0.9rem,env(safe-area-inset-left,0px))] pr-[max(0.9rem,env(safe-area-inset-right,0px))] sm:py-6 md:pl-[72px] md:pr-[max(1.1rem,env(safe-area-inset-right,0px))] lg:pl-[244px]">
         <div className="flex items-start gap-4 lg:gap-5">
           {me && <HomeSideRail isAdmin={me.role === "ADMIN"} />}
           <div className="min-w-0 flex-1">
-            <div className="md:hidden">
-              <HomeQuickActionsStrip
-                isAuthenticated={!!me}
-                creditBalance={realCreditBalance}
-              />
-            </div>
             <ModelsGrid
               initialModels={modelsData.models.map((m) => ({
                 id: m.id,
