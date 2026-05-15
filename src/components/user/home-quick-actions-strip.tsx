@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Coins, Heart, LayoutDashboard, ShoppingCart } from "lucide-react";
+import { Coins, Heart, LayoutDashboard, ShoppingCart, UserPlus } from "lucide-react";
 import { formatCredits } from "@/lib/utils";
 
 type HomeQuickActionsStripProps = {
@@ -52,14 +52,6 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
 
       <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
         <Link
-          href="/purchase"
-          className={actionCardClass}
-        >
-          <span className="text-sm font-medium">{tNav("buyCredits")}</span>
-          <Coins className="h-4 w-4 text-primary" />
-        </Link>
-
-        <Link
           href="/my-purchases"
           className={actionCardClass}
         >
@@ -76,11 +68,19 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
         </Link>
 
         <Link
-          href="/dashboard"
+          href="/referral"
           className={actionCardClass}
         >
-          <span className="text-sm font-medium">{tNav("dashboard")}</span>
-          <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{tNav("referral")}</span>
+          <UserPlus className="h-4 w-4 text-muted-foreground" />
+        </Link>
+
+        <Link
+          href="/custom-orders"
+          className={actionCardClass}
+        >
+          <span className="text-sm font-medium">{tNav("customOrders")}</span>
+          <ShoppingCart className="h-4 w-4 text-muted-foreground" />
         </Link>
       </div>
     </section>
