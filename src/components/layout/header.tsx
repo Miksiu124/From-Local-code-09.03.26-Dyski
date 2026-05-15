@@ -202,7 +202,7 @@ export function Header() {
             );
           })}
           {user && (
-            <div className="ml-2 flex items-center gap-1">
+            <div className="ml-2 hidden items-center gap-1 2xl:flex">
               {quickUserLinks.map((link) => (
                 <Link
                   key={link.href}

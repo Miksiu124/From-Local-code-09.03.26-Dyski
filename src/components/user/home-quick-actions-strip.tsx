@@ -14,6 +14,9 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
   const tNav = useTranslations("nav");
   const tModels = useTranslations("models");
 
+  const actionCardClass =
+    "flex min-h-[64px] min-w-[220px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 hover:bg-white/[0.05] transition-colors sm:min-w-0";
+
   if (!isAuthenticated) {
     return (
       <section className="mb-6 rounded-2xl border border-white/[0.08] bg-card p-4 sm:p-5">
@@ -47,10 +50,10 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
         <Link
           href="/purchase"
-          className="flex min-h-[64px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 hover:bg-white/[0.05] transition-colors"
+          className={actionCardClass}
         >
           <span className="text-sm font-medium">{tNav("buyCredits")}</span>
           <Coins className="h-4 w-4 text-primary" />
@@ -58,7 +61,7 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
 
         <Link
           href="/my-purchases"
-          className="flex min-h-[64px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 hover:bg-white/[0.05] transition-colors"
+          className={actionCardClass}
         >
           <span className="text-sm font-medium">{tNav("myPurchases")}</span>
           <ShoppingCart className="h-4 w-4 text-muted-foreground" />
@@ -66,7 +69,7 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
 
         <Link
           href="/favorites"
-          className="flex min-h-[64px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 hover:bg-white/[0.05] transition-colors"
+          className={actionCardClass}
         >
           <span className="text-sm font-medium">{tNav("favorites")}</span>
           <Heart className="h-4 w-4 text-muted-foreground" />
@@ -74,7 +77,7 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
 
         <Link
           href="/dashboard"
-          className="flex min-h-[64px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 hover:bg-white/[0.05] transition-colors"
+          className={actionCardClass}
         >
           <span className="text-sm font-medium">{tNav("dashboard")}</span>
           <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
