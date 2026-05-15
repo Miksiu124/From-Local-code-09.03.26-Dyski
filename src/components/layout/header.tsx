@@ -507,8 +507,8 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute left-0 top-0 h-full w-[92vw] max-w-[360px] border-r border-white/[0.14] bg-[#11151d] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
-            <div className="mb-3 flex items-center justify-between px-1">
+          <aside className="absolute inset-y-0 left-0 flex w-[92vw] max-w-[360px] flex-col border-r border-white/[0.14] bg-[#11151d] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(1rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
+            <div className="mb-3 shrink-0 flex items-center justify-between px-1">
               <span className="text-sm font-semibold text-foreground">Menu</span>
               <button
                 type="button"
@@ -519,7 +519,7 @@ export function Header() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <nav className="max-h-[calc(100vh-11rem)] space-y-1.5 overflow-y-auto rounded-md bg-[#171d27] p-1.5">
+            <nav className="min-h-0 flex-1 space-y-1.5 overflow-y-auto rounded-md bg-[#171d27] p-1.5">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
                 return (
@@ -551,7 +551,7 @@ export function Header() {
                 </a>
               )}
             </nav>
-            <div className="mt-3 border-t border-white/[0.1] pt-3">
+            <div className="mt-3 shrink-0 border-t border-white/[0.1] pt-3">
               {user ? (
                 <button
                   type="button"
