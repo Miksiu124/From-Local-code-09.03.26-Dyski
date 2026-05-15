@@ -503,11 +503,11 @@ export function Header() {
         <div className="fixed inset-0 z-50 md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/72"
+            className="absolute inset-0 bg-black/88"
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute left-0 top-0 h-full w-[92vw] max-w-[360px] border-r border-white/[0.14] bg-[#11151d] px-3 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
+          <aside className="absolute inset-0 h-full w-full bg-[#11151d] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
             <div className="mb-3 flex items-center justify-between px-1">
               <span className="text-sm font-semibold text-foreground">Menu</span>
               <button
