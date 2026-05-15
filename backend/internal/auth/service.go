@@ -35,6 +35,7 @@ func NewService(cfg *config.Config, db *pgxpool.Pool, redis *redis.Client) *Serv
 // ErrEmailNotVerified is returned from Login when the account password is valid but email is not verified.
 var ErrEmailNotVerified = errors.New("email not verified")
 var ErrDiscordLoginDisabledForPasswordAccount = errors.New("discord login disabled for password account")
+var ErrDiscordAlreadyLinkedToAnotherAccount = errors.New("discord account already linked to another user")
 
 type UserRow struct {
 	ID            string
@@ -459,6 +460,48 @@ func (s *Service) FindOrCreateDiscordUser(ctx context.Context, email, discordID,
 	s.redis.Set(ctx, sessionKey, sessionID, time.Duration(s.cfg.SessionTokenTTL)*time.Second)
 
 	return token, &user, createdNew, nil
+}
+
+// LinkDiscordToUser links a Discord account to the currently authenticated user.
+// It refuses to steal a Discord ID that already belongs to another account.
+func (s *Service) LinkDiscordToUser(ctx context.Context, userID, discordID, avatar string) error {
+	userID = strings.TrimSpace(userID)
+	discordID = strings.TrimSpace(discordID)
+	if userID == "" || discordID == "" {
+		return fmt.Errorf("invalid discord link request")
+	}
+
+	var ownerID string
+	if err := s.db.QueryRow(ctx, `
+		SELECT COALESCE((SELECT id::text FROM users WHERE discord_id = $1 LIMIT 1), '')
+	`, discordID).Scan(&ownerID); err != nil {
+		return fmt.Errorf("check discord owner: %w", err)
+	}
+	if ownerID != "" && ownerID != userID {
+		return ErrDiscordAlreadyLinkedToAnotherAccount
+	}
+
+	var avatarURL *string
+	if strings.TrimSpace(avatar) != "" {
+		url := fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", discordID, strings.TrimSpace(avatar))
+		avatarURL = &url
+	}
+
+	tag, err := s.db.Exec(ctx, `
+		UPDATE users
+		SET discord_id = $1,
+		    email_verified = true,
+		    avatar_url = COALESCE($2, avatar_url),
+		    updated_at = now()
+		WHERE id = $3
+	`, discordID, avatarURL, userID)
+	if err != nil {
+		return fmt.Errorf("link discord account: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
 }
 
 // CreateEmailVerificationToken creates a token for email verification (Redis TTL from config).
