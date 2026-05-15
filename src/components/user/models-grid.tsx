@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, memo } from "react";
-import Link from "next/link";
 import { CatalogNavLink } from "@/components/user/catalog-nav-link";
 import { useTranslations } from "next-intl";
 import { motion, AnimatePresence } from "framer-motion";
@@ -257,7 +256,6 @@ export function ModelsGrid({
   creditBalance,
 }: ModelsGridProps) {
   const t = useTranslations("models");
-  const tGlobal = useTranslations();
 
   useEffect(() => {
     try {
@@ -853,52 +851,6 @@ export function ModelsGrid({
             </div>
           </div>
         </motion.div>
-      )}
-
-      {/* What next: keep core actions visible instead of hiding in account menu */}
-      {isAuthenticated && (
-        <section className="mb-6 rounded-2xl border border-white/[0.08] bg-card p-4 sm:p-5">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-foreground/90">{tGlobal("nav.dashboard")}</h2>
-            <Link
-              href="/dashboard"
-              className="text-xs font-medium text-primary hover:text-primary/85 transition-colors"
-            >
-              {tGlobal("nav.dashboard")}
-            </Link>
-          </div>
-
-          <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-            <Link
-              href="/purchase"
-              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
-            >
-              {tGlobal("nav.buyCredits")}
-              <span aria-hidden className="text-muted-foreground">→</span>
-            </Link>
-            <Link
-              href="/my-purchases"
-              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
-            >
-              {tGlobal("nav.myPurchases")}
-              <span aria-hidden className="text-muted-foreground">→</span>
-            </Link>
-            <Link
-              href="/favorites"
-              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
-            >
-              {tGlobal("nav.favorites")}
-              <span aria-hidden className="text-muted-foreground">→</span>
-            </Link>
-            <Link
-              href="/referral"
-              className="flex min-h-[56px] items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors"
-            >
-              {tGlobal("nav.referral")}
-              <span aria-hidden className="text-muted-foreground">→</span>
-            </Link>
-          </div>
-        </section>
       )}
 
       {/* Search + country on one row (narrower search); filters beside */}
