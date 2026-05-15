@@ -5,10 +5,11 @@ import { useTranslations } from "next-intl";
 import {
   Bell,
   ChevronRight,
+  Cloud,
   CircleHelp,
   Coins,
   Heart,
-  List,
+  House,
   User,
   Menu,
   LogOut,
@@ -185,6 +186,15 @@ export function Header() {
     };
   }, [mobileMenuOpen]);
 
+  useEffect(() => {
+    const openMobileMenuForTour = () => {
+      setNotificationsOpen(false);
+      setMobileMenuOpen(true);
+    };
+    window.addEventListener("tour:open-mobile-menu", openMobileMenuForTour);
+    return () => window.removeEventListener("tour:open-mobile-menu", openMobileMenuForTour);
+  }, []);
+
   const handleLogout = async () => {
     try {
       trackLogout({ role: user?.role === "ADMIN" ? "admin" : "user" });
@@ -253,7 +263,7 @@ export function Header() {
   const isOddMobilePrimaryCount = mobilePrimaryLinks.length % 2 === 1;
   const useSideRailNavigation = !!user;
   const mobileDrawerLinks = [
-    { href: "/", label: t("nav.models"), icon: List, show: true },
+    { href: "/", label: t("nav.models"), icon: House, show: true },
     { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: true },
     { href: "/dashboard", label: t("nav.dashboard"), icon: User, show: !!user },
     { href: "/my-purchases", label: t("nav.myPurchases"), icon: ShoppingCart, show: !!user },
@@ -276,6 +286,7 @@ export function Header() {
             className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
             aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
             aria-expanded={mobileMenuOpen}
+            data-tour="tour-menu-trigger"
           >
             {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -483,6 +494,13 @@ export function Header() {
               <Link
                 key={link.href}
                 href={link.href}
+                data-tour={
+                  link.href === "/"
+                    ? "tour-models-mobile"
+                    : link.href === "/purchase"
+                      ? "tour-guest-credits"
+                      : undefined
+                }
                 className={cn(
                   "rounded-lg border px-3 py-1.5 text-center text-[11px] font-medium transition-colors",
                   spanTwoCols && "col-span-2",
@@ -503,24 +521,24 @@ export function Header() {
         <div className="fixed inset-0 z-50 md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/82"
+            className="absolute inset-0 bg-black/78"
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[86vw] max-w-[340px] flex-col border-r border-white/[0.1] bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(1.15rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/50">
-            <div className="mb-5 shrink-0 flex items-center justify-between">
-              <div className="inline-flex items-center gap-2.5">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-[6px] border border-primary/30 bg-primary/10 text-primary">
-                  <span className="h-2 w-2 rounded-full bg-primary" />
+          <aside className="absolute inset-y-0 left-0 flex w-[80vw] max-w-[320px] flex-col border-r border-white/[0.08] bg-[#101215] px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(1.25rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
+            <div className="mb-6 shrink-0 flex items-center justify-between">
+              <div className="inline-flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#2b3f4a] bg-[#162028] text-[#80cdee]">
+                  <Cloud className="h-3.5 w-3.5" />
                 </span>
-                <span className="text-[0.82rem] font-semibold uppercase tracking-[0.14em] text-foreground/90">
+                <span className="text-sm font-semibold text-foreground/95">
                   Menu
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-md border border-white/[0.12] bg-card/80 text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex min-h-[34px] min-w-[34px] items-center justify-center rounded-md border border-white/[0.12] bg-[#171a1f] text-muted-foreground transition-colors hover:text-foreground"
                   aria-label="Help"
                 >
                   <CircleHelp className="h-3.5 w-3.5" />
@@ -528,26 +546,37 @@ export function Header() {
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex min-h-[32px] min-w-[32px] items-center justify-center rounded-md border border-white/[0.12] bg-card/80 text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex min-h-[34px] min-w-[34px] items-center justify-center rounded-md border border-white/[0.12] bg-[#171a1f] text-muted-foreground transition-colors hover:text-foreground"
                   aria-label={t("nav.closeMenu")}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
-            <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+            <nav className="min-h-0 flex-1 space-y-2.5 overflow-y-auto">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+                const drawerTourId =
+                  link.href === "/"
+                    ? "tour-models-mobile"
+                    : link.href === "/purchase"
+                      ? user
+                        ? "tour-buy-mobile"
+                        : "tour-guest-credits"
+                      : link.href === "/dashboard"
+                        ? "tour-account"
+                        : undefined;
                 return (
                   <Link
                     key={link.href}
                     href={link.href}
                     onClick={() => setMobileMenuOpen(false)}
+                    data-tour={drawerTourId}
                     className={cn(
-                      "flex min-h-[50px] items-center gap-2.5 rounded-lg border px-3.5 text-[0.95rem] font-medium transition-colors",
+                      "flex min-h-[50px] items-center gap-2.5 rounded-[10px] border px-3.5 text-[0.95rem] font-medium transition-colors",
                       navActive
-                        ? "border-primary/35 bg-primary/10 text-foreground"
-                        : "border-white/[0.1] bg-card/65 text-muted-foreground hover:border-white/[0.16] hover:text-foreground"
+                        ? "border-[#2f4657] bg-[#172028] text-[#9ad8ff]"
+                        : "border-white/[0.1] bg-transparent text-foreground/85 hover:border-white/[0.16] hover:bg-white/[0.02]"
                     )}
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
@@ -563,7 +592,7 @@ export function Header() {
                   href={DISCORD_SERVER_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[50px] items-center gap-2.5 rounded-lg border border-white/[0.1] bg-card/65 px-3.5 text-[0.95rem] font-medium text-[#5865F2] transition-colors hover:border-white/[0.16]"
+                  className="flex min-h-[50px] items-center gap-2.5 rounded-[10px] border border-white/[0.1] bg-transparent px-3.5 text-[0.95rem] font-medium text-[#7f8cff] transition-colors hover:border-white/[0.16] hover:bg-white/[0.02]"
                 >
                   <DiscordGlyph className="h-4 w-4" />
                   <span>{t("nav.discordServer")}</span>
@@ -581,7 +610,7 @@ export function Header() {
                     setMobileMenuOpen(false);
                     handleLogout();
                   }}
-                  className="flex min-h-[54px] w-full items-center justify-center gap-2.5 rounded-lg border border-destructive/40 bg-destructive/12 px-3.5 text-[0.95rem] font-semibold text-destructive transition-colors hover:bg-destructive/16"
+                  className="flex min-h-[54px] w-full items-center justify-center gap-2.5 rounded-[10px] border border-destructive/40 bg-destructive/12 px-3.5 text-[0.95rem] font-semibold text-destructive transition-colors hover:bg-destructive/16"
                 >
                   <LogOut className="h-4 w-4 shrink-0" />
                   <span>{t("nav.logout")}</span>
@@ -592,7 +621,7 @@ export function Header() {
                   onClick={() => setMobileMenuOpen(false)}
                   className={cn(
                     buttonVariants({ size: "sm", variant: "default" }),
-                    "min-h-[54px] w-full rounded-lg border border-primary/40 bg-primary/85 text-[0.95rem] font-semibold text-primary-foreground hover:bg-primary"
+                    "min-h-[54px] w-full rounded-[10px] border border-[#91d5f2]/50 bg-[#8ed7fb] text-[0.95rem] font-semibold text-[#102028] hover:bg-[#a1e0ff]"
                   )}
                 >
                   {t("auth.loginTitle")}

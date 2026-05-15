@@ -14,8 +14,8 @@ type TourStepTarget = string | readonly string[];
 const STEP_TARGETS_MEMBER: readonly TourStepTarget[] = [
   ["tour-models", "tour-models-mobile"],
   ["tour-credits", "tour-credits-mobile"],
-  ["tour-buy", "tour-buy-mobile"],
-  "tour-account",
+  ["tour-buy", "tour-buy-mobile", "tour-credits-mobile"],
+  ["tour-account", "tour-menu-trigger"],
 ];
 const STEP_TARGETS_GUEST: readonly TourStepTarget[] = [
   ["tour-models", "tour-models-mobile"],
@@ -291,6 +291,13 @@ export function ProductTour({
       return;
     }
     const ids = resolveStepIds(targets[step]);
+    if (
+      typeof window !== "undefined" &&
+      ids.includes("tour-account") &&
+      window.matchMedia("(max-width: 767px)").matches
+    ) {
+      window.dispatchEvent(new CustomEvent("tour:open-mobile-menu"));
+    }
     const el = firstVisibleTargetEl(ids);
     if (el) {
       scrollTargetIntoViewIfNeeded(el);
