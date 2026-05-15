@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Gift,
 } from "lucide-react";
 import { formatCredits } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,12 @@ type AccessResponse = {
 
 type StatsResponse = {
   totalModels: number;
+};
+
+type SocialRewardsResponse = {
+  discordConnected: boolean;
+  discordClaimed: boolean;
+  rewardCredits: number;
 };
 
 function StatusMessage({ type, message }: { type: "success" | "error"; message: string }) {
@@ -99,6 +106,9 @@ export default function DashboardPage() {
   const [resendVerifyLoading, setResendVerifyLoading] = useState(false);
   const [verifyResendStatus, setVerifyResendStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [resendVerifyCooldownSec, setResendVerifyCooldownSec] = useState(0);
+  const [socialRewards, setSocialRewards] = useState<SocialRewardsResponse | null>(null);
+  const [claimingDiscordReward, setClaimingDiscordReward] = useState(false);
+  const [socialRewardStatus, setSocialRewardStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     if (resendVerifyCooldownSec <= 0) return;
@@ -119,10 +129,11 @@ export default function DashboardPage() {
         const meData = await meRes.json();
         setMe(meData);
 
-        const [profileRes, accessRes, statsRes] = await Promise.all([
+        const [profileRes, accessRes, statsRes, socialRes] = await Promise.all([
           fetch("/api/user/profile"),
           fetch("/api/user/access"),
           fetch("/api/models/stats"),
+          fetch("/api/user/social-rewards"),
         ]);
 
         if (profileRes.ok) {
@@ -143,6 +154,10 @@ export default function DashboardPage() {
             setAccessCount(a.modelIds?.length || 0);
           }
         }
+        if (socialRes.ok) {
+          const s: SocialRewardsResponse = await socialRes.json();
+          setSocialRewards(s);
+        }
       } catch {
         router.push("/login");
       } finally {
@@ -154,6 +169,36 @@ export default function DashboardPage() {
 
   const clearStatus = (setter: (v: null) => void) => {
     setTimeout(() => setter(null), 4000);
+  };
+
+  const handleClaimDiscordReward = async () => {
+    setClaimingDiscordReward(true);
+    setSocialRewardStatus(null);
+    try {
+      const res = await fetch("/api/user/social-rewards/discord/claim", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSocialRewardStatus({ type: "error", message: data.message || data.error || "Failed to claim reward" });
+        return;
+      }
+      setMe((prev) => (prev ? { ...prev, creditBalance: data.creditBalance ?? prev.creditBalance } : prev));
+      setSocialRewards((prev) =>
+        prev ? { ...prev, discordClaimed: true, rewardCredits: data.rewardCredits ?? prev.rewardCredits } : prev,
+      );
+      setSocialRewardStatus({
+        type: "success",
+        message: `+${data.rewardCredits ?? 5} credits added for Discord connection`,
+      });
+      window.dispatchEvent(new CustomEvent("auth-change"));
+    } catch {
+      setSocialRewardStatus({ type: "error", message: "Network error" });
+    } finally {
+      setClaimingDiscordReward(false);
+      setTimeout(() => setSocialRewardStatus(null), 4000);
+    }
   };
 
   const handleSaveName = async () => {
@@ -385,6 +430,48 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {socialRewards && (
+        <div className="mb-10 rounded-2xl border border-white/[0.08] bg-card/50 p-5 sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold">
+                <Gift className="h-5 w-5 text-primary" />
+                Social rewards
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Connect Discord and claim +{socialRewards.rewardCredits} credits once.
+              </p>
+            </div>
+            {socialRewards.discordClaimed ? (
+              <span className="inline-flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs font-medium text-green-400">
+                <Check className="h-4 w-4" />
+                Claimed
+              </span>
+            ) : socialRewards.discordConnected ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleClaimDiscordReward}
+                disabled={claimingDiscordReward}
+                className="gap-2"
+              >
+                {claimingDiscordReward ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gift className="h-4 w-4" />}
+                Claim +{socialRewards.rewardCredits}
+              </Button>
+            ) : (
+              <a href="/api/auth/discord" className="inline-flex text-sm text-primary hover:underline">
+                Connect Discord to claim
+              </a>
+            )}
+          </div>
+          {socialRewardStatus ? (
+            <div className="mt-3">
+              <StatusMessage {...socialRewardStatus} />
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Settings Sections */}
       <div className="space-y-6">

@@ -101,6 +101,7 @@ html {
   scroll-behavior: auto;
   width: 100%;
   overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -421,6 +422,12 @@ img {
 
 /* Responsive container override for very small screens */
 @media (max-width: 360px) {
+  html {
+    font-size: 15px;
+  }
+  body {
+    line-height: 1.55;
+  }
   .container {
     padding-left: 0.75rem;
     padding-right: 0.75rem;

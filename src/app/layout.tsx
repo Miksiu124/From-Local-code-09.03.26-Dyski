@@ -137,7 +137,7 @@ export default async function RootLayout({
             <ReferralProgramNudge />
             <main
               id="main"
-              className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-0"
+              className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-0"
             >
               <ErrorBoundary>{children}</ErrorBoundary>
             </main>

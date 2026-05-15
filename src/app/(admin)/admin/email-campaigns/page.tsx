@@ -30,6 +30,8 @@ export default function AdminEmailCampaignsPage() {
   const [data, setData] = useState<StatsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sendingPriceUpdate, setSendingPriceUpdate] = useState(false);
+  const [priceUpdateStatus, setPriceUpdateStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,6 +56,32 @@ export default function AdminEmailCampaignsPage() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  const sendPriceUpdate = useCallback(async () => {
+    setSendingPriceUpdate(true);
+    setPriceUpdateStatus(null);
+    try {
+      const res = await fetch("/api/admin/marketing/price-update", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: false, limit: 800 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPriceUpdateStatus(data.message || data.error || "Failed to send campaign");
+        return;
+      }
+      setPriceUpdateStatus(
+        `Price update campaign finished: sent=${data.sent ?? 0}, failed=${data.failed ?? 0}`,
+      );
+      await load();
+    } catch (e) {
+      setPriceUpdateStatus(e instanceof Error ? e.message : "Failed to send campaign");
+    } finally {
+      setSendingPriceUpdate(false);
+    }
   }, [load]);
 
   return (
@@ -88,12 +116,28 @@ export default function AdminEmailCampaignsPage() {
             <RefreshCw className={cn("mr-1.5 h-4 w-4", loading && "animate-spin")} aria-hidden />
             {t("refresh")}
           </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={() => void sendPriceUpdate()}
+            disabled={sendingPriceUpdate}
+          >
+            <RefreshCw className={cn("mr-1.5 h-4 w-4", sendingPriceUpdate && "animate-spin")} aria-hidden />
+            Send price update
+          </Button>
         </div>
       </div>
 
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {priceUpdateStatus && (
+        <div className="rounded-lg border border-border/70 bg-muted/20 px-4 py-3 text-sm text-foreground/90">
+          {priceUpdateStatus}
         </div>
       )}
 

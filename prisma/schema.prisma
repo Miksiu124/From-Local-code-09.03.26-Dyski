@@ -84,6 +84,14 @@ enum AccessDuration {
   @@map("access_duration")
 }
 
+enum CustomOrderStatus {
+  OPEN
+  REVIEWING
+  APPROVED
+  REJECTED
+  FULFILLED
+}
+
 // ─── Users ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -122,6 +130,9 @@ model User {
   referralLinkVariants ReferralLinkVariant[]
   customLink           CustomLink?         @relation(fields: [customLinkId], references: [id], onDelete: SetNull)
   growthEvents         GrowthEvent[]
+  socialRewardClaims   SocialRewardClaim[]
+  customOrderRequests  CustomOrderRequest[]
+  coinflipRounds       CoinflipRound[]
 
   @@index([email])
   @@index([discordId])
@@ -558,4 +569,53 @@ model GrowthEvent {
   @@index([eventName])
   @@index([userId])
   @@map("growth_events")
+}
+
+model SocialRewardClaim {
+  id             String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  userId         String   @map("user_id")
+  rewardType     String   @map("reward_type")
+  creditsAwarded Int      @map("credits_awarded")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, rewardType])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("social_reward_claims")
+}
+
+model CustomOrderRequest {
+  id            String            @id @default(dbgenerated("gen_random_uuid()::text"))
+  userId        String            @map("user_id")
+  title         String
+  details       String
+  contact       String?
+  budgetCredits Int?              @map("budget_credits")
+  status        CustomOrderStatus @default(OPEN)
+  adminNotes    String?           @map("admin_notes")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("custom_order_requests")
+}
+
+model CoinflipRound {
+  id            String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  userId        String   @map("user_id")
+  betCredits    Int      @map("bet_credits")
+  userChoice    String   @map("user_choice")
+  result        String
+  won           Boolean
+  payoutCredits Int      @map("payout_credits")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("coinflip_rounds")
 }

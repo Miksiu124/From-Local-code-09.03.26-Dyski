@@ -1778,6 +1778,73 @@ func (h *Handler) DeleteContent(c echo.Context) error {
 	return common.Success(c, map[string]bool{"success": true})
 }
 
+type bulkDeleteContentBody struct {
+	ContentItemIDs []string `json:"contentItemIds"`
+}
+
+// BulkDeleteContent deletes many content items in one request (admin moderation cleanup).
+// POST /api/admin/content/bulk-delete { "contentItemIds": ["...", "..."] } max 40
+func (h *Handler) BulkDeleteContent(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var reqBody bulkDeleteContentBody
+	if err := c.Bind(&reqBody); err != nil {
+		return common.BadRequest(c, "Invalid JSON")
+	}
+	if len(reqBody.ContentItemIDs) == 0 {
+		return common.BadRequest(c, "contentItemIds required")
+	}
+	if len(reqBody.ContentItemIDs) > bulkZipMaxItems {
+		return common.JSONError(c, http.StatusBadRequest, "TOO_MANY_ITEMS",
+			fmt.Sprintf("Maximum %d items per request.", bulkZipMaxItems))
+	}
+
+	seen := map[string]struct{}{}
+	ids := make([]string, 0, len(reqBody.ContentItemIDs))
+	for _, raw := range reqBody.ContentItemIDs {
+		id, ok := common.ParseUUIDParam(raw)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return common.BadRequest(c, "No valid content ids")
+	}
+
+	type failedItem struct {
+		ID     string `json:"id"`
+		Reason string `json:"reason"`
+	}
+	failed := make([]failedItem, 0)
+	deleted := 0
+	notFound := 0
+
+	for _, id := range ids {
+		h.invalidateModelCaches(ctx, id)
+		if err := h.contentService.DeleteContentItem(ctx, id); err != nil {
+			if errors.Is(err, content.ErrContentNotFound) {
+				notFound++
+				continue
+			}
+			failed = append(failed, failedItem{ID: id, Reason: "delete_failed"})
+			continue
+		}
+		deleted++
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"deleted":  deleted,
+		"notFound": notFound,
+		"failed":   failed,
+		"total":    len(ids),
+	})
+}
+
 // fetchPurchaseInfoForDiscord loads all fields needed for a Discord webhook embed.
 func (h *Handler) fetchPurchaseInfoForDiscord(ctx context.Context, purchaseID string) discord.PurchaseInfo {
 	return discord.FetchPurchaseInfo(ctx, h.db, purchaseID)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	"content-platform-backend/internal/common"
@@ -257,6 +258,37 @@ func (h *Handler) GetRuntimeStats(c echo.Context) error {
 		"goroutines":     runtime.NumGoroutine(),
 		"goVersion":      runtime.Version(),
 		"collectedAtRFC": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) GetPurchaseRiskSignals(c echo.Context) error {
+	limit := 60
+	if raw := c.QueryParam("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	events, err := h.rl.ListPurchaseRiskEvents(c.Request().Context(), limit)
+	if err != nil {
+		log.Printf("[observability] purchase risk signals: %v", err)
+		return common.InternalError(c)
+	}
+
+	triggerCounts := map[string]int{}
+	blockedCount := 0
+	for _, evt := range events {
+		if evt.Trigger != "" {
+			triggerCounts[evt.Trigger]++
+		}
+		if evt.Action == "blocked" {
+			blockedCount++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"events":        events,
+		"blockedCount":  blockedCount,
+		"triggerCounts": triggerCounts,
 	})
 }
 

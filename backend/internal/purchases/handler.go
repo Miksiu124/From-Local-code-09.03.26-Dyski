@@ -29,10 +29,11 @@ type Handler struct {
 	db    *pgxpool.Pool
 	cfg   *config.Config
 	redis *redis.Client
+	rl    *middleware.RateLimiter
 }
 
-func NewHandler(db *pgxpool.Pool, cfg *config.Config, redisClient *redis.Client) *Handler {
-	return &Handler{db: db, cfg: cfg, redis: redisClient}
+func NewHandler(db *pgxpool.Pool, cfg *config.Config, redisClient *redis.Client, rl *middleware.RateLimiter) *Handler {
+	return &Handler{db: db, cfg: cfg, redis: redisClient, rl: rl}
 }
 
 type pricingConfig struct {
@@ -94,6 +95,13 @@ func (h *Handler) Create(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	riskDecision, riskErr := h.rl.AssessPurchaseRisk(ctx, userID, c.RealIP(), "content.purchase")
+	if riskErr != nil {
+		return common.InternalError(c)
+	}
+	if riskDecision != nil && riskDecision.Blocked {
+		return common.RateLimitedJSON(c, riskDecision.RetryAfterSeconds, riskDecision.ErrorCode, riskDecision.Message)
 	}
 
 	var req PurchaseRequest

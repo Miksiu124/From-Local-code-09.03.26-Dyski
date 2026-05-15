@@ -18,9 +18,11 @@ import (
 	"content-platform-backend/internal/config"
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/credits"
+	"content-platform-backend/internal/customorders"
 	"content-platform-backend/internal/database"
 	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/favorites"
+	"content-platform-backend/internal/games"
 	"content-platform-backend/internal/geo"
 	"content-platform-backend/internal/growth"
 	"content-platform-backend/internal/jobs"
@@ -253,7 +255,7 @@ func main() {
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
 
 	// Credits (requires auth)
-	creditsHandler := credits.NewHandler(pgPool, redisClient, cfg, r2ProofClient)
+	creditsHandler := credits.NewHandler(pgPool, redisClient, rateLimiter, cfg, r2ProofClient)
 	creditsGroup := api.Group("/credits", authMW.Authenticate)
 	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase, authMW.RequireEmailVerified)
 	creditsGroup.POST("/validate-promo", creditsHandler.ValidatePromo)
@@ -270,9 +272,19 @@ func main() {
 	api.GET("/credits/purchase/:id/blik", creditsHandler.BlikWebSocket, authMW.Authenticate)
 
 	// Purchases (requires auth)
-	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient)
+	purchasesHandler := purchases.NewHandler(pgPool, cfg, redisClient, rateLimiter)
 	api.POST("/purchases", purchasesHandler.Create, authMW.Authenticate, authMW.RequireEmailVerified)
 	api.GET("/purchases", purchasesHandler.List, authMW.Authenticate) // Added List
+
+	// Games (requires auth)
+	gamesHandler := games.NewHandler(pgPool, rateLimiter)
+	api.POST("/games/coinflip/play", gamesHandler.CoinflipPlay, authMW.Authenticate, authMW.RequireEmailVerified)
+	api.GET("/games/coinflip/history", gamesHandler.CoinflipHistory, authMW.Authenticate)
+
+	// Custom order requests (requires auth)
+	customOrdersHandler := customorders.NewHandler(pgPool)
+	api.POST("/custom-orders", customOrdersHandler.Create, authMW.Authenticate, authMW.RequireEmailVerified)
+	api.GET("/custom-orders", customOrdersHandler.ListMine, authMW.Authenticate)
 
 	// Favorites (requires auth)
 	favoritesHandler := favorites.NewHandler(pgPool, cfg)
@@ -293,6 +305,8 @@ func main() {
 	userHandler := user.NewHandler(pgPool, mailService, cfg, authService)
 	api.GET("/user/balance", userHandler.GetBalance, authMW.Authenticate)
 	api.GET("/user/profile", userHandler.GetProfile, authMW.Authenticate)
+	api.GET("/user/social-rewards", userHandler.GetSocialRewards, authMW.Authenticate)
+	api.POST("/user/social-rewards/discord/claim", userHandler.ClaimDiscordReward, authMW.Authenticate, authMW.RequireEmailVerified)
 	api.PATCH("/user/profile", userHandler.UpdateProfile, authMW.Authenticate)
 	api.PATCH("/user/email", userHandler.UpdateEmail, authMW.Authenticate)
 	api.PATCH("/user/password", userHandler.UpdatePassword, authMW.Authenticate)
@@ -328,6 +342,7 @@ func main() {
 		ops := api.Group("/ops", opsGuard)
 		ops.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
 		ops.POST("/marketing/email-samples", adminHandler.SendEmailSamples)
+		ops.POST("/marketing/price-update", adminHandler.SendPriceUpdateCampaign)
 		ops.GET("/marketing/email-stats", adminHandler.GetMarketingEmailStats)
 	}
 
@@ -368,6 +383,7 @@ func main() {
 	adminGroup.PATCH("/models", adminHandler.UpdateModel)
 	adminGroup.PATCH("/content/hidden", adminHandler.ToggleContentHidden)
 	adminGroup.DELETE("/content/:id", adminHandler.DeleteContent)
+	adminGroup.POST("/content/bulk-delete", adminHandler.BulkDeleteContent)
 	adminGroup.GET("/settings", adminHandler.GetSettings)
 	adminGroup.PUT("/settings", adminHandler.UpdateSettings)
 	adminGroup.POST("/r2/sync", adminHandler.SyncR2)
@@ -380,11 +396,15 @@ func main() {
 	adminGroup.GET("/content/:id/source-download", adminHandler.DownloadContentSource)
 	adminGroup.POST("/marketing/run-cron", adminHandler.RunMarketingCron)
 	adminGroup.POST("/marketing/email-samples", adminHandler.SendEmailSamples)
+	adminGroup.POST("/marketing/price-update", adminHandler.SendPriceUpdateCampaign)
 	adminGroup.GET("/marketing/email-stats", adminHandler.GetMarketingEmailStats)
 	adminGroup.GET("/growth-events", growthHandler.ListGrowthEvents)
 	adminGroup.GET("/growth-funnel", growthHandler.FunnelSummary)
+	adminGroup.GET("/custom-orders", customOrdersHandler.AdminList)
+	adminGroup.PATCH("/custom-orders/:id", customOrdersHandler.AdminUpdate)
 	adminGroup.GET("/observability/client-errors", obsHandler.ListClientErrors)
 	adminGroup.DELETE("/observability/client-errors", obsHandler.ClearClientErrors)
+	adminGroup.GET("/observability/purchase-risk", obsHandler.GetPurchaseRiskSignals)
 	adminGroup.GET("/observability/runtime", obsHandler.GetRuntimeStats)
 	adminGroup.GET("/observability/db-backup", obsHandler.GetDBBackupStatus)
 

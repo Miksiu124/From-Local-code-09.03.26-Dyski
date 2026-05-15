@@ -16,6 +16,7 @@ import {
   Tag,
   Link as LinkIcon,
   Sparkles,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ export function AdminSidebar() {
     { href: "/admin/packages", label: t("creditPackages"), icon: Coins },
     { href: "/admin/promo-codes", label: t("promoCodes"), icon: Tag },
     { href: "/admin/custom-links", label: t("customLinks"), icon: LinkIcon },
+    { href: "/admin/custom-orders", label: t("customOrdersNav"), icon: ClipboardList },
     { href: "/admin/models", label: t("models"), icon: FolderOpen },
     { href: "/admin/users", label: t("users"), icon: Users },
     { href: "/admin/analytics", label: t("analytics"), icon: BarChart3 },

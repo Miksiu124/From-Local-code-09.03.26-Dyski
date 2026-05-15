@@ -63,6 +63,7 @@ func (am *AuthMiddleware) Authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 		if banErr := am.db.QueryRow(c.Request().Context(),
 			`SELECT COALESCE(is_banned, false) FROM users WHERE id = $1`, claims.UserID,
 		).Scan(&isBanned); banErr == nil && isBanned {
+			_ = MarkBannedIPSignal(c.Request().Context(), am.redis, claims.UserID, c.RealIP())
 			am.redis.Del(c.Request().Context(), sessionKey)
 			return common.JSONError(c, http.StatusForbidden, "ACCOUNT_SUSPENDED", "This account is suspended.")
 		}

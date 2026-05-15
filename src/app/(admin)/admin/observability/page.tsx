@@ -51,6 +51,22 @@ type DbBackupPayload = {
   error?: string;
 };
 
+type PurchaseRiskEvent = {
+  timestamp: string;
+  endpoint: string;
+  userId?: string;
+  ip?: string;
+  trigger: string;
+  action: string;
+  detail?: string;
+};
+
+type PurchaseRiskPayload = {
+  events: PurchaseRiskEvent[];
+  blockedCount: number;
+  triggerCounts: Record<string, number>;
+};
+
 function primaryStackFrame(stack: string): string {
   const lines = stack
     .split("\n")
@@ -80,6 +96,7 @@ export default function AdminObservabilityPage() {
   const [runtime, setRuntime] = useState<RuntimePayload | null>(null);
   const [dbBackup, setDbBackup] = useState<DbBackupPayload | null>(null);
   const [dbBackupFetchFailed, setDbBackupFetchFailed] = useState(false);
+  const [purchaseRisk, setPurchaseRisk] = useState<PurchaseRiskPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -104,10 +121,11 @@ export default function AdminObservabilityPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [eRes, rRes, bRes] = await Promise.all([
+      const [eRes, rRes, bRes, prRes] = await Promise.all([
         fetch("/api/admin/observability/client-errors"),
         fetch("/api/admin/observability/runtime"),
         fetch("/api/admin/observability/db-backup"),
+        fetch("/api/admin/observability/purchase-risk?limit=80"),
       ]);
       if (!eRes.ok || !rRes.ok) {
         setErr(t("observabilityLoadFailed"));
@@ -122,6 +140,7 @@ export default function AdminObservabilityPage() {
       }
       const eData = await eRes.json();
       const rData = await rRes.json();
+      const prData = prRes.ok ? ((await prRes.json()) as PurchaseRiskPayload) : null;
       const raw = Array.isArray(eData.errors) ? eData.errors : [];
       const normalized: ClientErrorRow[] = raw.map((row: ClientErrorRow & { extra?: unknown }) => ({
         ...row,
@@ -133,6 +152,7 @@ export default function AdminObservabilityPage() {
       setErrors(normalized);
       setGroups(Array.isArray(eData.groups) ? eData.groups : []);
       setRuntime(rData);
+      setPurchaseRisk(prData);
     } catch {
       setErr(t("observabilityLoadFailed"));
     } finally {
@@ -274,6 +294,63 @@ export default function AdminObservabilityPage() {
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">—</p>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card/50 p-5">
+        <h2 className="text-sm font-semibold mb-2">{t("observabilityPurchaseRisk")}</h2>
+        <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{t("observabilityPurchaseRiskHint")}</p>
+        {loading && !purchaseRisk ? (
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        ) : purchaseRisk && purchaseRisk.events.length > 0 ? (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-md border border-border px-2 py-1 text-muted-foreground">
+                {t("observabilityPurchaseRiskBlocked")}:{" "}
+                <span className="font-mono text-foreground">{purchaseRisk.blockedCount}</span>
+              </span>
+              {Object.entries(purchaseRisk.triggerCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4)
+                .map(([trigger, count]) => (
+                  <span key={trigger} className="rounded-md border border-border px-2 py-1 text-muted-foreground">
+                    <span className="font-mono text-foreground">{trigger}</span>: {count}
+                  </span>
+                ))}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border/80 text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">{t("observabilityTime")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("observabilityPath")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("observabilityIP")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("observabilityPurchaseRiskTrigger")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("observabilityPurchaseRiskAction")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchaseRisk.events.slice(0, 40).map((evt, idx) => (
+                    <tr key={`${evt.timestamp}-${evt.trigger}-${idx}`} className="border-b border-border/40 align-top">
+                      <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
+                        {new Date(evt.timestamp).toLocaleString()}
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-[11px]">{evt.endpoint || "—"}</td>
+                      <td className="py-2 pr-3 font-mono text-[11px]">{evt.ip || "—"}</td>
+                      <td className="py-2 pr-3">{evt.trigger}</td>
+                      <td className="py-2 pr-3">
+                        <span className="inline-flex rounded-md border border-border px-1.5 py-0.5">
+                          {evt.action}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t("observabilityPurchaseRiskEmpty")}</p>
         )}
       </section>
 

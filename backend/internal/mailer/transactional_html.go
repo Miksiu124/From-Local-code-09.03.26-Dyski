@@ -8,12 +8,12 @@ func transactionalEmailFrame(siteName, inner string) string {
 	if sn == "" {
 		sn = "Dyskiof"
 	}
-	return `<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0b0908;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#f4ede4;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0908;padding:38px 14px;"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#171210;border:1px solid #34261f;border-radius:16px;overflow:hidden;">
+	return `<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0f0d0c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#f4ede4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f0d0c;padding:34px 12px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#191412;border:1px solid #322721;border-radius:14px;overflow:hidden;">
 <tr><td style="height:5px;background:#d8a84f;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td style="padding:22px 34px 18px;border-bottom:1px solid #2e231d;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="font-size:18px;font-weight:800;line-height:1;color:#f4ede4;">` + escapeHTML(sn) + `</td><td align="right" style="font-size:10px;line-height:1;color:#9f8a72;letter-spacing:.12em;text-transform:uppercase;">Transactional</td></tr></table></td></tr>` + inner + `
-<tr><td style="padding:0 34px 28px;font-size:11px;line-height:1.55;color:#6b635c;">Wiadomość systemowa — nie wymaga subskrypcji newslettera.</td></tr>
+<tr><td style="padding:22px 30px 18px;border-bottom:1px solid #2d241f;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="font-size:18px;font-weight:800;line-height:1;color:#f4ede4;">` + escapeHTML(sn) + `</td><td align="right" style="font-size:10px;line-height:1;color:#9f8a72;letter-spacing:.12em;text-transform:uppercase;">Transactional</td></tr></table></td></tr>` + inner + `
+<tr><td style="padding:0 30px 26px;font-size:11px;line-height:1.55;color:#6b635c;">Wiadomość systemowa — nie wymaga subskrypcji newslettera.</td></tr>
 </table></td></tr></table></body></html>`
 }
 

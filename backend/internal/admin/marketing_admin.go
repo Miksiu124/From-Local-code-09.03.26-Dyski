@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 
 	"content-platform-backend/internal/common"
 	"content-platform-backend/internal/mailer"
+	"content-platform-backend/internal/marketing"
 	"content-platform-backend/internal/marketing/campaigns"
 
 	"github.com/labstack/echo/v4"
@@ -78,11 +80,17 @@ func (h *Handler) SendEmailSamples(c echo.Context) error {
 			fn   func() error
 		}{
 			{"welcome", func() error { return h.mailer.SendWelcome(to, "Podgląd") }},
-			{"verification", func() error { return h.mailer.SendVerificationEmail(to, "Podgląd", front+"/login?sample=verify=1", h.cfg.EmailVerificationTokenTTLSecs) }},
-			{"password_reset", func() error { return h.mailer.SendPasswordReset(to, front+"/login?sample=reset=1", h.cfg.PasswordResetTokenTTLSecs) }},
+			{"verification", func() error {
+				return h.mailer.SendVerificationEmail(to, "Podgląd", front+"/login?sample=verify=1", h.cfg.EmailVerificationTokenTTLSecs)
+			}},
+			{"password_reset", func() error {
+				return h.mailer.SendPasswordReset(to, front+"/login?sample=reset=1", h.cfg.PasswordResetTokenTTLSecs)
+			}},
 			{"payment_confirmation", func() error { return h.mailer.SendPaymentConfirmation(to, 100, 99) }},
 			{"checkout_abandonment", func() error { return h.mailer.SendCheckoutAbandonmentReminder(to, front+"/purchase") }},
-			{"payment_rejected", func() error { return h.mailer.SendPaymentRejected(to, 50, "Przykładowy powód odrzucenia (podgląd).") }},
+			{"payment_rejected", func() error {
+				return h.mailer.SendPaymentRejected(to, 50, "Przykładowy powód odrzucenia (podgląd).")
+			}},
 			{"password_changed", func() error { return h.mailer.SendPasswordChanged(to) }},
 			{"email_changed", func() error {
 				parts := strings.Split(to, "@")
@@ -154,13 +162,13 @@ ORDER BY sends DESC, clicks DESC
 	defer rows.Close()
 
 	type row struct {
-		Campaign        string  `json:"campaign"`
-		Sends           int64   `json:"sends"`
-		Clicks          int64   `json:"clicks"`
-		UniqueClickers  int64   `json:"uniqueClickers"`
-		Conversions     int64   `json:"conversions"`
-		CTR             float64 `json:"ctr"`
-		ConversionRate  float64 `json:"conversionRate"`
+		Campaign       string  `json:"campaign"`
+		Sends          int64   `json:"sends"`
+		Clicks         int64   `json:"clicks"`
+		UniqueClickers int64   `json:"uniqueClickers"`
+		Conversions    int64   `json:"conversions"`
+		CTR            float64 `json:"ctr"`
+		ConversionRate float64 `json:"conversionRate"`
 	}
 	var out []row
 
@@ -183,5 +191,126 @@ ORDER BY sends DESC, clicks DESC
 		"days":  days,
 		"since": since.UTC().Format(time.RFC3339),
 		"rows":  out,
+	})
+}
+
+// SendPriceUpdateCampaign sends a one-off marketing email about new credit prices.
+// POST /api/admin/marketing/price-update {"dryRun":false,"limit":500}
+func (h *Handler) SendPriceUpdateCampaign(c echo.Context) error {
+	if h.mailer == nil || !h.mailer.MarketingEmailConfigured() {
+		return common.JSONError(c, http.StatusBadRequest, "not_configured", "Outbound email is not configured")
+	}
+	if h.redis == nil {
+		return common.JSONError(c, http.StatusBadRequest, "redis_required", "Redis is required for unsubscribe links")
+	}
+
+	var body struct {
+		DryRun *bool `json:"dryRun"`
+		Limit  *int  `json:"limit"`
+	}
+	_ = c.Bind(&body)
+	dryRun := false
+	if body.DryRun != nil {
+		dryRun = *body.DryRun
+	}
+	limit := 500
+	if body.Limit != nil && *body.Limit > 0 && *body.Limit <= 5000 {
+		limit = *body.Limit
+	}
+
+	type recipient struct {
+		ID    string
+		Email string
+		Name  *string
+	}
+
+	ctx := c.Request().Context()
+	rows, err := h.db.Query(ctx, `
+		SELECT id, email, name
+		FROM users
+		WHERE COALESCE(is_banned, false) = false
+		  AND COALESCE(email_verified, false) = true
+		  AND COALESCE(marketing_email_opt_in, true) = true
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	defer rows.Close()
+
+	recipients := make([]recipient, 0, limit)
+	for rows.Next() {
+		var r recipient
+		if scanErr := rows.Scan(&r.ID, &r.Email, &r.Name); scanErr == nil {
+			recipients = append(recipients, r)
+		}
+	}
+
+	sent := 0
+	failed := 0
+	type sample struct {
+		Email string `json:"email"`
+		Error string `json:"error,omitempty"`
+	}
+	samples := make([]sample, 0, 20)
+	for _, r := range recipients {
+		siteName := "Dyskiof"
+		supportEmail := strings.TrimSpace(h.cfg.SMTPFrom)
+		if supportEmail == "" {
+			supportEmail = "support@dyskiof.net"
+		}
+		firstName := "there"
+		if r.Name != nil && strings.TrimSpace(*r.Name) != "" {
+			firstName = strings.TrimSpace(*r.Name)
+		}
+		token, terr := marketing.StoreUnsubscribeToken(ctx, h.redis, r.ID)
+		if terr != nil || token == "" {
+			failed++
+			if len(samples) < 20 {
+				samples = append(samples, sample{Email: r.Email, Error: "unsubscribe_token_failed"})
+			}
+			continue
+		}
+		unsub := marketing.UnsubscribeLinkForEmail(h.cfg, token)
+		vars := map[string]string{
+			"firstName":      firstName,
+			"siteName":       siteName,
+			"ctaUrl":         strings.TrimRight(h.cfg.FrontendURL, "/") + "/purchase",
+			"unsubscribeUrl": unsub,
+			"effectiveDate":  "2026-06-01",
+			"priceSummary":   "Packages were updated to match payment costs and processing overhead.",
+			"supportEmail":   supportEmail,
+		}
+		if dryRun {
+			sent++
+			if len(samples) < 20 {
+				samples = append(samples, sample{Email: r.Email})
+			}
+			continue
+		}
+		if sendErr := h.mailer.SendMarketingTemplate(r.Email, "price-update-2026", "", vars); sendErr != nil {
+			failed++
+			marketing.DeleteUnsubscribeToken(ctx, h.redis, token)
+			if len(samples) < 20 {
+				samples = append(samples, sample{Email: r.Email, Error: sendErr.Error()})
+			}
+		} else {
+			sent++
+			if len(samples) < 20 {
+				samples = append(samples, sample{Email: r.Email})
+			}
+		}
+		time.Sleep(220 * time.Millisecond)
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"dryRun":        dryRun,
+		"selected":      len(recipients),
+		"sent":          sent,
+		"failed":        failed,
+		"templateSlug":  "price-update-2026",
+		"batchSummary":  fmt.Sprintf("selected=%d sent=%d failed=%d", len(recipients), sent, failed),
+		"sampleResults": samples,
 	})
 }

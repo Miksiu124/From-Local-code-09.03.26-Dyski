@@ -588,7 +588,7 @@ export function CreditPurchaseFlow({
     : null;
 
   const stickyMobileActions = cn(
-    "sticky bottom-0 z-30 -mx-4 mt-4 flex gap-3 px-4 py-3",
+    "sticky bottom-0 z-30 -mx-2 mt-4 flex gap-2 px-2 py-3 sm:-mx-4 sm:gap-3 sm:px-4",
     "border-t border-border/50 bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md",
     "supports-[backdrop-filter]:bg-background/80",
     "lg:static lg:z-auto lg:mx-0 lg:border-t-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none",
@@ -649,7 +649,7 @@ export function CreditPurchaseFlow({
     );
 
   return (
-    <div className="max-w-6xl mx-auto w-full">
+    <div className="mx-auto w-full max-w-6xl px-1 sm:px-0">
       <div className="grid gap-4 lg:grid-cols-[minmax(272px,320px)_minmax(0,1fr)] lg:gap-10 xl:gap-12 items-start">
         <aside
           className={cn(
@@ -806,19 +806,19 @@ export function CreditPurchaseFlow({
                     }`}
                   onClick={() => setSelectedPackage(pkg)}
                 >
-                  <CardContent className="flex items-center justify-between p-3 sm:p-4">
-                    <div className="flex items-center gap-3 sm:gap-4">
+                  <CardContent className="flex items-center justify-between gap-2 p-3 sm:gap-3 sm:p-4 max-[420px]:flex-col max-[420px]:items-start">
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                       <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-primary/10 shrink-0">
                         <Coins className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                       </div>
-                      <div>
-                        <p className="font-semibold text-base sm:text-lg">{pkg.name}</p>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-base sm:text-lg">{pkg.name}</p>
                         <p className="text-xs sm:text-sm text-muted-foreground">
                           {pkg.credits} credits &middot; {formatPrice(pkg.price / pkg.credits, undefined, { exact: true })} {t("perCredit")}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="shrink-0 text-right max-[420px]:w-full max-[420px]:text-left">
                       <p className="text-xl sm:text-2xl font-bold">{formatPrice(pkg.price)}</p>
                       <p className="text-xs sm:text-sm text-primary">{pkg.credits} credits</p>
                       {pkg.tier >= 3 && (
@@ -884,7 +884,7 @@ export function CreditPurchaseFlow({
             className="pb-1 lg:pb-0"
           >
             <h2 className="mb-3 text-base font-semibold lg:mb-4 lg:text-lg">{t("selectMethod")}</h2>
-            <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 max-[360px]:grid-cols-1">
               {allMethods.map((method) => {
                 const blikClosed = method.id === "BLIK" && !blikEnabled;
                 return (
@@ -1071,16 +1071,16 @@ export function CreditPurchaseFlow({
                       </div>
                     </div>
                   )}
-                  <div className="flex gap-3 pt-4">
+                  <div className="flex flex-col gap-2 pt-4 sm:flex-row sm:gap-3">
                     <Button
-                      className="flex-1"
+                      className="w-full sm:flex-1"
                       onClick={() => router.push("/")}
                     >
                       {t("browseModels")}
                     </Button>
                     <Button
                       variant="outline"
-                      className="flex-1"
+                      className="w-full sm:flex-1"
                       onClick={() => {
                         setStep("select-package");
                         setPaymentResult(null);
@@ -1149,7 +1149,7 @@ export function CreditPurchaseFlow({
                   {/* Transaction code */}
                   <div className="text-center">
                     <p className="text-sm text-muted-foreground">{t("transactionCode")}</p>
-                    <p className="text-2xl font-mono font-bold mt-1">{paymentResult.transactionCode}</p>
+                    <p className="mt-1 break-all text-xl font-bold font-mono sm:text-2xl">{paymentResult.transactionCode}</p>
                   </div>
 
                   {/* BLIK code display */}

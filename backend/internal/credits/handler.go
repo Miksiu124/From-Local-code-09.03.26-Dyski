@@ -33,13 +33,14 @@ import (
 type Handler struct {
 	db      *pgxpool.Pool
 	redis   *redis.Client
+	rl      *middleware.RateLimiter
 	cfg     *config.Config
 	discord *discord.Notifier
 	r2      *content.R2Client
 }
 
-func NewHandler(db *pgxpool.Pool, redis *redis.Client, cfg *config.Config, r2 *content.R2Client) *Handler {
-	return &Handler{db: db, redis: redis, cfg: cfg, discord: discord.NewNotifier(db, cfg.FrontendURL), r2: r2}
+func NewHandler(db *pgxpool.Pool, redis *redis.Client, rl *middleware.RateLimiter, cfg *config.Config, r2 *content.R2Client) *Handler {
+	return &Handler{db: db, redis: redis, rl: rl, cfg: cfg, discord: discord.NewNotifier(db, cfg.FrontendURL), r2: r2}
 }
 
 type CreatePurchaseRequest struct {
@@ -110,6 +111,14 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
 		return common.Unauthorized(c)
+	}
+	riskDecision, riskErr := h.rl.AssessPurchaseRisk(ctx, userID, c.RealIP(), "credits.purchase")
+	if riskErr != nil {
+		log.Printf("[Credits] risk assessment failed: %v", riskErr)
+		return common.InternalError(c)
+	}
+	if riskDecision != nil && riskDecision.Blocked {
+		return common.RateLimitedJSON(c, riskDecision.RetryAfterSeconds, riskDecision.ErrorCode, riskDecision.Message)
 	}
 
 	var req CreatePurchaseRequest

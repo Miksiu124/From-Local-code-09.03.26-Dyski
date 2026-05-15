@@ -52,6 +52,20 @@ echo "Bring stack up (--wait honours service healthchecks)..."
 # shellcheck disable=SC2086
 docker compose $COMPOSE_FILES up -d --remove-orphans --build --wait $WT
 
+echo "Apply pending SQL migrations required by latest release..."
+MIGRATION_FILE="backend/migrations/20260515154500_social_custom_coinflip_features.up.sql"
+if [[ -f "$MIGRATION_FILE" ]]; then
+	docker compose $COMPOSE_FILES exec -T postgres \
+		psql -U platform -d content_platform -v ON_ERROR_STOP=1 < "$MIGRATION_FILE"
+else
+	echo "[WARN] Missing migration file: $MIGRATION_FILE"
+fi
+
+echo "Verify social/custom/coinflip tables exist..."
+docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
+	"SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('social_reward_claims','custom_order_requests','coinflip_rounds');" \
+	| tr -d '[:space:]' | grep -qx "3"
+
 echo "Reload nginx configs (avoid stale nginx.conf bind-mount inode quirks)..."
 docker compose $COMPOSE_FILES up -d --no-deps --force-recreate nginx nginx-exporter 2>/dev/null || true
 

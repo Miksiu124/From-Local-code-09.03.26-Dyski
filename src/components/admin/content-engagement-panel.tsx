@@ -11,6 +11,7 @@ import {
   Package,
   RefreshCw,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ export function ContentEngagementPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [zipping, setZipping] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(
     async (showRefresh = false) => {
@@ -102,9 +104,12 @@ export function ContentEngagementPanel() {
 
   const allExportableSelected =
     exportableIds.length > 0 && exportableIds.every((id) => selected.has(id));
+  const selectedExportableIds = useMemo(
+    () => [...selected].filter((id) => exportableIds.includes(id)),
+    [selected, exportableIds],
+  );
 
-  function toggleSelect(id: string, can: boolean) {
-    if (!can) return;
+  function toggleSelect(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -122,7 +127,7 @@ export function ContentEngagementPanel() {
   }
 
   async function downloadZip() {
-    const ids = [...selected];
+    const ids = selectedExportableIds;
     if (ids.length === 0) return;
     setZipping(true);
     try {
@@ -148,6 +153,32 @@ export function ContentEngagementPanel() {
       alert(e instanceof Error ? e.message : "ZIP failed");
     } finally {
       setZipping(false);
+    }
+  }
+
+  async function deleteSelected() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(t("dashboardBulkDeleteConfirm", { count: ids.length }))) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/content/bulk-delete", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentItemIds: ids }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || data.error || `HTTP ${res.status}`);
+      }
+      setSelected(new Set());
+      await load(true);
+    } catch (e) {
+      logger.error("bulk-delete", e);
+      alert(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -263,7 +294,7 @@ export function ContentEngagementPanel() {
             <Button
               type="button"
               size="sm"
-              disabled={selected.size === 0 || zipping}
+              disabled={selectedExportableIds.length === 0 || zipping}
               onClick={() => void downloadZip()}
               className="gap-1.5 bg-primary text-primary-foreground border-0 shadow-lg shadow-primary/25 hover:bg-primary/90"
             >
@@ -272,7 +303,22 @@ export function ContentEngagementPanel() {
               ) : (
                 <Package className="h-4 w-4" />
               )}
-              {t("dashboardZipSelected", { count: selected.size })}
+              {t("dashboardZipSelected", { count: selectedExportableIds.length })}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={selected.size === 0 || deleting}
+              onClick={() => void deleteSelected()}
+              className="gap-1.5"
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {t("dashboardDeleteSelected", { count: selected.size })}
             </Button>
           </div>
         </div>
@@ -433,8 +479,7 @@ export function ContentEngagementPanel() {
                         type="checkbox"
                         className="h-4 w-4 rounded border-border accent-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                         checked={selected.has(row.contentItemId)}
-                        disabled={row.canExportZip !== true}
-                        onChange={() => toggleSelect(row.contentItemId, row.canExportZip === true)}
+                        onChange={() => toggleSelect(row.contentItemId)}
                         aria-label={t("dashboardColSelect")}
                       />
                     </td>

@@ -152,8 +152,8 @@ export function Header() {
   ].filter((l) => l.show);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)]">
-      <div className="mx-auto flex h-16 w-full min-w-0 max-w-7xl items-center justify-between pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+    <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md">
+      <div className="mx-auto flex h-14 w-full min-w-0 max-w-7xl items-center justify-between pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:h-16 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))]">
         {/* Logo — resets search and returns to main page */}
         <Link
           href="/"
@@ -167,7 +167,7 @@ export function Header() {
         </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-1 ml-8">
+        <nav className="ml-8 hidden items-center gap-1 lg:flex">
           {navLinks.map((link) => {
             const navActive =
               link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
@@ -198,7 +198,7 @@ export function Header() {
         </nav>
 
         {/* Right side */}
-        <div className="flex items-center gap-2 relative">
+        <div className="relative flex items-center gap-1.5 sm:gap-2">
           {/* Credit Balance */}
           {user && (
             <>
@@ -246,7 +246,7 @@ export function Header() {
           {loading ? (
             <div className="h-9 w-20 animate-pulse rounded-xl bg-white/[0.05]" />
           ) : user ? (
-              <div className="relative hidden md:block" ref={userMenuRef}>
+              <div className="relative hidden lg:block" ref={userMenuRef}>
                 <button
                   type="button"
                   data-tour="tour-account"
@@ -293,6 +293,8 @@ export function Header() {
                         { href: "/my-purchases", icon: ShoppingCart, label: t("nav.myPurchases") },
                         { href: "/favorites", icon: Heart, label: t("nav.favorites") },
                         { href: "/referral", icon: UserPlus, label: t("nav.referral") },
+                        { href: "/custom-orders", icon: ShoppingCart, label: t("nav.customOrders") },
+                        { href: "/games/coinflip", icon: Coins, label: t("nav.coinflip") },
                         ...(isAdmin ? [{ href: adminHomeHref, icon: ShieldCheck, label: t("nav.admin") }] : []),
                       ].map((item) => (
                         <Link
@@ -337,7 +339,7 @@ export function Header() {
           {/* Mobile menu toggle */}
           <button
             type="button"
-            className="md:hidden cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-white/[0.05] transition-colors"
+            className="cursor-pointer flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:bg-white/[0.05] lg:hidden"
             onClick={() => {
               setUserMenuOpen(false);
               setMobileMenuOpen(!mobileMenuOpen);
@@ -359,7 +361,7 @@ export function Header() {
             animate={{ gridTemplateRows: "1fr", opacity: 1 }}
             exit={{ gridTemplateRows: "0fr", opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-            className="grid md:hidden border-t border-white/[0.06] bg-background"
+            className="grid border-t border-white/[0.06] bg-background lg:hidden"
           >
             <nav className="flex flex-col gap-0.5 overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] min-h-0">
               {navLinks.map((link) => {
@@ -425,6 +427,22 @@ export function Header() {
                   >
                     <UserPlus className="h-4 w-4 shrink-0" />
                     {t("nav.referral")}
+                  </Link>
+                  <Link
+                    href="/custom-orders"
+                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <ShoppingCart className="h-4 w-4 shrink-0" />
+                    {t("nav.customOrders")}
+                  </Link>
+                  <Link
+                    href="/games/coinflip"
+                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Coins className="h-4 w-4 shrink-0" />
+                    {t("nav.coinflip")}
                   </Link>
                   <button
                     type="button"

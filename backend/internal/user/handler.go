@@ -38,6 +38,8 @@ type Handler struct {
 	rotator SessionRotator
 }
 
+const discordSocialRewardType = "DISCORD_CONNECTED"
+
 func NewHandler(db *pgxpool.Pool, m *mailer.Mailer, cfg *config.Config, rotator SessionRotator) *Handler {
 	return &Handler{db: db, mailer: m, cfg: cfg, rotator: rotator}
 }
@@ -329,4 +331,110 @@ func (h *Handler) GetPreferences(c echo.Context) error {
 	}
 
 	return common.Success(c, map[string]bool{"autoplay": autoplay})
+}
+
+func (h *Handler) GetSocialRewards(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+
+	var hasDiscord bool
+	if err := h.db.QueryRow(ctx, `SELECT (discord_id IS NOT NULL) FROM users WHERE id = $1`, userID).Scan(&hasDiscord); err != nil {
+		return common.InternalError(c)
+	}
+
+	var claimed bool
+	if err := h.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM social_reward_claims
+			WHERE user_id = $1 AND reward_type = $2
+		)
+	`, userID, discordSocialRewardType).Scan(&claimed); err != nil {
+		return common.InternalError(c)
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"discordConnected": hasDiscord,
+		"discordClaimed":   claimed,
+		"rewardCredits":    5,
+	})
+}
+
+func (h *Handler) ClaimDiscordReward(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	defer tx.Rollback(ctx)
+
+	var discordID *string
+	var balance int
+	if err := tx.QueryRow(ctx, `
+		SELECT discord_id, credit_balance
+		FROM users
+		WHERE id = $1
+		FOR UPDATE
+	`, userID).Scan(&discordID, &balance); err != nil {
+		return common.InternalError(c)
+	}
+	if discordID == nil || strings.TrimSpace(*discordID) == "" {
+		return common.BadRequest(c, "Connect your Discord account first")
+	}
+
+	var alreadyClaimed bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM social_reward_claims
+			WHERE user_id = $1 AND reward_type = $2
+		)
+	`, userID, discordSocialRewardType).Scan(&alreadyClaimed); err != nil {
+		return common.InternalError(c)
+	}
+	if alreadyClaimed {
+		return common.BadRequest(c, "Discord reward already claimed")
+	}
+
+	rewardCredits := 5
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE((value#>>'{}')::int, 5)
+		FROM settings
+		WHERE key = 'social_reward_discord_connect_credits'
+	`).Scan(&rewardCredits); err != nil || rewardCredits <= 0 {
+		rewardCredits = 5
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO social_reward_claims (user_id, reward_type, credits_awarded)
+		VALUES ($1, $2, $3)
+	`, userID, discordSocialRewardType, rewardCredits); err != nil {
+		return common.InternalError(c)
+	}
+
+	newBalance := balance + rewardCredits
+	if _, err := tx.Exec(ctx, `
+		UPDATE users
+		SET credit_balance = credit_balance + $1
+		WHERE id = $2
+	`, rewardCredits, userID); err != nil {
+		return common.InternalError(c)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO credit_transactions (user_id, type, amount, description)
+		VALUES ($1, 'ADJUSTMENT', $2, $3)
+	`, userID, rewardCredits, "Discord social reward"); err != nil {
+		return common.InternalError(c)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return common.InternalError(c)
+	}
+
+	return common.Success(c, map[string]interface{}{
+		"claimed":       true,
+		"rewardCredits": rewardCredits,
+		"creditBalance": newBalance,
+	})
 }

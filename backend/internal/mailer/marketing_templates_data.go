@@ -97,14 +97,24 @@ var embeddedMarketingTemplates = []struct {
 <tr><td style="padding:22px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#211916;border:1px solid #3a2c25;border-radius:12px;"><tr><td style="padding:18px 20px;font-size:14px;line-height:1.55;color:#bfb2a7;">Krótka sesja: odświeżone pozycje, ten sam schemat cen — bez zgadywania.</td></tr></table></td></tr>
 <tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Wróć do katalogu</a></td></tr>`),
 	},
+	{
+		Slug:    "price-update-2026",
+		Subject: "{{siteName}}: aktualizacja cen od {{effectiveDate}}",
+		BodyHTML: marketingEmailFrame(`<tr><td style="padding:34px 34px 10px;font-size:12px;line-height:1.4;color:#c49a5b;text-transform:uppercase;letter-spacing:.12em;">Aktualizacja cennika</td></tr>
+<tr><td style="padding:0 34px;font-size:30px;font-weight:760;line-height:1.08;color:#f4ede4;">Nowe ceny pakietów kredytów</td></tr>
+<tr><td style="padding:18px 34px 0;font-size:15px;line-height:1.65;color:#d1c5b9;">Cześć {{firstName}}, od <strong style="color:#f4ede4;">{{effectiveDate}}</strong> zaktualizowaliśmy cennik kredytów.</td></tr>
+<tr><td style="padding:14px 34px 0;font-size:14px;line-height:1.6;color:#bfb2a7;">{{priceSummary}}</td></tr>
+<tr><td style="padding:20px 34px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#1d1714;border:1px solid #3b302a;border-radius:12px;"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.6;color:#b9aca2;">Pełną listę aktualnych pakietów i metod płatności znajdziesz po kliknięciu poniżej. Jeśli masz pytania, odpisz na {{supportEmail}}.</td></tr></table></td></tr>
+<tr><td style="padding:26px 34px 38px;"><a href="{{ctaUrl}}" style="display:inline-block;background:#d8a84f;color:#17100c;text-decoration:none;font-weight:760;font-size:14px;line-height:1;padding:15px 22px;border-radius:9px;">Sprawdź aktualny cennik</a></td></tr>`),
+	},
 }
 
 func marketingEmailFrame(inner string) string {
-	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0b0908;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#f4ede4;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0908;padding:38px 14px;"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#171210;border:1px solid #34261f;border-radius:16px;overflow:hidden;">
+	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0f0d0c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#f4ede4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f0d0c;padding:34px 12px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#191412;border:1px solid #322721;border-radius:14px;overflow:hidden;">
 <tr><td style="height:5px;background:#d8a84f;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td style="padding:24px 34px 20px;border-bottom:1px solid #2e231d;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="font-size:20px;font-weight:800;line-height:1;color:#f4ede4;">{{siteName}}</td><td align="right" style="font-size:11px;line-height:1;color:#9f8a72;letter-spacing:.14em;text-transform:uppercase;">Quality · Price · TOP</td></tr></table></td></tr>` + inner + `
-<tr><td style="padding:0 34px 34px;font-size:12px;line-height:1.55;color:#82766b;">Dostajesz ten e-mail, bo masz zgodę marketingową w {{siteName}}. <a href="{{unsubscribeUrl}}" style="color:#c6a16a;text-decoration:underline;">Wypisz się</a>.</td></tr>
-</table><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;"><tr><td align="center" style="padding:16px 20px 0;font-size:11px;line-height:1.5;color:#5e554e;">{{siteName}} · katalog premium</td></tr></table></td></tr></table></body></html>`
+<tr><td style="padding:22px 30px 18px;border-bottom:1px solid #2d241f;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="font-size:19px;font-weight:800;line-height:1;color:#f4ede4;">{{siteName}}</td><td align="right" style="font-size:11px;line-height:1;color:#9f8a72;letter-spacing:.12em;text-transform:uppercase;">Email update</td></tr></table></td></tr>` + inner + `
+<tr><td style="padding:0 30px 30px;font-size:12px;line-height:1.55;color:#82766b;">Dostajesz ten e-mail, bo masz zgodę marketingową w {{siteName}}. <a href="{{unsubscribeUrl}}" style="color:#c6a16a;text-decoration:underline;">Wypisz się</a>.</td></tr>
+</table><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;"><tr><td align="center" style="padding:14px 20px 0;font-size:11px;line-height:1.5;color:#5e554e;">{{siteName}} · marketing updates</td></tr></table></td></tr></table></body></html>`
 }
