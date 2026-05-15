@@ -38,9 +38,9 @@ type Config struct {
 
 	// MarketingEmailClickSecret: optional HMAC key for signed /api/public/email-cta links. Empty = JWT_SECRET.
 	MarketingEmailClickSecret string
-	JWTExpirySecs            int
-	SessionTokenTTL          int // seconds (default session when not using "remember me")
-	RememberMeSessionTTLSecs int // seconds for password login with rememberMe (default 30d)
+	JWTExpirySecs             int
+	SessionTokenTTL           int // seconds (default session when not using "remember me")
+	RememberMeSessionTTLSecs  int // seconds for password login with rememberMe (default 30d)
 
 	// One-time email links (Redis TTL, seconds)
 	PasswordResetTokenTTLSecs     int // forgot-password link; default 3600
@@ -145,8 +145,8 @@ type Config struct {
 	FavoriteNudgeTemplateDefaultsJSON string
 
 	// One-shot “ever purchased” promo blast (cron). REPEAT_BUYER_PROMO_EMAIL_ENABLED=1.
-	RepeatBuyerPromoEmailEnabled    bool
-	RepeatBuyerPromoCode            string
+	RepeatBuyerPromoEmailEnabled bool
+	RepeatBuyerPromoCode         string
 	// RepeatBuyerCloneFromCode: active promo row to copy discount rules from for per-recipient codes. Empty = RepeatBuyerPromoCode.
 	RepeatBuyerCloneFromCode string
 	// RepeatBuyerGeneratedPromoTTLDays: expiry for each issued single-use code (days).
@@ -167,27 +167,27 @@ type Config struct {
 	WelcomeTemplateDefaultsJSON string
 
 	// Starter offer for verified non-buyers (cron). STARTER_OFFER_EMAIL_ENABLED=1.
-	StarterOfferEmailEnabled          bool
-	StarterOfferDaysMin               int
-	StarterOfferDaysMax               int
-	StarterOfferCooldownDays          int
-	StarterOfferBatchLimit            int
-	StarterOfferTemplateSlug          string
-	StarterOfferHookLine              string
-	StarterOfferUrgencyLine           string
-	StarterOfferCtaPath               string
-	StarterOfferTemplateDefaultsJSON  string
+	StarterOfferEmailEnabled         bool
+	StarterOfferDaysMin              int
+	StarterOfferDaysMax              int
+	StarterOfferCooldownDays         int
+	StarterOfferBatchLimit           int
+	StarterOfferTemplateSlug         string
+	StarterOfferHookLine             string
+	StarterOfferUrgencyLine          string
+	StarterOfferCtaPath              string
+	StarterOfferTemplateDefaultsJSON string
 
 	// At-risk paid re-engage (cron). AT_RISK_EMAIL_ENABLED=1.
-	AtRiskEmailEnabled          bool
-	AtRiskInactiveDaysMin       int
-	AtRiskInactiveDaysMax       int
-	AtRiskCooldownDays          int
-	AtRiskBatchLimit            int
-	AtRiskTemplateSlug          string
-	AtRiskHookLine              string
-	AtRiskCtaPath               string
-	AtRiskTemplateDefaultsJSON  string
+	AtRiskEmailEnabled         bool
+	AtRiskInactiveDaysMin      int
+	AtRiskInactiveDaysMax      int
+	AtRiskCooldownDays         int
+	AtRiskBatchLimit           int
+	AtRiskTemplateSlug         string
+	AtRiskHookLine             string
+	AtRiskCtaPath              string
+	AtRiskTemplateDefaultsJSON string
 
 	// Lapsed buyer band before deep winback (cron). LAPSED_BUYER_EMAIL_ENABLED=1.
 	LapsedBuyerEmailEnabled         bool
@@ -285,7 +285,7 @@ func Load() (*Config, error) {
 		RepeatBuyerPromoEmailEnabled:      getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("REPEAT_BUYER_PROMO_EMAIL_ENABLED", "") == "true",
 		RepeatBuyerPromoCode:              strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_PROMO_CODE", "DYSKIOF10BK")),
 		RepeatBuyerCloneFromCode:          strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_CLONE_FROM_CODE", "")),
-		RepeatBuyerGeneratedPromoTTLDays: getEnvOrDefaultInt("REPEAT_BUYER_GENERATED_PROMO_TTL_DAYS", 14),
+		RepeatBuyerGeneratedPromoTTLDays:  getEnvOrDefaultInt("REPEAT_BUYER_GENERATED_PROMO_TTL_DAYS", 14),
 		RepeatBuyerCtaPath:                strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_CTA_PATH", "/purchase")),
 		RepeatBuyerTemplateSlug:           strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_TEMPLATE_SLUG", "repeat-buyer-10")),
 		RepeatBuyerAbLinkSlugs:            strings.TrimSpace(getEnvOrDefault("REPEAT_BUYER_AB_LINK_SLUGS", "vip10-a,vip10-b,vip10-c")),
@@ -307,7 +307,7 @@ func Load() (*Config, error) {
 		StarterOfferUrgencyLine:           strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_URGENCY_LINE", "")),
 		StarterOfferCtaPath:               strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_CTA_PATH", "/purchase")),
 		StarterOfferTemplateDefaultsJSON:  strings.TrimSpace(getEnvOrDefault("STARTER_OFFER_TEMPLATE_DEFAULTS_JSON", "")),
-		AtRiskEmailEnabled:                  getEnvOrDefault("AT_RISK_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("AT_RISK_EMAIL_ENABLED", "") == "true",
+		AtRiskEmailEnabled:                getEnvOrDefault("AT_RISK_EMAIL_ENABLED", "") == "1" || getEnvOrDefault("AT_RISK_EMAIL_ENABLED", "") == "true",
 		AtRiskInactiveDaysMin:             getEnvOrDefaultInt("AT_RISK_INACTIVE_DAYS_MIN", 7),
 		AtRiskInactiveDaysMax:             getEnvOrDefaultInt("AT_RISK_INACTIVE_DAYS_MAX", 14),
 		AtRiskCooldownDays:                getEnvOrDefaultInt("AT_RISK_COOLDOWN_DAYS", 30),
