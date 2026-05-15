@@ -507,7 +507,7 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute inset-0 h-full w-full bg-[#11151d] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
+          <aside className="absolute left-0 top-0 h-full w-[92vw] max-w-[360px] border-r border-white/[0.14] bg-[#11151d] px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
             <div className="mb-3 flex items-center justify-between px-1">
               <span className="text-sm font-semibold text-foreground">Menu</span>
               <button
@@ -519,7 +519,7 @@ export function Header() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <nav className="max-h-[calc(100vh-11rem)] space-y-1.5 overflow-y-auto pr-1">
+            <nav className="max-h-[calc(100vh-11rem)] space-y-1.5 overflow-y-auto rounded-md bg-[#171d27] p-1.5">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
                 return (
@@ -531,7 +531,7 @@ export function Header() {
                       "flex min-h-[44px] items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors",
                       navActive
                         ? "border-white/[0.18] bg-[#202838] text-foreground"
-                        : "border-white/[0.14] bg-[#171d27] text-muted-foreground hover:bg-[#202838] hover:text-foreground"
+                        : "border-white/[0.14] bg-[#1b2230] text-muted-foreground hover:bg-[#202838] hover:text-foreground"
                     )}
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
@@ -544,7 +544,7 @@ export function Header() {
                   href={DISCORD_SERVER_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#171d27] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-[#202838]"
+                  className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#1b2230] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-[#202838]"
                 >
                   <DiscordGlyph className="h-4 w-4" />
                   <span>{t("nav.discordServer")}</span>
@@ -559,7 +559,7 @@ export function Header() {
                     setMobileMenuOpen(false);
                     handleLogout();
                   }}
-                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#171d27] px-3 text-sm font-medium text-destructive transition-colors hover:bg-[#202838]"
+                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#1b2230] px-3 text-sm font-medium text-destructive transition-colors hover:bg-[#202838]"
                 >
                   <LogOut className="h-4 w-4 shrink-0" />
                   <span>{t("nav.logout")}</span>
