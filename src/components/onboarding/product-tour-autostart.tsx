@@ -76,6 +76,15 @@ export function ProductTourAutostart() {
     if (pathname !== "/") setTourMode(null);
   }, [pathname]);
 
+  useEffect(() => {
+    const restart = () => {
+      setStep(0);
+      setTourMode(user && user.role !== "ADMIN" ? "member" : "guest");
+    };
+    window.addEventListener("tour:restart", restart);
+    return () => window.removeEventListener("tour:restart", restart);
+  }, [user]);
+
   /** If user logs in while guest tour is open, close it and mark guest tour complete. */
   useEffect(() => {
     if (!sessionReady) return;

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   Bell,
-  ChevronRight,
   Cloud,
   CircleHelp,
   Coins,
@@ -264,7 +263,7 @@ export function Header() {
   const useSideRailNavigation = !!user;
   const mobileDrawerLinks = [
     { href: "/", label: t("nav.models"), icon: House, show: true },
-    { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: true },
+    { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: !!user },
     { href: "/dashboard", label: t("nav.dashboard"), icon: User, show: !!user },
     { href: "/my-purchases", label: t("nav.myPurchases"), icon: ShoppingCart, show: !!user },
     { href: "/favorites", label: t("nav.favorites"), icon: Heart, show: !!user },
@@ -538,6 +537,10 @@ export function Header() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.dispatchEvent(new CustomEvent("tour:restart"));
+                  }}
                   className="flex min-h-[34px] min-w-[34px] items-center justify-center rounded-md border border-white/[0.12] bg-[#171a1f] text-muted-foreground transition-colors hover:text-foreground"
                   aria-label="Help"
                 >
@@ -581,9 +584,7 @@ export function Header() {
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
                     <span className="truncate">{link.label}</span>
-                    <span className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.14] text-muted-foreground/85">
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </span>
+                    <CircleHelp className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/50" />
                   </Link>
                 );
               })}
@@ -596,9 +597,7 @@ export function Header() {
                 >
                   <DiscordGlyph className="h-4 w-4" />
                   <span>{t("nav.discordServer")}</span>
-                  <span className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.14] text-muted-foreground/85">
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </span>
+                  <CircleHelp className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/50" />
                 </a>
               )}
             </nav>
