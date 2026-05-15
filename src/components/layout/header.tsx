@@ -507,13 +507,13 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute left-0 top-0 h-full w-[92vw] max-w-[360px] border-r border-white/[0.08] bg-background px-3 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/50">
+          <aside className="absolute left-0 top-0 h-full w-[92vw] max-w-[360px] border-r border-white/[0.14] bg-[#11151d] px-3 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
             <div className="mb-3 flex items-center justify-between px-1">
               <span className="text-sm font-semibold text-foreground">Menu</span>
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.07] hover:text-foreground"
+                className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border border-white/[0.14] bg-[#171d27] text-muted-foreground hover:bg-[#202838] hover:text-foreground"
                 aria-label={t("nav.closeMenu")}
               >
                 <X className="h-4 w-4" />
@@ -530,8 +530,8 @@ export function Header() {
                     className={cn(
                       "flex min-h-[44px] items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors",
                       navActive
-                        ? "border-white/[0.14] bg-white/[0.1] text-foreground"
-                        : "border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] hover:text-foreground"
+                        ? "border-white/[0.18] bg-[#202838] text-foreground"
+                        : "border-white/[0.14] bg-[#171d27] text-muted-foreground hover:bg-[#202838] hover:text-foreground"
                     )}
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
@@ -544,14 +544,14 @@ export function Header() {
                   href={DISCORD_SERVER_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#171d27] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-[#202838]"
                 >
                   <DiscordGlyph className="h-4 w-4" />
                   <span>{t("nav.discordServer")}</span>
                 </a>
               )}
             </nav>
-            <div className="mt-3 border-t border-white/[0.06] pt-3">
+            <div className="mt-3 border-t border-white/[0.1] pt-3">
               {user ? (
                 <button
                   type="button"
@@ -559,7 +559,7 @@ export function Header() {
                     setMobileMenuOpen(false);
                     handleLogout();
                   }}
-                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-medium text-destructive transition-colors hover:bg-white/[0.08]"
+                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-white/[0.14] bg-[#171d27] px-3 text-sm font-medium text-destructive transition-colors hover:bg-[#202838]"
                 >
                   <LogOut className="h-4 w-4 shrink-0" />
                   <span>{t("nav.logout")}</span>
