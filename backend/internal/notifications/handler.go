@@ -3,6 +3,8 @@ package notifications
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"content-platform-backend/internal/common"
@@ -26,14 +28,31 @@ func NewHandler(db *pgxpool.Pool, redisClient *redis.Client) *Handler {
 func (h *Handler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := middleware.GetUserID(c)
+	unreadOnly := false
+	switch strings.ToLower(strings.TrimSpace(c.QueryParam("unread"))) {
+	case "1", "true", "yes":
+		unreadOnly = true
+	}
+	limit := 50
+	if rawLimit := strings.TrimSpace(c.QueryParam("limit")); rawLimit != "" {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed >= 1 && parsed <= 200 {
+			limit = parsed
+		}
+	}
 
-	rows, err := h.db.Query(ctx, `
+	baseQuery := `
 		SELECT id, type, title, message, is_read, metadata, created_at::text
 		FROM notifications
 		WHERE user_id = $1
+	`
+	if unreadOnly {
+		baseQuery += ` AND is_read = false`
+	}
+	baseQuery += `
 		ORDER BY created_at DESC
-		LIMIT 50
-	`, userID)
+		LIMIT $2
+	`
+	rows, err := h.db.Query(ctx, baseQuery, userID, limit)
 	if err != nil {
 		return common.InternalError(c)
 	}
@@ -79,6 +98,45 @@ func (h *Handler) MarkAllRead(c echo.Context) error {
 	}
 
 	return common.Success(c, map[string]bool{"success": true})
+}
+
+// MarkRead marks one notification as read for the current user.
+func (h *Handler) MarkRead(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+	notificationID, ok := common.ParseUUIDParam(c.Param("id"))
+	if !ok {
+		return common.BadRequest(c, "Invalid notification ID format")
+	}
+
+	tag, err := h.db.Exec(ctx, `
+		UPDATE notifications
+		SET is_read = true
+		WHERE id = $1 AND user_id = $2
+	`, notificationID, userID)
+	if err != nil {
+		return common.InternalError(c)
+	}
+	if tag.RowsAffected() == 0 {
+		return common.NotFound(c, "Notification not found")
+	}
+
+	return common.Success(c, map[string]bool{"success": true})
+}
+
+// UnreadCount returns count of unread notifications for current user.
+func (h *Handler) UnreadCount(c echo.Context) error {
+	ctx := c.Request().Context()
+	userID := middleware.GetUserID(c)
+
+	var count int
+	if err := h.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false
+	`, userID).Scan(&count); err != nil {
+		return common.InternalError(c)
+	}
+
+	return common.Success(c, map[string]int{"unreadCount": count})
 }
 
 // Stream sends SSE events when new notifications arrive for the user.

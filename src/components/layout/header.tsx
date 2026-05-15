@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
+  Bell,
   Coins,
   User,
   LogOut,
@@ -10,7 +11,7 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { trackLogout } from "@/lib/growth-analytics";
@@ -34,12 +35,26 @@ interface UserSession {
   creditBalance: number;
 }
 
+interface UserNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export function Header() {
   const t = useTranslations();
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -88,6 +103,65 @@ export function Header() {
     return () => clearInterval(interval);
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const loadUnread = async () => {
+      try {
+        const [countRes, listRes] = await Promise.all([
+          fetch("/api/notifications/unread-count", { credentials: "include" }),
+          fetch("/api/notifications?unread=1&limit=20", { credentials: "include" }),
+        ]);
+        if (!cancelled && countRes.ok) {
+          const countData = await countRes.json();
+          setUnreadCount(Number(countData?.unreadCount ?? 0));
+        }
+        if (!cancelled && listRes.ok) {
+          const listData = await listRes.json();
+          setNotifications(Array.isArray(listData) ? listData : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setUnreadCount(0);
+          setNotifications([]);
+        }
+      }
+    };
+    loadUnread();
+    const interval = setInterval(loadUnread, 45000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const es = new EventSource("/api/notifications/stream", { withCredentials: true });
+    es.onmessage = () => {
+      fetch("/api/notifications/unread-count", { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : { unreadCount: 0 }))
+        .then((data) => setUnreadCount(Number(data?.unreadCount ?? 0)))
+        .catch(() => null);
+      fetch("/api/notifications?unread=1&limit=20", { credentials: "include" })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setNotifications(Array.isArray(data) ? data : []))
+        .catch(() => null);
+    };
+    return () => es.close();
+  }, [user]);
+
+  useEffect(() => {
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!notificationsRef.current) return;
+      if (!notificationsRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutside);
+    return () => document.removeEventListener("mousedown", closeOnOutside);
+  }, []);
+
   const handleLogout = async () => {
     try {
       trackLogout({ role: user?.role === "ADMIN" ? "admin" : "user" });
@@ -96,6 +170,29 @@ export function Header() {
       router.push("/");
       router.refresh();
     } catch { }
+  };
+
+  const markNotificationAsRead = async (id: string) => {
+    try {
+      await fetch(`/api/notifications/${id}`, { method: "PATCH", credentials: "include" });
+    } catch {
+      // ignore network errors; local optimistic update still applies
+    } finally {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    try {
+      setNotificationsLoading(true);
+      await fetch("/api/notifications", { method: "PATCH", credentials: "include" });
+      setNotifications([]);
+      setUnreadCount(0);
+    } finally {
+      setNotificationsLoading(false);
+      setNotificationsOpen(false);
+    }
   };
 
   const isAdmin = user?.role === "ADMIN";
@@ -222,6 +319,58 @@ export function Header() {
 
           {/* Language Switcher */}
           <LanguageSwitcher />
+
+          {user && (
+            <div className="relative" ref={notificationsRef}>
+              <button
+                type="button"
+                onClick={() => setNotificationsOpen((prev) => !prev)}
+                className="relative flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] transition-colors hover:bg-white/[0.08] sm:min-h-9 sm:min-w-9"
+                aria-label={t("notifications.title")}
+              >
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <div className="absolute right-0 top-[calc(100%+0.4rem)] z-50 w-[min(92vw,360px)] rounded-xl border border-white/[0.08] bg-card shadow-2xl shadow-black/40">
+                  <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2.5">
+                    <span className="text-sm font-semibold">{t("notifications.title")}</span>
+                    <button
+                      type="button"
+                      onClick={markAllNotificationsAsRead}
+                      disabled={notificationsLoading || notifications.length === 0}
+                      className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                    >
+                      {t("notifications.markAllRead")}
+                    </button>
+                  </div>
+                  <div className="max-h-[360px] overflow-y-auto p-2">
+                    {notifications.length === 0 ? (
+                      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-xs text-muted-foreground">
+                        {t("notifications.noNotifications")}
+                      </div>
+                    ) : (
+                      notifications.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => markNotificationAsRead(item.id)}
+                          className="mb-1.5 block w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-left transition-colors hover:bg-white/[0.05]"
+                        >
+                          <p className="text-sm font-semibold">{item.title}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{item.message}</p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Auth Buttons / User Menu */}
           {loading ? (

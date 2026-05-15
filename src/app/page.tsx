@@ -1,5 +1,6 @@
 import { ModelsGrid } from "@/components/user/models-grid";
 import { HomeQuickActionsStrip } from "@/components/user/home-quick-actions-strip";
+import { HomeSideRail } from "@/components/layout/home-side-rail";
 import { fetchApi } from "@/lib/api-client";
 
 type Model = {
@@ -98,60 +99,67 @@ export default async function HomePage() {
   return (
     <>
       <div className="mx-auto w-full min-w-0 max-w-[96rem] py-4 pl-[max(0.9rem,env(safe-area-inset-left,0px))] pr-[max(0.9rem,env(safe-area-inset-right,0px))] sm:py-6 md:pl-[max(1.2rem,env(safe-area-inset-left,0px))] md:pr-[max(1.2rem,env(safe-area-inset-right,0px))]">
-      <HomeQuickActionsStrip
-        isAuthenticated={!!me}
-        creditBalance={realCreditBalance}
-      />
-      <ModelsGrid
-        initialModels={modelsData.models.map((m) => ({
-          id: m.id,
-          name: m.name,
-          folderName: m.folderName,
-          description: m.description,
-          countryId: m.countryId,
-          countryName: m.countryName,
-          countryFlag: m.countryFlag,
-          contentCount: m.contentCount,
-          videoCount: m.videoCount,
-          imageCount: m.imageCount,
-          isActive: m.isActive,
-          firstContentItemId: m.firstContentItemId,
-          avatarUrl: m.avatarUrl,
-          headerUrl: m.headerUrl,
-        }))}
-        featuredModels={featuredModelsData.models.map((m) => ({
-          id: m.id,
-          name: m.name,
-          folderName: m.folderName,
-          description: m.description,
-          countryId: m.countryId,
-          countryName: m.countryName,
-          countryFlag: m.countryFlag,
-          contentCount: m.contentCount,
-          videoCount: m.videoCount,
-          imageCount: m.imageCount,
-          isActive: m.isActive,
-          firstContentItemId: m.firstContentItemId,
-          avatarUrl: m.avatarUrl,
-          headerUrl: m.headerUrl,
-        }))}
-        initialCursor={modelsData.nextCursor}
-        totalModelCount={resolvedTotalModelCount}
-        countries={countries.map((c) => ({
-          id: c.id,
-          name: c.name,
-          code: c.code,
-          flagEmoji: c.flagEmoji,
-        }))}
-        cost7d={cost7d}
-        cost30d={cost30d}
-        bundleCost14d={bundleCost14d}
-        bundleCost30d={bundleCost30d}
-        userAccessModelIds={userAccessModelIds}
-        isAuthenticated={!!me}
-        creditBalance={realCreditBalance}
-      />
-    </div>
+        <div className="flex items-start gap-4 lg:gap-5">
+          {me && <HomeSideRail isAdmin={me.role === "ADMIN"} />}
+          <div className="min-w-0 flex-1">
+            <div className="md:hidden">
+              <HomeQuickActionsStrip
+                isAuthenticated={!!me}
+                creditBalance={realCreditBalance}
+              />
+            </div>
+            <ModelsGrid
+              initialModels={modelsData.models.map((m) => ({
+                id: m.id,
+                name: m.name,
+                folderName: m.folderName,
+                description: m.description,
+                countryId: m.countryId,
+                countryName: m.countryName,
+                countryFlag: m.countryFlag,
+                contentCount: m.contentCount,
+                videoCount: m.videoCount,
+                imageCount: m.imageCount,
+                isActive: m.isActive,
+                firstContentItemId: m.firstContentItemId,
+                avatarUrl: m.avatarUrl,
+                headerUrl: m.headerUrl,
+              }))}
+              featuredModels={featuredModelsData.models.map((m) => ({
+                id: m.id,
+                name: m.name,
+                folderName: m.folderName,
+                description: m.description,
+                countryId: m.countryId,
+                countryName: m.countryName,
+                countryFlag: m.countryFlag,
+                contentCount: m.contentCount,
+                videoCount: m.videoCount,
+                imageCount: m.imageCount,
+                isActive: m.isActive,
+                firstContentItemId: m.firstContentItemId,
+                avatarUrl: m.avatarUrl,
+                headerUrl: m.headerUrl,
+              }))}
+              initialCursor={modelsData.nextCursor}
+              totalModelCount={resolvedTotalModelCount}
+              countries={countries.map((c) => ({
+                id: c.id,
+                name: c.name,
+                code: c.code,
+                flagEmoji: c.flagEmoji,
+              }))}
+              cost7d={cost7d}
+              cost30d={cost30d}
+              bundleCost14d={bundleCost14d}
+              bundleCost30d={bundleCost30d}
+              userAccessModelIds={userAccessModelIds}
+              isAuthenticated={!!me}
+              creditBalance={realCreditBalance}
+            />
+          </div>
+        </div>
+      </div>
     </>
   );
 }

@@ -298,8 +298,10 @@ func main() {
 	notifHandler := notifications.NewHandler(pgPool, redisClient)
 	notifGroup := api.Group("/notifications", authMW.Authenticate)
 	notifGroup.GET("", notifHandler.List)
+	notifGroup.GET("/unread-count", notifHandler.UnreadCount)
 	notifGroup.GET("/stream", notifHandler.Stream)
 	notifGroup.PATCH("", notifHandler.MarkAllRead)
+	notifGroup.PATCH("/:id", notifHandler.MarkRead)
 
 	// User (requires auth)
 	userHandler := user.NewHandler(pgPool, mailService, cfg, authService)
@@ -393,6 +395,7 @@ func main() {
 	adminGroup.POST("/content/bulk-delete", adminHandler.BulkDeleteContent)
 	adminGroup.GET("/settings", adminHandler.GetSettings)
 	adminGroup.PUT("/settings", adminHandler.UpdateSettings)
+	adminGroup.POST("/notifications/send", adminHandler.SendNotification)
 	adminGroup.POST("/r2/sync", adminHandler.SyncR2)
 	adminGroup.POST("/r2/import", adminHandler.ImportR2)
 	adminGroup.POST("/r2/avatars", adminHandler.UploadAvatar, echomw.BodyLimit("6M"))

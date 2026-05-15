@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Save, Webhook, CreditCard, Timer, Package, Coins, UserPlus, ClipboardList } from "lucide-react";
+import { Save, Webhook, CreditCard, Timer, Package, Coins, UserPlus, ClipboardList, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,14 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [notifTitle, setNotifTitle] = useState("");
+  const [notifMessage, setNotifMessage] = useState("");
+  const [notifType, setNotifType] = useState("ADMIN_BROADCAST");
+  const [notifTargetMode, setNotifTargetMode] = useState<"all" | "email" | "userId">("all");
+  const [notifEmail, setNotifEmail] = useState("");
+  const [notifUserId, setNotifUserId] = useState("");
+  const [sendingNotif, setSendingNotif] = useState(false);
+  const [notifSendMessage, setNotifSendMessage] = useState("");
 
   useEffect(() => {
     fetchSettings();
@@ -90,6 +98,47 @@ export default function AdminSettingsPage() {
       setMessage("Failed to save settings");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSendAdminNotification = async () => {
+    if (!notifTitle.trim() || !notifMessage.trim()) {
+      setNotifSendMessage("Title and message are required");
+      return;
+    }
+    setSendingNotif(true);
+    setNotifSendMessage("");
+    try {
+      const payload: Record<string, unknown> = {
+        type: notifType,
+        title: notifTitle.trim(),
+        message: notifMessage.trim(),
+        broadcast: notifTargetMode === "all",
+      };
+      if (notifTargetMode === "email") payload.email = notifEmail.trim();
+      if (notifTargetMode === "userId") payload.userId = notifUserId.trim();
+      const res = await fetch("/api/admin/notifications/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotifSendMessage((data as { message?: string })?.message || "Failed to send notification");
+        return;
+      }
+      setNotifSendMessage(`Sent to ${(data as { recipientCount?: number })?.recipientCount ?? 0} user(s)`);
+      setNotifTitle("");
+      setNotifMessage("");
+      if (notifTargetMode !== "all") {
+        setNotifEmail("");
+        setNotifUserId("");
+      }
+    } catch {
+      setNotifSendMessage("Failed to send notification");
+    } finally {
+      setSendingNotif(false);
     }
   };
 
@@ -201,6 +250,105 @@ export default function AdminSettingsPage() {
       {message && (
         <div className="mb-4 p-3 rounded-lg bg-secondary text-sm">{message}</div>
       )}
+
+      <Card className="mb-6 border-2 border-cyan-500/20">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10">
+              <Send className="h-6 w-6 text-cyan-500" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">User notifications</h3>
+              <p className="text-sm text-muted-foreground">
+                Send in-app notifications to all users or one selected account.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Notification title
+              </label>
+              <Input
+                value={notifTitle}
+                onChange={(e) => setNotifTitle(e.target.value)}
+                maxLength={140}
+                placeholder="Title visible to users"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Notification message
+              </label>
+              <textarea
+                value={notifMessage}
+                onChange={(e) => setNotifMessage(e.target.value)}
+                maxLength={1500}
+                placeholder="Message content"
+                className="min-h-[110px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Type
+              </label>
+              <Input
+                value={notifType}
+                onChange={(e) => setNotifType(e.target.value.toUpperCase())}
+                placeholder="ADMIN_BROADCAST"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Target
+              </label>
+              <select
+                value={notifTargetMode}
+                onChange={(e) => setNotifTargetMode(e.target.value as "all" | "email" | "userId")}
+                className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="all">All users (broadcast)</option>
+                <option value="email">Single user by email</option>
+                <option value="userId">Single user by ID</option>
+              </select>
+            </div>
+            {notifTargetMode === "email" && (
+              <div className="sm:col-span-2">
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  User email
+                </label>
+                <Input
+                  value={notifEmail}
+                  onChange={(e) => setNotifEmail(e.target.value)}
+                  placeholder="user@example.com"
+                />
+              </div>
+            )}
+            {notifTargetMode === "userId" && (
+              <div className="sm:col-span-2">
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  User ID (UUID)
+                </label>
+                <Input
+                  value={notifUserId}
+                  onChange={(e) => setNotifUserId(e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Button onClick={handleSendAdminNotification} disabled={sendingNotif}>
+              <Send className="h-4 w-4 mr-2" />
+              {sendingNotif ? "Sending..." : "Send notification"}
+            </Button>
+            {notifSendMessage && (
+              <span className="text-sm text-muted-foreground">{notifSendMessage}</span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Discord Webhook Card */}
       {(discordSetting || discordPingRoleSetting) && (
