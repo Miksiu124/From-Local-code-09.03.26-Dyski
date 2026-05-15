@@ -55,7 +55,7 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
   return (
     <aside
       className={cn(
-        "hidden md:fixed md:left-0 md:top-[4.45rem] md:z-30 md:flex md:h-[calc(100vh-4.45rem)] md:flex-col md:overflow-hidden border-r border-white/[0.06] bg-card/95 transition-all duration-200",
+        "hidden md:sticky md:top-[5.5rem] md:flex md:h-[calc(100vh-7rem)] md:flex-col md:overflow-hidden rounded-xl border border-white/[0.06] bg-card/90 transition-all duration-200",
         expanded ? "md:w-[228px]" : "md:w-[56px]",
       )}
       aria-label="Main side navigation"
