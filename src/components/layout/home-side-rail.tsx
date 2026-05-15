@@ -25,7 +25,7 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
   const pathname = usePathname();
   const router = useRouter();
   const t = useTranslations("nav");
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const links = useMemo(
     () =>
@@ -53,8 +53,8 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
   return (
     <aside
       className={cn(
-        "hidden md:sticky md:top-[5.5rem] md:flex md:h-[calc(100vh-7rem)] md:flex-col md:overflow-hidden rounded-xl border border-white/[0.06] bg-card/90 transition-all duration-200",
-        expanded ? "md:w-[228px]" : "md:w-[56px]",
+        "hidden md:sticky md:top-[5.5rem] md:flex md:h-[calc(100vh-7rem)] md:flex-col md:overflow-hidden rounded-xl border border-white/[0.09] bg-card transition-all duration-200",
+        expanded ? "md:w-[200px]" : "md:w-[52px]",
       )}
       aria-label="Main side navigation"
     >
@@ -62,11 +62,14 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
-          className="flex min-h-[40px] w-full items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+          className={cn(
+            "flex min-h-[40px] w-full items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground",
+            expanded ? "justify-start gap-2 px-3" : "justify-center"
+          )}
           title={expanded ? "Collapse menu" : "Expand menu"}
         >
-          <Menu className="h-4 w-4" />
-          {expanded && <span className="ml-2 text-sm font-medium">Menu</span>}
+          <Menu className="h-4 w-4 shrink-0" />
+          {expanded && <span className="truncate text-sm font-semibold text-foreground/80">Navigation</span>}
         </button>
       </div>
 
@@ -79,16 +82,16 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  "flex min-h-[40px] w-full items-center rounded-lg px-3 text-sm font-medium transition-colors",
+                  "flex min-h-[42px] w-full items-center rounded-lg border px-3 text-sm font-medium transition-colors",
                   active
-                    ? "bg-white/[0.08] text-foreground"
-                    : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground",
+                    ? "border-white/[0.12] bg-white/[0.08] text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-white/[0.08] hover:bg-white/[0.04] hover:text-foreground",
                   !expanded && "justify-center px-2",
                 )}
                 title={!expanded ? link.label : undefined}
               >
                 <link.icon className="h-4 w-4 shrink-0" />
-                {expanded && <span className="ml-2 truncate">{link.label}</span>}
+                {expanded && <span className="ml-2.5 truncate">{link.label}</span>}
               </Link>
             );
           })}
@@ -100,13 +103,13 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
           type="button"
           onClick={handleLogout}
           className={cn(
-            "flex min-h-[40px] w-full items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-destructive transition-colors hover:bg-white/[0.05]",
-            expanded ? "justify-start px-3 text-sm font-medium" : "justify-center px-2",
+            "flex min-h-[42px] w-full items-center rounded-lg border border-destructive/30 bg-destructive/10 text-destructive transition-colors hover:bg-destructive/15",
+            expanded ? "justify-start gap-2.5 px-3 text-sm font-medium" : "justify-center px-2",
           )}
           title={!expanded ? t("logout") : undefined}
         >
           <LogOut className="h-4 w-4 shrink-0" />
-          {expanded && <span className="ml-2">{t("logout")}</span>}
+          {expanded && <span>{t("logout")}</span>}
         </button>
       </div>
     </aside>
