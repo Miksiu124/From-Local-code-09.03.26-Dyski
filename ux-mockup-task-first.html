@@ -214,6 +214,10 @@
       flex-wrap: wrap;
     }
 
+    .hero-mobile {
+      display: none;
+    }
+
     .btn {
       border: 1px solid var(--line-strong);
       color: var(--text);
@@ -390,6 +394,91 @@
       .catalog-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      .hero-desktop {
+        display: none;
+      }
+
+      .hero-mobile {
+        display: grid;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .hero-mobile-media {
+        min-height: 360px;
+        padding: var(--space-4);
+        display: grid;
+        align-content: end;
+        gap: var(--space-3);
+        background:
+          linear-gradient(180deg, rgba(12, 11, 10, 0.04) 24%, rgba(12, 11, 10, 0.82) 100%),
+          radial-gradient(90% 120% at 85% 28%, rgba(113, 99, 86, 0.6) 0%, rgba(113, 99, 86, 0) 46%),
+          linear-gradient(120deg, #2c2823 0%, #201d19 55%, #151310 100%);
+      }
+
+      .hero-mobile-kicker {
+        width: fit-content;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #f3d2a3;
+        border: 1px solid #725b3e;
+        background: rgba(27, 22, 17, 0.7);
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-weight: 600;
+      }
+
+      .hero-mobile-copy {
+        display: grid;
+        gap: 7px;
+      }
+
+      .hero-mobile-title {
+        margin: 0;
+        font-size: 38px;
+        line-height: 1.04;
+        letter-spacing: 0.01em;
+      }
+
+      .hero-mobile-lead {
+        margin: 0;
+        color: #ddd5ca;
+        font-size: 15px;
+        line-height: 1.4;
+        max-width: 36ch;
+      }
+
+      .hero-mobile-meta {
+        font-size: 13px;
+        color: #b7aea2;
+      }
+
+      .hero-mobile-actions {
+        padding: var(--space-3);
+        display: grid;
+        gap: var(--space-2);
+        border-top: 1px solid #2b2723;
+        background: #191714;
+      }
+
+      .hero-mobile-actions .btn-primary {
+        width: 100%;
+      }
+
+      .hero-mobile-secondary {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-2);
+      }
+
+      .hero-mobile-secondary .btn {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -438,7 +527,7 @@
       </aside>
 
       <section class="main-stack">
-        <div class="hero">
+        <div class="hero hero-desktop">
           <div class="panel-title">Co chcesz zrobić teraz</div>
           <p>
             Ten wariant prowadzi użytkownika po jednym, jasnym torze. Najpierw decyzja o celu,
@@ -448,6 +537,24 @@
             <button class="btn btn-primary">Pokaż nowe profile</button>
             <button class="btn">Wróć do ulubionych</button>
             <button class="btn">Kup kredyty</button>
+          </div>
+        </div>
+
+        <div class="hero-mobile">
+          <div class="hero-mobile-media">
+            <span class="hero-mobile-kicker">Polecane</span>
+            <div class="hero-mobile-copy">
+              <h1 class="hero-mobile-title">badgirlsandra</h1>
+              <p class="hero-mobile-lead">Ekskluzywne treści, kulisy i znacznie więcej.</p>
+              <div class="hero-mobile-meta">195 filmów • 128 zdjęć</div>
+            </div>
+          </div>
+          <div class="hero-mobile-actions">
+            <button class="btn btn-primary">Zobacz twórcę</button>
+            <div class="hero-mobile-secondary">
+              <button class="btn">Top twórcy</button>
+              <button class="btn">Kup Premium</button>
+            </div>
           </div>
         </div>
 

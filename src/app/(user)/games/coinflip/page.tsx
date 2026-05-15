@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { Coins, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCredits } from "@/lib/utils";
@@ -28,6 +28,13 @@ export default function CoinflipPage() {
   const [spinning, setSpinning] = useState(false);
   const [roundResult, setRoundResult] = useState<"HEADS" | "TAILS" | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [spinConfig, setSpinConfig] = useState({
+    startYDeg: 0,
+    midYDeg: 720,
+    endYDeg: 1440,
+    tiltDeg: 14,
+    durationMs: 1150,
+  });
 
   const loadHistory = async () => {
     setHistoryLoading(true);
@@ -67,7 +74,6 @@ export default function CoinflipPage() {
     const bet = Number(betCredits);
     if (!Number.isFinite(bet)) return;
     setLoading(true);
-    setSpinning(true);
     setStatusMessage(null);
     setRoundResult(null);
     try {
@@ -80,15 +86,31 @@ export default function CoinflipPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatusMessage(data.message || data.error || "Coinflip failed");
-        setSpinning(false);
         return;
       }
       const finalFace: "HEADS" | "TAILS" = data.result === "TAILS" ? "TAILS" : "HEADS";
+      const currentYDeg = coinFace === "TAILS" ? 180 : 0;
+      const targetYDeg = finalFace === "TAILS" ? 180 : 0;
+      const deltaToTarget = ((targetYDeg - currentYDeg) % 360 + 360) % 360;
+      const extraTurns = reduceMotion ? 1 : 5 + Math.floor(Math.random() * 2);
+      const endYDeg = currentYDeg + extraTurns * 360 + deltaToTarget;
+      const midYDeg = currentYDeg + Math.round((endYDeg - currentYDeg) * 0.56);
+      const durationMs = reduceMotion ? 140 : 1150;
+
+      setSpinConfig({
+        startYDeg: currentYDeg,
+        midYDeg,
+        endYDeg,
+        tiltDeg: reduceMotion ? 0 : 14,
+        durationMs,
+      });
+      setSpinning(true);
+
       setTimeout(() => {
         setCoinFace(finalFace);
         setRoundResult(finalFace);
         setSpinning(false);
-      }, reduceMotion ? 120 : 900);
+      }, durationMs);
       setStatusMessage(
         data.won
           ? `Win! Result: ${data.result}. +${data.deltaCredits} credits`
@@ -209,6 +231,15 @@ export default function CoinflipPage() {
                 <div
                   className={`coinflip-coin ${spinning ? "is-spinning" : ""} ${coinFace === "TAILS" ? "is-tails" : ""} ${reduceMotion ? "is-reduced" : ""}`}
                   aria-label={`Coin side ${coinFace}`}
+                  style={
+                    {
+                      "--coin-start-y": `${spinConfig.startYDeg}deg`,
+                      "--coin-mid-y": `${spinConfig.midYDeg}deg`,
+                      "--coin-end-y": `${spinConfig.endYDeg}deg`,
+                      "--coin-tilt": `${spinConfig.tiltDeg}deg`,
+                      "--coin-spin-duration": `${spinConfig.durationMs}ms`,
+                    } as CSSProperties
+                  }
                 >
                   <div className="coinflip-face coinflip-heads">H</div>
                   <div className="coinflip-face coinflip-tails">◯</div>
@@ -373,16 +404,18 @@ export default function CoinflipPage() {
           width: min(48vw, 260px);
           height: min(48vw, 260px);
           transform-style: preserve-3d;
+          transform: rotateY(var(--coin-rest-y, 0deg));
           transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
         }
         .coinflip-coin.is-tails {
-          transform: rotateY(180deg);
+          --coin-rest-y: 180deg;
         }
         .coinflip-coin.is-spinning {
-          animation: coinflip-spin 780ms cubic-bezier(0.24, 1, 0.34, 1) 1;
+          animation: coinflip-spin-flight var(--coin-spin-duration) cubic-bezier(0.2, 0.82, 0.2, 1) 1 forwards;
+          will-change: transform;
         }
         .coinflip-coin.is-spinning.is-reduced {
-          animation-duration: 120ms;
+          animation-duration: 140ms;
         }
         .coinflip-face {
           position: absolute;
@@ -450,10 +483,10 @@ export default function CoinflipPage() {
         .coinflip-history-item:hover {
           background: color-mix(in oklch, var(--color-muted) 32%, transparent);
         }
-        @keyframes coinflip-spin {
-          0% { transform: rotateX(0deg) rotateY(0deg); }
-          45% { transform: rotateX(16deg) rotateY(540deg); }
-          100% { transform: rotateX(0deg) rotateY(900deg); }
+        @keyframes coinflip-spin-flight {
+          0% { transform: rotateX(0deg) rotateY(var(--coin-start-y)); }
+          56% { transform: rotateX(var(--coin-tilt)) rotateY(var(--coin-mid-y)); }
+          100% { transform: rotateX(0deg) rotateY(var(--coin-end-y)); }
         }
         @keyframes coinflip-status-in {
           0% { opacity: 0; transform: translateY(4px); }

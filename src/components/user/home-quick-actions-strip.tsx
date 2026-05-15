@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Coins } from "lucide-react";
+import { Coins, Gamepad2, Heart, ShoppingCart, UserPlus } from "lucide-react";
 import { formatCredits } from "@/lib/utils";
 
 type HomeQuickActionsStripProps = {
@@ -15,7 +15,7 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
   const tModels = useTranslations("models");
 
   const actionCardClass =
-    "flex min-h-[64px] min-w-[220px] items-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm font-medium hover:bg-white/[0.05] transition-colors sm:min-w-0";
+    "flex min-h-[52px] items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-center text-xs font-medium hover:bg-white/[0.05] transition-colors sm:min-h-[56px] sm:gap-2 sm:text-sm";
 
   if (!isAuthenticated) {
     return (
@@ -23,13 +23,14 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
         <div className="grid gap-3 sm:grid-cols-2">
           <Link
             href="/purchase"
-            className="flex min-h-[56px] items-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 font-medium hover:bg-white/[0.05] transition-colors"
+            className="flex min-h-[52px] items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-center text-sm font-medium hover:bg-white/[0.05] transition-colors sm:min-h-[56px]"
           >
+            <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span>{tNav("buyCredits")}</span>
           </Link>
           <Link
             href="/login"
-            className="flex min-h-[56px] items-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 font-medium hover:bg-white/[0.05] transition-colors"
+            className="flex min-h-[52px] items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-center text-sm font-medium hover:bg-white/[0.05] transition-colors sm:min-h-[56px]"
           >
             <span>{tModels("signInToPurchase")}</span>
           </Link>
@@ -48,16 +49,19 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
         <Link href="/my-purchases" className={actionCardClass}>
+          <ShoppingCart className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {tNav("myPurchases")}
         </Link>
 
         <Link href="/favorites" className={actionCardClass}>
+          <Heart className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {tNav("favorites")}
         </Link>
 
         <Link href="/referral" className={actionCardClass}>
+          <UserPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {tNav("referral")}
         </Link>
 
@@ -65,6 +69,7 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
           href="/custom-orders"
           className={actionCardClass}
         >
+          <ShoppingCart className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {tNav("customOrders")}
         </Link>
 
@@ -72,7 +77,13 @@ export function HomeQuickActionsStrip({ isAuthenticated, creditBalance }: HomeQu
           href="/games/coinflip"
           className={actionCardClass}
         >
+          <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {tNav("coinflip")}
+        </Link>
+
+        <Link href="/purchase" className={actionCardClass}>
+          <Coins className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {tNav("buyCredits")}
         </Link>
       </div>
     </section>

@@ -130,6 +130,7 @@ export function Header() {
     { href: "/dashboard", label: t("nav.dashboard"), show: !!user },
     { href: adminHomeHref, label: t("nav.admin"), show: isAdmin },
   ].filter((l) => l.show);
+  const isOddMobilePrimaryCount = mobilePrimaryLinks.length % 2 === 1;
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md">
@@ -226,27 +227,37 @@ export function Header() {
           {loading ? (
             <div className="h-9 w-20 animate-pulse rounded-xl bg-white/[0.05]" />
           ) : user ? (
-            <div className="hidden items-center gap-1 lg:flex">
-              <Link
-                href="/dashboard"
-                data-tour="tour-account"
-                aria-label={t("nav.dashboard")}
-                className={cn(
-                  "flex min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 transition-colors",
-                  pathname === "/dashboard" ? "text-foreground bg-white/[0.08]" : "hover:bg-white/[0.08] text-muted-foreground"
-                )}
-              >
-                <User className="h-4 w-4" />
-              </Link>
+            <>
+              <div className="hidden items-center gap-1 lg:flex">
+                <Link
+                  href="/dashboard"
+                  data-tour="tour-account"
+                  aria-label={t("nav.dashboard")}
+                  className={cn(
+                    "flex min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 transition-colors",
+                    pathname === "/dashboard" ? "text-foreground bg-white/[0.08]" : "hover:bg-white/[0.08] text-muted-foreground"
+                  )}
+                >
+                  <User className="h-4 w-4" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 text-destructive transition-colors hover:bg-white/[0.08] cursor-pointer"
+                  aria-label={t("nav.logout")}
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 text-destructive transition-colors hover:bg-white/[0.08] cursor-pointer"
+                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] text-destructive transition-colors hover:bg-white/[0.08] lg:hidden"
                 aria-label={t("nav.logout")}
               >
                 <LogOut className="h-4 w-4" />
               </button>
-            </div>
+            </>
           ) : (
             <div className="flex shrink-0 items-center" data-tour="tour-guest-auth">
               <Link
@@ -263,17 +274,19 @@ export function Header() {
 
         </div>
       </div>
-      <div className="border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-2 pr-[max(0.75rem,env(safe-area-inset-right,0px))] lg:hidden">
-        <nav className="grid grid-cols-2 gap-2">
-          {mobilePrimaryLinks.map((link) => {
+      <div className="border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-1.5 pr-[max(0.75rem,env(safe-area-inset-right,0px))] lg:hidden">
+        <nav className="grid grid-cols-2 gap-1.5">
+          {mobilePrimaryLinks.map((link, index) => {
             const navActive =
               link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+            const spanTwoCols = isOddMobilePrimaryCount && index === mobilePrimaryLinks.length - 1;
             return (
               <Link
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  "rounded-lg border px-3 py-2 text-center text-xs font-medium transition-colors",
+                  "rounded-lg border px-3 py-1.5 text-center text-[11px] font-medium transition-colors",
+                  spanTwoCols && "col-span-2",
                   navActive
                     ? "border-white/[0.14] bg-white/[0.08] text-foreground"
                     : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
@@ -284,18 +297,6 @@ export function Header() {
             );
           })}
         </nav>
-        {user ? (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-white/[0.05]"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              {t("nav.logout")}
-            </button>
-          </div>
-        ) : null}
       </div>
     </header>
   );
