@@ -20,6 +20,15 @@ type sendAdminNotificationRequest struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 }
 
+var allowedAdminNotificationTypes = map[string]struct{}{
+	"ADMIN_BROADCAST":     {},
+	"NEW_MODEL_AVAILABLE": {},
+	"PURCHASE_COMPLETE":   {},
+	"PAYMENT_APPROVED":    {},
+	"PAYMENT_REJECTED":    {},
+	"PAYMENT_EXPIRED":     {},
+}
+
 // SendNotification allows admins to send notifications to one user (by id/email) or all users.
 func (h *Handler) SendNotification(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -31,6 +40,9 @@ func (h *Handler) SendNotification(c echo.Context) error {
 	req.Type = strings.ToUpper(strings.TrimSpace(req.Type))
 	if req.Type == "" {
 		req.Type = "ADMIN_BROADCAST"
+	}
+	if _, ok := allowedAdminNotificationTypes[req.Type]; !ok {
+		return common.BadRequest(c, "Unsupported notification type. Allowed: ADMIN_BROADCAST, NEW_MODEL_AVAILABLE, PURCHASE_COMPLETE, PAYMENT_APPROVED, PAYMENT_REJECTED, PAYMENT_EXPIRED")
 	}
 	req.Title = strings.TrimSpace(req.Title)
 	req.Message = strings.TrimSpace(req.Message)

@@ -175,6 +175,15 @@ export function Header() {
     setMobileMenuOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuOpen]);
+
   const handleLogout = async () => {
     try {
       trackLogout({ role: user?.role === "ADMIN" ? "admin" : "user" });
@@ -260,7 +269,10 @@ export function Header() {
         <div className="mr-2 flex items-center gap-2 md:hidden">
           <button
             type="button"
-            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            onClick={() => {
+              setNotificationsOpen(false);
+              setMobileMenuOpen((prev) => !prev);
+            }}
             className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
             aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
             aria-expanded={mobileMenuOpen}
@@ -438,7 +450,7 @@ export function Header() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] text-destructive transition-colors hover:bg-white/[0.08] lg:hidden"
+                className="hidden min-h-9 min-w-[44px] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.05] px-2.5 py-1.5 text-destructive transition-colors hover:bg-white/[0.08] md:flex lg:hidden"
                 aria-label={t("nav.logout")}
               >
                 <LogOut className="h-4 w-4" />
@@ -491,23 +503,23 @@ export function Header() {
         <div className="fixed inset-0 z-50 md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 bg-black/72"
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute left-0 top-0 h-full w-[82vw] max-w-[320px] border-r border-white/[0.08] bg-card px-3 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/45">
+          <aside className="absolute left-0 top-0 h-full w-[92vw] max-w-[360px] border-r border-white/[0.08] bg-background px-3 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/50">
             <div className="mb-3 flex items-center justify-between px-1">
-              <span className="text-sm font-semibold text-foreground/90">Menu</span>
+              <span className="text-sm font-semibold text-foreground">Menu</span>
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.07] hover:text-foreground"
                 aria-label={t("nav.closeMenu")}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <nav className="space-y-1.5">
+            <nav className="max-h-[calc(100vh-11rem)] space-y-1.5 overflow-y-auto pr-1">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
                 return (
@@ -516,10 +528,10 @@ export function Header() {
                     href={link.href}
                     onClick={() => setMobileMenuOpen(false)}
                     className={cn(
-                      "flex min-h-[44px] items-center gap-2.5 rounded-lg border px-3 text-sm font-medium transition-colors",
+                      "flex min-h-[44px] items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors",
                       navActive
-                        ? "border-white/[0.14] bg-white/[0.08] text-foreground"
-                        : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                        ? "border-white/[0.14] bg-white/[0.1] text-foreground"
+                        : "border-white/[0.08] bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] hover:text-foreground"
                     )}
                   >
                     <link.icon className="h-4 w-4 shrink-0" />
@@ -532,7 +544,7 @@ export function Header() {
                   href={DISCORD_SERVER_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-white/[0.06]"
+                  className="flex min-h-[44px] items-center gap-2.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-medium text-[#5865F2] transition-colors hover:bg-white/[0.08]"
                 >
                   <DiscordGlyph className="h-4 w-4" />
                   <span>{t("nav.discordServer")}</span>
@@ -547,7 +559,7 @@ export function Header() {
                     setMobileMenuOpen(false);
                     handleLogout();
                   }}
-                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-sm font-medium text-destructive transition-colors hover:bg-white/[0.06]"
+                  className="flex min-h-[44px] w-full items-center gap-2.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-medium text-destructive transition-colors hover:bg-white/[0.08]"
                 >
                   <LogOut className="h-4 w-4 shrink-0" />
                   <span>{t("nav.logout")}</span>

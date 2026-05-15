@@ -1,0 +1,2 @@
+-- PostgreSQL enums cannot safely remove values in-place.
+-- No-op down migration for ADMIN_BROADCAST added to notification_type.

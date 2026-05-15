@@ -37,6 +37,14 @@ const FEATURED_KEYS = [
   "custom_order_price_main_ppv_public",
 ];
 const HIDDEN_KEYS = ["blik_enabled"];
+const ADMIN_NOTIFICATION_TYPES = [
+  "ADMIN_BROADCAST",
+  "NEW_MODEL_AVAILABLE",
+  "PURCHASE_COMPLETE",
+  "PAYMENT_APPROVED",
+  "PAYMENT_REJECTED",
+  "PAYMENT_EXPIRED",
+] as const;
 
 export default function AdminSettingsPage() {
   const t = useTranslations("admin");
@@ -292,11 +300,17 @@ export default function AdminSettingsPage() {
               <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                 Type
               </label>
-              <Input
+              <select
                 value={notifType}
-                onChange={(e) => setNotifType(e.target.value.toUpperCase())}
-                placeholder="ADMIN_BROADCAST"
-              />
+                onChange={(e) => setNotifType(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {ADMIN_NOTIFICATION_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-1.5 block">

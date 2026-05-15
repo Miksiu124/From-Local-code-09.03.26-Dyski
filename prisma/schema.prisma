@@ -60,6 +60,7 @@ enum CreditTransactionType {
 }
 
 enum NotificationType {
+  ADMIN_BROADCAST
   PAYMENT_APPROVED
   PAYMENT_REJECTED
   PAYMENT_EXPIRED

@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
@@ -41,6 +43,11 @@ type Handler struct {
 }
 
 const discordSocialRewardType = "DISCORD_CONNECTED"
+const defaultDiscordRewardCredits = 5
+
+type socialRewardQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+}
 
 func NewHandler(db *pgxpool.Pool, m *mailer.Mailer, cfg *config.Config, rotator SessionRotator) *Handler {
 	return &Handler{db: db, mailer: m, cfg: cfg, rotator: rotator}
@@ -364,12 +371,13 @@ func (h *Handler) GetSocialRewards(c echo.Context) error {
 			joinedServer = joined
 		}
 	}
+	rewardCredits := h.loadDiscordRewardCredits(ctx, h.db)
 
 	return common.Success(c, map[string]interface{}{
 		"discordConnected": hasDiscord,
 		"discordClaimed":   claimed,
 		"joinedServer":     joinedServer,
-		"rewardCredits":    5,
+		"rewardCredits":    rewardCredits,
 	})
 }
 
@@ -384,27 +392,17 @@ func (h *Handler) ClaimDiscordReward(c echo.Context) error {
 	defer tx.Rollback(ctx)
 
 	var discordID *string
-	var balance int
 	if err := tx.QueryRow(ctx, `
-		SELECT discord_id, credit_balance
+		SELECT discord_id
 		FROM users
 		WHERE id = $1
 		FOR UPDATE
-	`, userID).Scan(&discordID, &balance); err != nil {
+	`, userID).Scan(&discordID); err != nil {
 		return common.InternalError(c)
 	}
 	if discordID == nil || strings.TrimSpace(*discordID) == "" {
 		return common.BadRequest(c, "Connect your Discord account first")
 	}
-	joinedServer, guildErr := h.isDiscordGuildMember(ctx, strings.TrimSpace(*discordID))
-	if guildErr != nil {
-		log.Printf("[social-reward] guild membership check failed user=%s: %v", userID, guildErr)
-		return common.JSONError(c, http.StatusBadGateway, "DISCORD_CHECK_FAILED", "Could not verify Discord server membership")
-	}
-	if !joinedServer {
-		return common.BadRequest(c, "Join our Discord server first, then claim reward")
-	}
-
 	var alreadyClaimed bool
 	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS(
@@ -418,28 +416,37 @@ func (h *Handler) ClaimDiscordReward(c echo.Context) error {
 		return common.BadRequest(c, "Discord reward already claimed")
 	}
 
-	rewardCredits := 5
-	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE((value#>>'{}')::int, 5)
-		FROM settings
-		WHERE key = 'social_reward_discord_connect_credits'
-	`).Scan(&rewardCredits); err != nil || rewardCredits <= 0 {
-		rewardCredits = 5
+	joinedServer, guildErr := h.isDiscordGuildMember(ctx, strings.TrimSpace(*discordID))
+	if guildErr != nil {
+		log.Printf("[social-reward] guild membership check failed user=%s: %v", userID, guildErr)
+		return common.JSONError(c, http.StatusBadGateway, "DISCORD_CHECK_FAILED", "Could not verify Discord server membership")
+	}
+	if !joinedServer {
+		return common.BadRequest(c, "Join our Discord server first, then claim reward")
 	}
 
-	if _, err := tx.Exec(ctx, `
+	rewardCredits := h.loadDiscordRewardCredits(ctx, tx)
+
+	var claimID string
+	if err := tx.QueryRow(ctx, `
 		INSERT INTO social_reward_claims (user_id, reward_type, credits_awarded)
 		VALUES ($1, $2, $3)
-	`, userID, discordSocialRewardType, rewardCredits); err != nil {
+		ON CONFLICT (user_id, reward_type) DO NOTHING
+		RETURNING id
+	`, userID, discordSocialRewardType, rewardCredits).Scan(&claimID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return common.BadRequest(c, "Discord reward already claimed")
+		}
 		return common.InternalError(c)
 	}
 
-	newBalance := balance + rewardCredits
-	if _, err := tx.Exec(ctx, `
+	var newBalance int
+	if err := tx.QueryRow(ctx, `
 		UPDATE users
 		SET credit_balance = credit_balance + $1
 		WHERE id = $2
-	`, rewardCredits, userID); err != nil {
+		RETURNING credit_balance
+	`, rewardCredits, userID).Scan(&newBalance); err != nil {
 		return common.InternalError(c)
 	}
 
@@ -459,6 +466,21 @@ func (h *Handler) ClaimDiscordReward(c echo.Context) error {
 		"rewardCredits": rewardCredits,
 		"creditBalance": newBalance,
 	})
+}
+
+func (h *Handler) loadDiscordRewardCredits(ctx context.Context, q socialRewardQuerier) int {
+	if q == nil {
+		return defaultDiscordRewardCredits
+	}
+	var rewardCredits int
+	if err := q.QueryRow(ctx, `
+		SELECT COALESCE((value#>>'{}')::int, $1)
+		FROM settings
+		WHERE key = 'social_reward_discord_connect_credits'
+	`, defaultDiscordRewardCredits).Scan(&rewardCredits); err != nil || rewardCredits <= 0 {
+		return defaultDiscordRewardCredits
+	}
+	return rewardCredits
 }
 
 func (h *Handler) isDiscordGuildMember(ctx context.Context, discordUserID string) (bool, error) {
