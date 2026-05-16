@@ -389,7 +389,6 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 			return common.JSONError(c, http.StatusServiceUnavailable, "OXAPAY_ERROR", "Failed to generate crypto payment link. Please try again.")
 		}
 		oxapayURL = url
-		discordInfo.OxapayURL = url
 	}
 
 	// Get PayPal/Revolut address if needed
@@ -425,6 +424,9 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	}
 	if blikCode != nil {
 		discordInfo.BlikCode = *blikCode
+	}
+	if oxapayURL != "" {
+		discordInfo.OxapayURL = oxapayURL
 	}
 	var uEmail string
 	var uName *string
