@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Heart, Play, Image, Loader2, Film, Camera } from "lucide-react";
+import { Heart, Play, Image as ImageIcon, Loader2, Film, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -250,7 +250,7 @@ export function FavoritesGrid() {
                         {item.contentType === "VIDEO" ? (
                           <Play className="h-8 w-8 text-muted-foreground/30" />
                         ) : (
-                          <Image className="h-8 w-8 text-muted-foreground/30" />
+                          <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
                         )}
                       </div>
                     }

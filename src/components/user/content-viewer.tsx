@@ -175,6 +175,7 @@ export function ContentViewer({
 
   useEffect(() => {
     if (displayedState) setDisplayedState(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentItemId]);
 
   useEffect(() => {
