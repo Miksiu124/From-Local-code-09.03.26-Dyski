@@ -255,7 +255,7 @@ func main() {
 	contentGroup.GET("/:id/segment/:filename", contentHandler.Segment) // token-validated
 
 	// Credits (requires auth)
-	creditsHandler := credits.NewHandler(pgPool, redisClient, rateLimiter, cfg, r2ProofClient)
+	creditsHandler := credits.NewHandler(pgPool, redisClient, rateLimiter, cfg, r2ProofClient, mailService)
 	creditsGroup := api.Group("/credits", authMW.Authenticate)
 	creditsGroup.POST("/purchase", creditsHandler.CreatePurchase, authMW.RequireEmailVerified)
 	creditsGroup.POST("/validate-promo", creditsHandler.ValidatePromo)
@@ -321,6 +321,9 @@ func main() {
 
 	// Public referral link tracking (no auth) - /r/[code] redirects here
 	api.GET("/public/referral/:code", referralHandler.TrackAndRedirect)
+
+	// OxaPay payment webhook (public — no auth, verified by HMAC)
+	api.POST("/public/oxapay/webhook", creditsHandler.OxaPayWebhook)
 
 	obsHandler := observability.NewHandler(pgPool, rateLimiter, cfg.PostgresBackupDir, cfg.PostgresBackupDBName)
 	api.POST("/public/client-errors", obsHandler.PostClientError)

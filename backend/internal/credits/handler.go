@@ -21,6 +21,7 @@ import (
 	"content-platform-backend/internal/content"
 	"content-platform-backend/internal/discord"
 	"content-platform-backend/internal/geo"
+	"content-platform-backend/internal/mailer"
 	"content-platform-backend/internal/middleware"
 	"content-platform-backend/internal/referral"
 
@@ -37,10 +38,11 @@ type Handler struct {
 	cfg     *config.Config
 	discord *discord.Notifier
 	r2      *content.R2Client
+	mailer  *mailer.Mailer
 }
 
-func NewHandler(db *pgxpool.Pool, redis *redis.Client, rl *middleware.RateLimiter, cfg *config.Config, r2 *content.R2Client) *Handler {
-	return &Handler{db: db, redis: redis, rl: rl, cfg: cfg, discord: discord.NewNotifier(db, cfg.FrontendURL), r2: r2}
+func NewHandler(db *pgxpool.Pool, redis *redis.Client, rl *middleware.RateLimiter, cfg *config.Config, r2 *content.R2Client, ml *mailer.Mailer) *Handler {
+	return &Handler{db: db, redis: redis, rl: rl, cfg: cfg, discord: discord.NewNotifier(db, cfg.FrontendURL), r2: r2, mailer: ml}
 }
 
 type CreatePurchaseRequest struct {
