@@ -328,7 +328,7 @@ function computeGatekeeperState(env: Env): { secret: string; gatekeeperOff: bool
   return { secret, gatekeeperOff };
 }
 
-export default {
+const worker = {
   async fetch(
     request: Request,
     env: Env,
@@ -582,6 +582,8 @@ export default {
     }
   },
 };
+
+export default worker;
 
 function mergeCors(h: Headers, origin: string): void {
   h.set("Access-Control-Allow-Origin", origin);
