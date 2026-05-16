@@ -600,11 +600,11 @@ export function Header() {
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div
-            className="absolute inset-0 bg-black/75"
+            className="drawer-backdrop-in absolute inset-0 bg-black/75"
             onClick={() => setMobileMenuOpen(false)}
             aria-hidden="true"
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col overflow-hidden px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/80" style={{ background: '#0e1117' }}>
+          <aside className="drawer-slide-in absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col overflow-hidden px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/80" style={{ background: '#0e1117' }}>
             {/* Header */}
             <div className="mb-5 flex shrink-0 items-center justify-between">
               <div className="flex items-center gap-2.5">

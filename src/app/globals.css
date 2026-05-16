@@ -397,6 +397,29 @@ img {
   animation: tour-spotlight-ring 2.4s ease-in-out infinite;
 }
 
+/* Mobile drawer: slide in from left */
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawer-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.drawer-slide-in {
+  animation: drawer-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.drawer-backdrop-in {
+  animation: drawer-backdrop-in 0.2s ease-out both;
+}
+
 /* Notification panel + item entrance animations */
 @keyframes notif-panel-enter {
   from {
