@@ -292,7 +292,7 @@ export function FavoritesGrid() {
                       {item.contentType === "VIDEO" ? (
                         <><Play className="h-2.5 w-2.5 mr-0.5" /> Video</>
                       ) : (
-                        <><Image className="h-2.5 w-2.5 mr-0.5" /> Photo</>
+                        <><ImageIcon className="h-2.5 w-2.5 mr-0.5" /> Photo</>
                       )}
                     </Badge>
                   </div>
