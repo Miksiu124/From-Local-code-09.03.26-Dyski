@@ -77,7 +77,11 @@ export function Header() {
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showAllNotifications, setShowAllNotifications] = useState(false);
+  const [expandedNotifIds, setExpandedNotifIds] = useState<Set<string>>(new Set());
   const notificationsRef = useRef<HTMLDivElement>(null);
+
+  const NOTIF_VISIBLE_COUNT = 10;
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -179,6 +183,7 @@ export function Header() {
       if (!notificationsRef.current) return;
       if (!notificationsRef.current.contains(event.target as Node)) {
         setNotificationsOpen(false);
+        setShowAllNotifications(false);
       }
     };
     document.addEventListener("mousedown", closeOnOutside);
@@ -218,25 +223,32 @@ export function Header() {
   };
 
   const markNotificationAsRead = async (id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+    setUnreadCount((prev) => Math.max(0, prev - 1));
     try {
       await fetch(`/api/notifications/${id}`, { method: "PATCH", credentials: "include" });
     } catch {
-      // ignore network errors; local optimistic update still applies
-    } finally {
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      // optimistic update already applied
     }
+  };
+
+  const toggleNotifExpand = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedNotifIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
   const markAllNotificationsAsRead = async () => {
     try {
       setNotificationsLoading(true);
       await fetch("/api/notifications", { method: "PATCH", credentials: "include" });
-      setNotifications([]);
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } finally {
       setNotificationsLoading(false);
-      setNotificationsOpen(false);
     }
   };
 
@@ -396,7 +408,12 @@ export function Header() {
             <div className="relative" ref={notificationsRef}>
               <button
                 type="button"
-                onClick={() => setNotificationsOpen((prev) => !prev)}
+                onClick={() => {
+                  setNotificationsOpen((prev) => {
+                    if (prev) setShowAllNotifications(false);
+                    return !prev;
+                  });
+                }}
                 className="relative flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.05] transition-colors hover:bg-white/[0.08] sm:min-h-9 sm:min-w-9"
                 aria-label={t("notifications.title")}
               >
@@ -407,40 +424,90 @@ export function Header() {
                   </span>
                 )}
               </button>
-              {notificationsOpen && (
-                <div className="absolute right-0 top-[calc(100%+0.4rem)] z-50 w-[min(92vw,360px)] rounded-xl border border-white/[0.08] bg-card shadow-2xl shadow-black/40">
-                  <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2.5">
-                    <span className="text-sm font-semibold">{t("notifications.title")}</span>
-                    <button
-                      type="button"
-                      onClick={markAllNotificationsAsRead}
-                      disabled={notificationsLoading || notifications.length === 0}
-                      className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-                    >
-                      {t("notifications.markAllRead")}
-                    </button>
+              {notificationsOpen && (() => {
+                const visibleNotifs = showAllNotifications
+                  ? notifications
+                  : notifications.slice(0, NOTIF_VISIBLE_COUNT);
+                const hiddenCount = notifications.length - NOTIF_VISIBLE_COUNT;
+                const hasUnread = notifications.some((n) => !n.isRead);
+                return (
+                  <div className="notif-panel-enter absolute right-0 top-[calc(100%+0.4rem)] z-50 w-[min(92vw,380px)] rounded-xl border border-white/[0.08] bg-card shadow-2xl shadow-black/50">
+                    <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2.5">
+                      <span className="text-sm font-semibold">{t("notifications.title")}</span>
+                      <button
+                        type="button"
+                        onClick={markAllNotificationsAsRead}
+                        disabled={notificationsLoading || !hasUnread}
+                        className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                      >
+                        {t("notifications.markAllRead")}
+                      </button>
+                    </div>
+                    <div className="max-h-[min(60vh,440px)] overflow-y-auto p-2">
+                      {notifications.length === 0 ? (
+                        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-xs text-muted-foreground">
+                          {t("notifications.noNotifications")}
+                        </div>
+                      ) : (
+                        <>
+                          {visibleNotifs.map((item, index) => (
+                            <div
+                              key={item.id}
+                              style={{ "--notif-i": index } as React.CSSProperties}
+                              onClick={() => !item.isRead && markNotificationAsRead(item.id)}
+                              className={cn(
+                                "notif-item-enter mb-1.5 rounded-lg border px-3 py-2.5 transition-all duration-300",
+                                item.isRead
+                                  ? "cursor-default border-white/[0.03] bg-transparent opacity-50"
+                                  : "cursor-pointer border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.07] active:bg-white/[0.06]"
+                              )}
+                            >
+                              <div className="flex items-start gap-2">
+                                {!item.isRead && (
+                                  <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className={cn(
+                                    "text-sm leading-snug",
+                                    item.isRead ? "font-medium text-muted-foreground" : "font-semibold"
+                                  )}>
+                                    {item.title}
+                                  </p>
+                                  <p className={cn(
+                                    "mt-0.5 text-xs leading-relaxed text-muted-foreground",
+                                    !expandedNotifIds.has(item.id) && "line-clamp-2"
+                                  )}>
+                                    {item.message}
+                                  </p>
+                                  {item.message.length > 110 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => toggleNotifExpand(item.id, e)}
+                                      className="mt-1 text-[11px] font-medium text-primary/60 transition-colors hover:text-primary"
+                                    >
+                                      {expandedNotifIds.has(item.id) ? "zwiń ↑" : "rozwiń ↓"}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {!showAllNotifications && hiddenCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllNotifications(true)}
+                              style={{ "--notif-i": NOTIF_VISIBLE_COUNT } as React.CSSProperties}
+                              className="notif-item-enter w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+                            >
+                              + {hiddenCount} więcej
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="max-h-[360px] overflow-y-auto p-2">
-                    {notifications.length === 0 ? (
-                      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-xs text-muted-foreground">
-                        {t("notifications.noNotifications")}
-                      </div>
-                    ) : (
-                      notifications.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => markNotificationAsRead(item.id)}
-                          className="mb-1.5 block w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-left transition-colors hover:bg-white/[0.05]"
-                        >
-                          <p className="text-sm font-semibold">{item.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{item.message}</p>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 

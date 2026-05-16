@@ -56,6 +56,7 @@ echo "Apply pending SQL migrations required by latest release..."
 MIGRATION_FILES=(
 	"backend/migrations/20260515154500_social_custom_coinflip_features.up.sql"
 	"backend/migrations/20260515165500_custom_orders_pricing_and_refunds.up.sql"
+	"backend/migrations/20260515210000_add_admin_broadcast_notification_type.up.sql"
 )
 for migration_file in "${MIGRATION_FILES[@]}"; do
 	if [[ -f "$migration_file" ]]; then
@@ -71,6 +72,11 @@ echo "Verify social/custom/coinflip tables exist..."
 docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
 	"SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('social_reward_claims','custom_order_requests','coinflip_rounds');" \
 	| tr -d '[:space:]' | grep -qx "3"
+
+echo "Verify ADMIN_BROADCAST notification type exists in enum..."
+docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
+	"SELECT COUNT(*) FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid WHERE t.typname = 'notification_type' AND e.enumlabel = 'ADMIN_BROADCAST';" \
+	| tr -d '[:space:]' | grep -qx "1"
 
 echo "Verify custom-orders pricing migration columns and settings..."
 docker compose $COMPOSE_FILES exec -T postgres psql -U platform -d content_platform -tAc \
