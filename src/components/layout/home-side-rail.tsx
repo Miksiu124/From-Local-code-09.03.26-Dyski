@@ -13,6 +13,7 @@ import {
   Menu,
   ShoppingCart,
   ShieldCheck,
+  User,
   UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ export function HomeSideRail({ isAdmin }: HomeSideRailProps) {
     () =>
       [
         { href: "/", label: t("models"), icon: LayoutDashboard },
+        { href: "/dashboard", label: t("dashboard"), icon: User },
         { href: "/my-purchases", label: t("myPurchases"), icon: ShoppingCart },
         { href: "/favorites", label: t("favorites"), icon: Heart },
         { href: "/custom-orders", label: t("customOrders"), icon: List },
