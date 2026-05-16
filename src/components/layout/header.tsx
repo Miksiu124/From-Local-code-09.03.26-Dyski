@@ -28,6 +28,17 @@ import { trackLogout } from "@/lib/growth-analytics";
 /** Stały link zaproszenia na serwer Discord (NEXT_PUBLIC_* — wymaga przebudowy frontu po zmianie). */
 const DISCORD_SERVER_URL = (process.env.NEXT_PUBLIC_DISCORD_SERVER_URL ?? "").trim();
 
+function drawerIconColor(href: string): string {
+  if (href === "/") return "text-primary";
+  if (href === "/favorites") return "text-rose-400";
+  if (href === "/purchase") return "text-amber-400";
+  if (href === "/custom-orders") return "text-orange-400";
+  if (href === "/referral") return "text-emerald-400";
+  if (href === "/dashboard") return "text-sky-400";
+  if (href.startsWith("/admin")) return "text-violet-400";
+  return "text-muted-foreground";
+}
+
 function DiscordGlyph({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden fill="currentColor">
@@ -520,43 +531,53 @@ export function Header() {
         <div className="fixed inset-0 z-50 md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[80vw] max-w-[300px] flex-col border-r border-white/[0.09] bg-card px-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[calc(1rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/60">
+          <aside className="absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col bg-[oklch(0.12_0.005_250)] px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/70">
             {/* Header */}
-            <div className="mb-4 flex shrink-0 items-center justify-between">
+            <div className="mb-5 flex shrink-0 items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.06] text-primary">
-                  <Cloud className="h-3.5 w-3.5" />
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <Cloud className="h-4 w-4" />
                 </span>
-                <span className="text-sm font-semibold text-foreground">Menu</span>
+                <span className="text-[0.8rem] font-bold tracking-[0.12em] uppercase text-foreground/90">
+                  Menu
+                </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    window.dispatchEvent(new CustomEvent("tour:restart"));
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
-                  aria-label="Help"
-                >
-                  <CircleHelp className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
-                  aria-label={t("nav.closeMenu")}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  window.dispatchEvent(new CustomEvent("tour:restart"));
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.04] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+                aria-label="Help"
+              >
+                <CircleHelp className="h-4 w-4" />
+              </button>
             </div>
+
+            {/* User info */}
+            {user && (
+              <div className="mb-5 flex flex-col items-center gap-2.5">
+                <span className="text-[0.85rem] font-bold tracking-[0.14em] uppercase text-foreground">
+                  {user.name}
+                </span>
+                <Link
+                  href="/purchase"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/15"
+                >
+                  <span className="text-[0.9em]">💎</span>
+                  <span>{formatCredits(user.creditBalance)}</span>
+                </Link>
+              </div>
+            )}
+
             {/* Nav */}
-            <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+            <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
                 const drawerTourId =
@@ -569,6 +590,7 @@ export function Header() {
                       : link.href === "/dashboard"
                         ? "tour-account"
                         : undefined;
+                const iconColorClass = drawerIconColor(link.href);
                 return (
                   <Link
                     key={link.href}
@@ -576,14 +598,17 @@ export function Header() {
                     onClick={() => setMobileMenuOpen(false)}
                     data-tour={drawerTourId}
                     className={cn(
-                      "flex min-h-[44px] w-full items-center gap-3 rounded-lg border px-3 text-sm font-medium transition-colors",
+                      "flex min-h-[52px] w-full items-center gap-3 rounded-xl border px-3.5 text-sm font-medium transition-colors",
                       navActive
                         ? "border-white/[0.12] bg-white/[0.08] text-foreground"
-                        : "border-transparent text-muted-foreground hover:border-white/[0.08] hover:bg-white/[0.05] hover:text-foreground"
+                        : "border-transparent text-muted-foreground hover:border-white/[0.07] hover:bg-white/[0.05] hover:text-foreground"
                     )}
                   >
-                    <link.icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{link.label}</span>
+                    <link.icon className={cn("h-[18px] w-[18px] shrink-0", iconColorClass)} />
+                    <span className="flex-1 truncate">{link.label}</span>
+                    {navActive && (
+                      <CircleHelp className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                    )}
                   </Link>
                 );
               })}
@@ -592,37 +617,47 @@ export function Header() {
                   href={DISCORD_SERVER_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] w-full items-center gap-3 rounded-lg border border-transparent px-3 text-sm font-medium text-[#5865F2] transition-colors hover:border-white/[0.08] hover:bg-white/[0.05]"
+                  className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-transparent px-3.5 text-sm font-medium text-[#5865F2] transition-colors hover:border-white/[0.07] hover:bg-white/[0.05]"
                 >
-                  <DiscordGlyph className="h-4 w-4 shrink-0" />
+                  <DiscordGlyph className="h-[18px] w-[18px] shrink-0" />
                   <span>{t("nav.discordServer")}</span>
                 </a>
               )}
             </nav>
+
             {/* Bottom */}
-            <div className="mt-3 shrink-0 border-t border-white/[0.07] pt-3">
+            <div className="mt-4 shrink-0 space-y-2">
               {user ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    handleLogout();
-                  }}
-                  className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/15"
-                >
-                  <LogOut className="h-4 w-4 shrink-0" />
-                  <span>{t("nav.logout")}</span>
-                </button>
+                <>
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
+                    data-tour="tour-account"
+                  >
+                    <User className="h-[18px] w-[18px] shrink-0 text-primary" />
+                    <span>{t("nav.dashboard")}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 hover:border-destructive/30"
+                  >
+                    <LogOut className="h-[18px] w-[18px] shrink-0" />
+                    <span>{t("nav.logout")}</span>
+                  </button>
+                </>
               ) : (
                 <Link
                   href="/login"
                   onClick={() => setMobileMenuOpen(false)}
-                  className={cn(
-                    buttonVariants({ variant: "default" }),
-                    "min-h-[48px] w-full rounded-lg text-sm font-semibold"
-                  )}
+                  className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80 touch-manipulation"
                 >
-                  {t("auth.loginTitle")}
+                  <User className="h-4 w-4 shrink-0" />
+                  <span>{t("auth.loginTitle")}</span>
                 </Link>
               )}
             </div>
