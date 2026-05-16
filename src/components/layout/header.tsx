@@ -482,8 +482,10 @@ export function Header() {
 
         </div>
       </div>
-      {!useSideRailNavigation && (
-      <div className="border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-1.5 pr-[max(0.75rem,env(safe-area-inset-right,0px))] lg:hidden">
+      <div className={cn(
+        "border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-1.5 pr-[max(0.75rem,env(safe-area-inset-right,0px))]",
+        useSideRailNavigation ? "md:hidden" : "lg:hidden"
+      )}>
         <nav className="grid grid-cols-2 gap-1.5">
           {mobilePrimaryLinks.map((link, index) => {
             const navActive =
@@ -514,7 +516,6 @@ export function Header() {
           })}
         </nav>
       </div>
-      )}
 
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
