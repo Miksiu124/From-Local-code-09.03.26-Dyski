@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
-  Lock, Play, Image, Coins, ArrowLeft, Loader2,
+  Lock, Play, Image as ImageIcon, Coins, ArrowLeft, Loader2,
   Heart, Film, Camera, ArrowUpDown, Clock, ShoppingCart, X,
   ChevronLeft, ChevronRight, Trash2, Download, LayoutGrid,
 } from "lucide-react";
@@ -1555,7 +1555,7 @@ export function ModelDetail({
           ) : (
             <>
               <div className="mx-auto h-16 w-16 rounded-2xl bg-white/[0.03] flex items-center justify-center mb-4">
-                <Image className="h-7 w-7 opacity-30" />
+                <ImageIcon className="h-7 w-7 opacity-30" />
               </div>
               <p className="font-medium">
                 {activeFilter === "ALL"
@@ -1605,7 +1605,7 @@ export function ModelDetail({
                             {item.contentType === "VIDEO" ? (
                               <Play className="h-8 w-8 text-muted-foreground/40" />
                             ) : (
-                              <Image className="h-8 w-8 text-muted-foreground/40" />
+                              <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
                             )}
                           </div>
                         }
@@ -1614,7 +1614,7 @@ export function ModelDetail({
                             {item.contentType === "VIDEO" ? (
                               <Play className="h-8 w-8 text-muted-foreground/30" />
                             ) : (
-                              <Image className="h-8 w-8 text-muted-foreground/30" />
+                              <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
                             )}
                           </div>
                         }
@@ -1625,7 +1625,7 @@ export function ModelDetail({
                       {item.contentType === "VIDEO" ? (
                         <Play className="h-8 w-8 text-muted-foreground/30" />
                       ) : (
-                        <Image className="h-8 w-8 text-muted-foreground/30" />
+                        <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
                       )}
                     </div>
                   )}
@@ -1651,7 +1651,7 @@ export function ModelDetail({
                       {item.contentType === "VIDEO" ? (
                         <><Play className="h-2.5 w-2.5 mr-0.5 fill-white" /> Video</>
                       ) : (
-                        <><Image className="h-2.5 w-2.5 mr-0.5" /> Photo</>
+                        <><ImageIcon className="h-2.5 w-2.5 mr-0.5" /> Photo</>
                       )}
                     </Badge>
                   </div>
@@ -1999,7 +1999,7 @@ export function ModelDetail({
                   draggable={false}
                   fallback={
                     <div className="flex flex-col items-center justify-center gap-3 py-16 px-8 text-white/50">
-                      <Image className="h-16 w-16 opacity-40" />
+                      <ImageIcon className="h-16 w-16 opacity-40" />
                       <span className="text-sm">{t("imageLoadFailed")}</span>
                     </div>
                   }
@@ -2057,7 +2057,7 @@ export function ModelDetail({
                               {item.contentType === "VIDEO" ? (
                                 <Play className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
                               ) : (
-                                <Image className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
+                                <ImageIcon className="h-4 w-4 lg:h-6 lg:w-6 text-white/25" />
                               )}
                             </div>
                           }
