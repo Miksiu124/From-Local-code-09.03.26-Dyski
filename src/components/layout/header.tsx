@@ -12,6 +12,7 @@ import {
   User,
   Menu,
   LogOut,
+  Package,
   ShoppingCart,
   UserPlus,
   X,
@@ -32,6 +33,7 @@ function drawerIconColor(href: string): string {
   if (href === "/") return "text-primary";
   if (href === "/favorites") return "text-rose-400";
   if (href === "/purchase") return "text-amber-400";
+  if (href === "/my-purchases") return "text-amber-400";
   if (href === "/custom-orders") return "text-orange-400";
   if (href === "/referral") return "text-emerald-400";
   if (href === "/dashboard") return "text-sky-400";
@@ -275,6 +277,7 @@ export function Header() {
   const mobileDrawerLinks = [
     { href: "/", label: t("nav.models"), icon: House, show: true },
     { href: "/dashboard", label: t("nav.dashboard"), icon: User, show: !!user },
+    { href: "/my-purchases", label: t("nav.myPurchases"), icon: Package, show: !!user },
     { href: "/custom-orders", label: t("nav.customOrders"), icon: ShoppingCart, show: !!user },
     { href: "/favorites", label: t("nav.favorites"), icon: Heart, show: !!user },
     { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: !!user },
@@ -535,7 +538,7 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             aria-label={t("common.closeDialog")}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col bg-[oklch(0.12_0.005_250)] px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/70">
+          <aside className="absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col bg-card px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/70" style={{ backgroundColor: 'oklch(0.14 0.022 255)' }}>
             {/* Header */}
             <div className="mb-5 flex shrink-0 items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -580,16 +583,11 @@ export function Header() {
             <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
               {mobileDrawerLinks.map((link) => {
                 const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
-                const drawerTourId =
-                  link.href === "/"
-                    ? "tour-models-mobile"
-                    : link.href === "/purchase"
-                      ? user
-                        ? "tour-buy-mobile"
-                        : "tour-guest-credits"
-                      : link.href === "/dashboard"
-                        ? "tour-account"
-                        : undefined;
+                const drawerTourId: string | undefined =
+                  link.href === "/" ? "tour-models-mobile"
+                  : link.href === "/purchase" ? (user ? "tour-buy-mobile" : "tour-guest-credits")
+                  : link.href === "/dashboard" ? "tour-account"
+                  : undefined;
                 const iconColorClass = drawerIconColor(link.href);
                 return (
                   <Link
@@ -633,7 +631,6 @@ export function Header() {
                     href="/dashboard"
                     onClick={() => setMobileMenuOpen(false)}
                     className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
-                    data-tour="tour-account"
                   >
                     <User className="h-[18px] w-[18px] shrink-0 text-primary" />
                     <span>{t("nav.dashboard")}</span>
