@@ -22,6 +22,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { formatCredits } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { trackLogout } from "@/lib/growth-analytics";
@@ -288,11 +289,11 @@ export function Header() {
   const useSideRailNavigation = !!user;
   const mobileDrawerLinks = [
     { href: "/", label: t("nav.models"), icon: House, show: true },
+    { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: true },
     { href: "/dashboard", label: t("nav.dashboard"), icon: User, show: !!user },
     { href: "/my-purchases", label: t("nav.myPurchases"), icon: Package, show: !!user },
     { href: "/custom-orders", label: t("nav.customOrders"), icon: ShoppingCart, show: !!user },
     { href: "/favorites", label: t("nav.favorites"), icon: Heart, show: !!user },
-    { href: "/purchase", label: t("nav.buyCredits"), icon: Coins, show: !!user },
     { href: "/referral", label: t("nav.referral"), icon: UserPlus, show: !!user },
     { href: adminHomeHref, label: t("nav.admin"), icon: ShieldCheck, show: isAdmin },
   ].filter((l) => l.show);
@@ -562,171 +563,134 @@ export function Header() {
 
         </div>
       </div>
-      <div className={cn(
-        "border-t border-white/[0.06] px-[max(0.75rem,env(safe-area-inset-left,0px))] py-1.5 pr-[max(0.75rem,env(safe-area-inset-right,0px))]",
-        useSideRailNavigation ? "md:hidden" : "lg:hidden"
-      )}>
-        <nav className="grid grid-cols-2 gap-1.5">
-          {mobilePrimaryLinks.map((link, index) => {
-            const navActive =
-              link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
-            const spanTwoCols = isOddMobilePrimaryCount && index === mobilePrimaryLinks.length - 1;
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                data-tour={
-                  link.href === "/"
-                    ? "tour-models-mobile"
-                    : link.href === "/purchase"
-                      ? "tour-guest-credits"
-                      : undefined
-                }
-                className={cn(
-                  "rounded-lg border px-3 py-1.5 text-center text-[11px] font-medium transition-colors",
-                  spanTwoCols && "col-span-2",
-                  navActive
-                    ? "border-white/[0.14] bg-white/[0.08] text-foreground"
-                    : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-                )}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
+    </header>
 
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div
-            className="drawer-backdrop-in absolute inset-0 bg-black/75"
-            onClick={() => setMobileMenuOpen(false)}
-            aria-hidden="true"
-          />
-          <aside className="drawer-slide-in absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col overflow-hidden px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/80" style={{ background: '#0e1117' }}>
-            {/* Header */}
-            <div className="mb-5 flex shrink-0 items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                  <Cloud className="h-4 w-4" />
-                </span>
-                <span className="text-[0.8rem] font-bold tracking-[0.12em] uppercase text-foreground/90">
-                  Menu
-                </span>
-              </div>
+    {/* Drawer portal — rendered in document.body to escape the header's backdrop-filter containing block */}
+    {mobileMenuOpen && typeof document !== "undefined" && createPortal(
+      <div className="fixed inset-0 z-[9999] md:hidden">
+        {/* Backdrop */}
+        <div
+          className="drawer-backdrop-in absolute inset-0 bg-black/75"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+        {/* Sidebar */}
+        <aside
+          className="drawer-slide-in absolute inset-y-0 left-0 flex w-[82vw] max-w-[310px] flex-col overflow-hidden px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] pt-[calc(0.875rem+env(safe-area-inset-top,0px))] shadow-2xl shadow-black/80"
+          style={{ background: '#0e1117' }}
+        >
+          {/* Header */}
+          <div className="mb-5 flex shrink-0 items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                <Cloud className="h-4 w-4" />
+              </span>
+              <span className="text-[0.8rem] font-bold tracking-[0.12em] uppercase text-foreground/90">
+                Menu
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                window.dispatchEvent(new CustomEvent("tour:restart"));
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.04] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+              aria-label="Help"
+            >
+              <CircleHelp className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* User info */}
+          {user && (
+            <div className="mb-5 flex flex-col items-center gap-2.5">
+              <span className="text-[0.85rem] font-bold tracking-[0.14em] uppercase text-foreground">
+                {user.name}
+              </span>
+              <Link
+                href="/purchase"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/15"
+              >
+                <span className="text-[0.9em]">💎</span>
+                <span>{formatCredits(user.creditBalance)}</span>
+              </Link>
+            </div>
+          )}
+
+          {/* Nav */}
+          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+            {mobileDrawerLinks.map((link) => {
+              const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
+              const drawerTourId: string | undefined =
+                link.href === "/" ? "tour-models-mobile"
+                : link.href === "/purchase" ? (user ? "tour-buy-mobile" : "tour-guest-credits")
+                : link.href === "/dashboard" ? "tour-account"
+                : undefined;
+              const iconColorClass = drawerIconColor(link.href);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  data-tour={drawerTourId}
+                  className={cn(
+                    "flex min-h-[52px] w-full items-center gap-3 rounded-xl border px-3.5 text-sm font-medium transition-colors",
+                    navActive
+                      ? "border-white/[0.12] bg-white/[0.08] text-foreground"
+                      : "border-transparent text-muted-foreground hover:border-white/[0.07] hover:bg-white/[0.05] hover:text-foreground"
+                  )}
+                >
+                  <link.icon className={cn("h-[18px] w-[18px] shrink-0", iconColorClass)} />
+                  <span className="flex-1 truncate">{link.label}</span>
+                  {navActive && (
+                    <CircleHelp className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                  )}
+                </Link>
+              );
+            })}
+            {DISCORD_SERVER_URL && (
+              <a
+                href={DISCORD_SERVER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-transparent px-3.5 text-sm font-medium text-[#5865F2] transition-colors hover:border-white/[0.07] hover:bg-white/[0.05]"
+              >
+                <DiscordGlyph className="h-[18px] w-[18px] shrink-0" />
+                <span>{t("nav.discordServer")}</span>
+              </a>
+            )}
+          </nav>
+
+          {/* Bottom actions */}
+          <div className="mt-4 shrink-0 space-y-2">
+            {user ? (
               <button
                 type="button"
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  window.dispatchEvent(new CustomEvent("tour:restart"));
+                  handleLogout();
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.04] text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
-                aria-label="Help"
+                className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 hover:border-destructive/30"
               >
-                <CircleHelp className="h-4 w-4" />
+                <LogOut className="h-[18px] w-[18px] shrink-0" />
+                <span>{t("nav.logout")}</span>
               </button>
-            </div>
-
-            {/* User info */}
-            {user && (
-              <div className="mb-5 flex flex-col items-center gap-2.5">
-                <span className="text-[0.85rem] font-bold tracking-[0.14em] uppercase text-foreground">
-                  {user.name}
-                </span>
-                <Link
-                  href="/purchase"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/15"
-                >
-                  <span className="text-[0.9em]">💎</span>
-                  <span>{formatCredits(user.creditBalance)}</span>
-                </Link>
-              </div>
+            ) : (
+              <Link
+                href="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80 touch-manipulation"
+              >
+                <User className="h-4 w-4 shrink-0" />
+                <span>{t("auth.loginTitle")}</span>
+              </Link>
             )}
-
-            {/* Nav */}
-            <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-              {mobileDrawerLinks.map((link) => {
-                const navActive = link.href === adminHomeHref ? isAdminNavActive : pathname === link.href;
-                const drawerTourId: string | undefined =
-                  link.href === "/" ? "tour-models-mobile"
-                  : link.href === "/purchase" ? (user ? "tour-buy-mobile" : "tour-guest-credits")
-                  : link.href === "/dashboard" ? "tour-account"
-                  : undefined;
-                const iconColorClass = drawerIconColor(link.href);
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    data-tour={drawerTourId}
-                    className={cn(
-                      "flex min-h-[52px] w-full items-center gap-3 rounded-xl border px-3.5 text-sm font-medium transition-colors",
-                      navActive
-                        ? "border-white/[0.12] bg-white/[0.08] text-foreground"
-                        : "border-transparent text-muted-foreground hover:border-white/[0.07] hover:bg-white/[0.05] hover:text-foreground"
-                    )}
-                  >
-                    <link.icon className={cn("h-[18px] w-[18px] shrink-0", iconColorClass)} />
-                    <span className="flex-1 truncate">{link.label}</span>
-                    {navActive && (
-                      <CircleHelp className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
-                    )}
-                  </Link>
-                );
-              })}
-              {DISCORD_SERVER_URL && (
-                <a
-                  href={DISCORD_SERVER_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-transparent px-3.5 text-sm font-medium text-[#5865F2] transition-colors hover:border-white/[0.07] hover:bg-white/[0.05]"
-                >
-                  <DiscordGlyph className="h-[18px] w-[18px] shrink-0" />
-                  <span>{t("nav.discordServer")}</span>
-                </a>
-              )}
-            </nav>
-
-            {/* Bottom */}
-            <div className="mt-4 shrink-0 space-y-2">
-              {user ? (
-                <>
-                  <Link
-                    href="/dashboard"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
-                  >
-                    <User className="h-[18px] w-[18px] shrink-0 text-primary" />
-                    <span>{t("nav.dashboard")}</span>
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handleLogout();
-                    }}
-                    className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.04] px-3.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 hover:border-destructive/30"
-                  >
-                    <LogOut className="h-[18px] w-[18px] shrink-0" />
-                    <span>{t("nav.logout")}</span>
-                  </button>
-                </>
-              ) : (
-                <Link
-                  href="/login"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex min-h-[56px] w-full items-center justify-center gap-2.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 active:bg-primary/80 touch-manipulation"
-                >
-                  <User className="h-4 w-4 shrink-0" />
-                  <span>{t("auth.loginTitle")}</span>
-                </Link>
-              )}
-            </div>
-          </aside>
-        </div>
-      )}
-    </header>
+          </div>
+        </aside>
+      </div>,
+      document.body
+    )}
   );
 }
