@@ -304,6 +304,7 @@ export function Header() {
   ].filter((l) => l.show);
 
   return (
+    <>
     <header className="sticky top-0 z-40 w-full border-b border-white/[0.06] bg-background/95 pt-[env(safe-area-inset-top,0px)] backdrop-blur-md">
       <div className="mx-auto flex h-14 w-full min-w-0 max-w-7xl items-center justify-between pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:h-16 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))]">
         <div className="mr-2 flex items-center gap-2 md:hidden">
@@ -697,5 +698,6 @@ export function Header() {
       </div>,
       document.body
     )}
+    </>
   );
 }
