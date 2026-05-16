@@ -38,7 +38,6 @@ interface CreditPackage {
 }
 
 type PaymentMethod = "BLIK" | "CRYPTO" | "PAYPAL" | "REVOLUT";
-type CryptoCurrency = "BTC" | "ETH" | "LTC" | "USDC";
 
 type Step = "select-package" | "select-method" | "blik-code" | "payment-details" | "waiting";
 
@@ -46,10 +45,9 @@ interface PaymentResult {
   id: string;
   transactionCode: string;
   blikCode: string | null;
-  walletAddress: string | null;
   paypalAddress: string | null;
   revolutAddress: string | null;
-  cryptoCurrency: string | null;
+  oxapayUrl: string | null;
   amount: number;
   credits: number;
   expirationTime: string;
@@ -77,9 +75,7 @@ export function CreditPurchaseFlow({
   const checkoutStartedLogged = useRef(false);
   const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
-  const [selectedCrypto, setSelectedCrypto] = useState<CryptoCurrency>("BTC");
   const [blikCode, setBlikCode] = useState("");
-  const [txId, setTxId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
@@ -327,23 +323,6 @@ export function CreditPurchaseFlow({
     }
   }, [blikEnabled, selectedMethod]);
 
-  const cryptos: { id: CryptoCurrency; label: string }[] = [
-    { id: "BTC", label: t("cryptoCurrencies.btc") },
-    { id: "ETH", label: t("cryptoCurrencies.eth") },
-    { id: "LTC", label: t("cryptoCurrencies.ltc") },
-    { id: "USDC", label: t("cryptoCurrencies.usdc") },
-  ];
-
-  const getBlockchainLabel = (currency: string): string => {
-    switch (currency) {
-      case "BTC": return t("blockchainBtc");
-      case "LTC": return t("blockchainLtc");
-      case "ETH": return t("blockchainEth");
-      case "USDC": return t("blockchainUsdc");
-      default: return currency;
-    }
-  };
-
   const handleApplyPromo = async () => {
     if (!selectedPackage || !promoCode.trim()) return;
     setPromoLoading(true);
@@ -396,7 +375,6 @@ export function CreditPurchaseFlow({
     try {
       emitGrowthEvent(GROWTH.PAYMENT_METHOD_SELECTED, {
         method: selectedMethod,
-        crypto: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
       });
       const res = await fetch("/api/credits/purchase", {
         method: "POST",
@@ -405,7 +383,6 @@ export function CreditPurchaseFlow({
         body: JSON.stringify({
           creditPackageId: selectedPackage.id,
           paymentMethod: selectedMethod,
-          cryptoCurrency: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
           blikCode: selectedMethod === "BLIK" ? (blikCodeOverride || blikCode) : undefined,
           promoCodeId: promoApplied?.promoCodeId || undefined,
         }),
@@ -425,36 +402,20 @@ export function CreditPurchaseFlow({
         trackPurchaseCreated(purchaseId, {
           tier: selectedPackage.tier,
           method: selectedMethod,
-          crypto: selectedMethod === "CRYPTO" ? selectedCrypto : undefined,
         });
       }
+
+      // For CRYPTO: redirect directly to OxaPay payment page
+      if (selectedMethod === "CRYPTO" && data.oxapayUrl) {
+        window.location.href = data.oxapayUrl;
+        return;
+      }
+
       setPaymentResult(data);
       setStep("waiting");
     } catch {
       trackPurchaseApiError(0, { error_class: "network", tier: selectedPackage?.tier });
       setError(t("createPurchaseFailed"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmitTxId = async () => {
-    if (!paymentResult || !txId.trim()) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/credits/purchase/${paymentResult.id}/txid`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ txId: txId.trim() }),
-      });
-
-      if (res.ok) {
-        setTxId("");
-      }
-    } catch {
-      // Silent fail, user can retry
     } finally {
       setLoading(false);
     }
@@ -609,9 +570,6 @@ export function CreditPurchaseFlow({
       {selectedMethodLabel && step !== "select-package" && (
         <p className="mt-3 border-t border-border/50 pt-3 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">{t("selectMethod")}:</span> {selectedMethodLabel}
-          {selectedMethod === "CRYPTO" && (
-            <span className="ml-1 font-mono text-[11px]">({selectedCrypto})</span>
-          )}
         </p>
       )}
     </div>
@@ -639,9 +597,6 @@ export function CreditPurchaseFlow({
           {selectedMethodLabel && (
             <p>
               <span className="font-medium text-foreground">{t("selectMethod")}:</span> {selectedMethodLabel}
-              {selectedMethod === "CRYPTO" && (
-                <span className="ml-1 font-mono">({selectedCrypto})</span>
-              )}
             </p>
           )}
         </div>
@@ -919,33 +874,6 @@ export function CreditPurchaseFlow({
               <p className="mt-3 text-xs text-muted-foreground sm:mt-4">{t("blikUnavailableHint")}</p>
             )}
 
-            {/* Crypto selector - grid-template-rows avoids layout thrashing */}
-            {selectedMethod === "CRYPTO" && (
-              <motion.div
-                initial={{ gridTemplateRows: "0fr", opacity: 0 }}
-                animate={{ gridTemplateRows: "1fr", opacity: 1 }}
-                className="grid mt-4"
-              >
-                <div className="min-h-0 overflow-hidden">
-                <p className="text-sm font-medium mb-2">{t("selectCryptocurrency")}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {cryptos.map((crypto) => (
-                    <button
-                      key={crypto.id}
-                      onClick={() => setSelectedCrypto(crypto.id)}
-                      className={`px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${selectedCrypto === crypto.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary hover:bg-secondary/80"
-                        }`}
-                    >
-                      {crypto.label}
-                    </button>
-                  ))}
-                </div>
-                </div>
-              </motion.div>
-            )}
-
             {error && <p className="mt-3 text-sm text-destructive lg:mt-4">{error}</p>}
 
             <div className={stickyMobileActions}>
@@ -1088,7 +1016,6 @@ export function CreditPurchaseFlow({
                         setSelectedPackage(null);
                         setSelectedMethod(null);
                         setBlikCode("");
-                        setTxId("");
                         setError("");
                       }}
                     >
@@ -1123,7 +1050,6 @@ export function CreditPurchaseFlow({
                       setSelectedPackage(null);
                       setSelectedMethod(null);
                       setBlikCode("");
-                      setTxId("");
                       setError("");
                     }}
                   >
@@ -1205,42 +1131,6 @@ export function CreditPurchaseFlow({
                       )}
                     </div>
                     </motion.div>
-                  )}
-
-                  {/* Crypto wallet */}
-                  {paymentResult.walletAddress && (
-                    <div className="space-y-3">
-                      <div className="p-4 rounded-xl bg-secondary border border-border">
-                        <p className="text-sm text-muted-foreground">{t("walletAddress")}</p>
-                        <p className="text-sm font-mono mt-1 break-all">{paymentResult.walletAddress}</p>
-                      </div>
-                      <p className="text-sm font-medium text-center">
-                        {t("useBlockchain", { blockchain: getBlockchainLabel(paymentResult.cryptoCurrency || "") })}
-                      </p>
-                      <p className="text-sm text-center text-muted-foreground">
-                        {t("sendExactAmount", { amount: `${formatPrice(paymentResult.amount)} (${paymentResult.cryptoCurrency})` })}
-                      </p>
-
-                      {/* TxID input */}
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">{t("enterTxId")}</p>
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder={t("txIdPlaceholder")}
-                            value={txId}
-                            onChange={(e) => setTxId(e.target.value)}
-                            className="flex-1"
-                          />
-                          <Button
-                            onClick={handleSubmitTxId}
-                            disabled={!txId.trim() || loading}
-                            size="sm"
-                          >
-                            {t("submitTxId")}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
                   )}
 
                   {/* PayPal instructions */}
@@ -1337,7 +1227,6 @@ export function CreditPurchaseFlow({
                       setSelectedPackage(null);
                       setSelectedMethod(null);
                       setBlikCode("");
-                      setTxId("");
                       setError("");
                     }}
                   >

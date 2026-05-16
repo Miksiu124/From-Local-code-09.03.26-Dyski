@@ -163,12 +163,7 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
-	if req.PaymentMethod == "CRYPTO" {
-		req.CryptoCurrency = strings.ToUpper(strings.TrimSpace(req.CryptoCurrency))
-		if req.CryptoCurrency == "" {
-			return common.BadRequest(c, "Crypto currency is required")
-		}
-	}
+	// CRYPTO via OxaPay — no specific currency required from client
 
 	// Get credit package
 	var pkgID, pkgName string
@@ -299,17 +294,8 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		trimmed := strings.TrimSpace(req.BlikCode)
 		blikCode = &trimmed
 	}
+	// OxaPay handles the currency selection on their side; we store no specific crypto currency
 	var cryptoCurrencyDB *string
-	var cryptoCurrencyDisplay *string
-	if req.PaymentMethod == "CRYPTO" {
-		resolvedCurrency, resolveErr := h.resolveCryptoCurrencyForDB(ctx, req.CryptoCurrency)
-		if resolveErr != nil {
-			return common.BadRequest(c, "Invalid crypto currency")
-		}
-		cryptoCurrencyDB = &resolvedCurrency
-		displayCurrency := req.CryptoCurrency
-		cryptoCurrencyDisplay = &displayCurrency
-	}
 
 	// Custom link attribution: user's link from registration, or ref_link_id cookie as fallback
 	var customLinkID interface{}
@@ -394,24 +380,16 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		}
 	}
 
-	// Get crypto wallet if needed
-	var walletAddress *string
-	if req.PaymentMethod == "CRYPTO" && cryptoCurrencyDisplay != nil {
-		var walletsJSON interface{}
-		if err := h.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'crypto_wallets'`).Scan(&walletsJSON); err == nil {
-			if wallets, ok := walletsJSON.(map[string]interface{}); ok {
-				candidates := []string{*cryptoCurrencyDisplay}
-				if cryptoCurrencyDB != nil && *cryptoCurrencyDB != *cryptoCurrencyDisplay {
-					candidates = append(candidates, *cryptoCurrencyDB)
-				}
-				for _, key := range candidates {
-					if addr, ok := wallets[key].(string); ok {
-						walletAddress = &addr
-						break
-					}
-				}
-			}
+	// Generate OxaPay payment link for CRYPTO purchases
+	var oxapayURL string
+	if req.PaymentMethod == "CRYPTO" {
+		url, oxaErr := h.callOxaPayInvoice(ctx, purchaseID, pkgName, pkgPrice, expirationMinutes)
+		if oxaErr != nil {
+			log.Printf("[Credits] OxaPay invoice generation failed purchase=%s: %v", purchaseID, oxaErr)
+			return common.JSONError(c, http.StatusServiceUnavailable, "OXAPAY_ERROR", "Failed to generate crypto payment link. Please try again.")
 		}
+		oxapayURL = url
+		discordInfo.OxapayURL = url
 	}
 
 	// Get PayPal/Revolut address if needed
@@ -447,9 +425,6 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 	}
 	if blikCode != nil {
 		discordInfo.BlikCode = *blikCode
-	}
-	if cryptoCurrencyDisplay != nil {
-		discordInfo.CryptoCurrency = *cryptoCurrencyDisplay
 	}
 	var uEmail string
 	var uName *string
@@ -505,7 +480,6 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"paymentMethod":    req.PaymentMethod,
 		"transactionCode":  txCode,
 		"blikCode":         blikCode,
-		"cryptoCurrency":   cryptoCurrencyDisplay,
 		"status":           "PENDING",
 		"expirationTime":   expirationTime,
 		"createdAt":        time.Now().UTC().Format(time.RFC3339),
@@ -522,10 +496,9 @@ func (h *Handler) CreatePurchase(c echo.Context) error {
 		"id":              purchaseID,
 		"transactionCode": txCode,
 		"blikCode":        blikCode,
-		"walletAddress":   walletAddress,
 		"paypalAddress":   paypalAddress,
 		"revolutAddress":  revolutAddress,
-		"cryptoCurrency":  cryptoCurrencyDisplay,
+		"oxapayUrl":       oxapayURL,
 		"amount":          pkgPrice,
 		"credits":         pkgCredits,
 		"expirationTime":  expirationTime,
@@ -1176,6 +1149,61 @@ func (h *Handler) ValidatePromo(c echo.Context) error {
 }
 
 // BlikWebSocket — handled in blik_ws.go
+
+// callOxaPayInvoice creates an OxaPay Merchant Invoice and returns the payment URL.
+func (h *Handler) callOxaPayInvoice(ctx context.Context, purchaseID, description string, amount float64, lifetimeMinutes int) (string, error) {
+	if h.cfg.OxapayAPIKey == "" {
+		return "", errors.New("OXAPAY_API_KEY is not configured")
+	}
+	if lifetimeMinutes < 15 {
+		lifetimeMinutes = 15
+	}
+	if lifetimeMinutes > 2880 {
+		lifetimeMinutes = 2880
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"amount":      amount,
+		"currency":    "PLN",
+		"lifetime":    lifetimeMinutes,
+		"order_id":    purchaseID,
+		"description": description,
+		"return_url":  h.cfg.FrontendURL + "/my-purchases",
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal oxapay payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.oxapay.com/v1/payment/invoice", bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("create oxapay request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("merchant_api_key", h.cfg.OxapayAPIKey)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("oxapay request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data struct {
+			PaymentURL string `json:"payment_url"`
+			TrackID    string `json:"track_id"`
+		} `json:"data"`
+		Status  int    `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode oxapay response: %w", err)
+	}
+	if result.Status != 200 || result.Data.PaymentURL == "" {
+		return "", fmt.Errorf("oxapay error (status=%d): %s", result.Status, result.Message)
+	}
+	return result.Data.PaymentURL, nil
+}
 
 func generateTransactionCode() string {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

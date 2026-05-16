@@ -82,6 +82,9 @@ type Config struct {
 	// BLIK
 	BlikExpirationMinutes int
 
+	// OxaPay crypto payments
+	OxapayAPIKey string
+
 	// SMTP (optional fallback when Resend is not configured)
 	SMTPHost     string
 	SMTPPort     int
@@ -241,6 +244,7 @@ func Load() (*Config, error) {
 		MediaCDNSigningSecret:             getEnvOrDefault("MEDIA_CDN_SIGNING_SECRET", ""),
 		MediaCDNUrlTTL:                    getEnvOrDefaultInt("MEDIA_CDN_URL_TTL_SEC", 1800),
 		BlikExpirationMinutes:             getEnvOrDefaultInt("BLIK_EXPIRATION_MINUTES", 2),
+		OxapayAPIKey:                      strings.TrimSpace(getEnvOrDefault("OXAPAY_API_KEY", "")),
 		SMTPHost:                          getEnvOrDefault("SMTP_HOST", ""),
 		SMTPPort:                          getEnvOrDefaultInt("SMTP_PORT", 587),
 		SMTPUser:                          getEnvOrDefault("SMTP_USER", ""),

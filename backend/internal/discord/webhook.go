@@ -197,6 +197,9 @@ type PurchaseInfo struct {
 	PaymentAttempts int
 	UserAgent       string
 
+	// OxapayURL is set for CRYPTO purchases processed via OxaPay.
+	OxapayURL string
+
 	// ApprovedByDisplay is set only for NotifyPurchaseApproved (admin name or email).
 	ApprovedByDisplay string
 
@@ -240,6 +243,9 @@ func (n *Notifier) NotifyNewPurchase(ctx context.Context, info PurchaseInfo) {
 
 	if info.PaymentMethod == "BLIK" && info.BlikCode != "" {
 		fields = append(fields, Field{Name: "\U0001F522 BLIK Code", Value: fmt.Sprintf("`%s`", info.BlikCode), Inline: true})
+	}
+	if info.PaymentMethod == "CRYPTO" && info.OxapayURL != "" {
+		fields = append(fields, Field{Name: "\U0001FA99 OxaPay Link", Value: info.OxapayURL, Inline: false})
 	}
 
 	fields = append(fields, insightFields(info, riskEmail)...)
@@ -549,11 +555,7 @@ func formatMethodEmoji(info PurchaseInfo) string {
 	case "BLIK":
 		return "\U0001F4F1 BLIK"
 	case "CRYPTO":
-		coin := info.CryptoCurrency
-		if coin == "" {
-			coin = "Crypto"
-		}
-		return fmt.Sprintf("\U0001FA99 %s", coin)
+		return "\U0001FA99 Crypto (OxaPay)"
 	case "PAYPAL":
 		return "\U0001F4B3 PayPal"
 	case "REVOLUT":
