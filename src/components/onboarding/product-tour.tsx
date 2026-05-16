@@ -291,12 +291,14 @@ export function ProductTour({
       return;
     }
     const ids = resolveStepIds(targets[step]);
-    if (
-      typeof window !== "undefined" &&
-      ids.includes("tour-account") &&
-      window.matchMedia("(max-width: 767px)").matches
-    ) {
-      window.dispatchEvent(new CustomEvent("tour:open-mobile-menu"));
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      const needsDrawer =
+        ids.includes("tour-account") ||
+        ids.includes("tour-guest-credits") ||
+        ids.includes("tour-buy-mobile");
+      window.dispatchEvent(
+        new CustomEvent(needsDrawer ? "tour:open-mobile-menu" : "tour:close-mobile-menu")
+      );
     }
     const el = firstVisibleTargetEl(ids);
     if (el) {

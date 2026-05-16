@@ -209,8 +209,13 @@ export function Header() {
       setNotificationsOpen(false);
       setMobileMenuOpen(true);
     };
+    const closeMobileMenuForTour = () => setMobileMenuOpen(false);
     window.addEventListener("tour:open-mobile-menu", openMobileMenuForTour);
-    return () => window.removeEventListener("tour:open-mobile-menu", openMobileMenuForTour);
+    window.addEventListener("tour:close-mobile-menu", closeMobileMenuForTour);
+    return () => {
+      window.removeEventListener("tour:open-mobile-menu", openMobileMenuForTour);
+      window.removeEventListener("tour:close-mobile-menu", closeMobileMenuForTour);
+    };
   }, []);
 
   const handleLogout = async () => {
