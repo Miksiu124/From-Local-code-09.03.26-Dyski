@@ -84,6 +84,8 @@
   },
   "models": {
     "title": "Creators",
+    "seoHomeTitle": "Browse Premium Creators & Exclusive Content",
+    "seoHomeDescription": "Discover exclusive photos and videos from top creators on Dyskiof. Search the catalog, unlock access with credits, and enjoy secure instant delivery.",
     "allModels": "All Models",
     "searchPlaceholder": "Search by name…",
     "searchLabel": "Search creators by name",

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ModelDetail } from "@/components/user/model-detail";
 import { FolderBackdrop } from "@/components/user/folder-backdrop";
 import { fetchApi } from "@/lib/api-client";
+import { getSiteUrl } from "@/lib/site-url";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -50,7 +51,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const data = await fetchApi<ModelResponse>(`/models/${slug}`, { revalidate: 60 }).catch(() => null);
   if (!data?.model) return {};
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
+  const baseUrl = getSiteUrl();
   return {
     title: data.model.name,
     description: data.model.description || `Exclusive content from ${data.model.name} on Dyskiof`,

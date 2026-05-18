@@ -61,6 +61,18 @@ describe("API Middleware Security", () => {
     });
   });
 
+  describe("WWW redirect", () => {
+    it("301 redirects www host to apex", async () => {
+      const req = new NextRequest("https://www.dyskiof.net/models/foo", {
+        headers: { host: "www.dyskiof.net" },
+      });
+
+      const res = await middleware(req);
+      expect(res.status).toBe(301);
+      expect(res.headers.get("location")).toBe("https://dyskiof.net/models/foo");
+    });
+  });
+
   describe("Rate Limit Headers", () => {
     it("includes X-RateLimit headers on response", async () => {
       const req = new NextRequest(`${baseUrl}/api/models`, {

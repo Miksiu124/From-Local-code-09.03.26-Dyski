@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { emitSecurityEvent } from "@/lib/security-events";
+import { apexHostname, isWwwHost } from "@/lib/site-url";
 
 function getClientIp(request: NextRequest): string {
   // Prefer Cloudflare's verified header (cannot be spoofed behind CF)
@@ -161,7 +162,20 @@ function generateNonce(): string {
   return btoa(bin);
 }
 
+/** 301 www → apex so canonical URLs and link equity stay on one host. */
+function redirectWwwToApex(request: NextRequest): NextResponse | null {
+  const host = request.headers.get("host");
+  if (!isWwwHost(host)) return null;
+
+  const url = request.nextUrl.clone();
+  url.hostname = apexHostname(host ?? "");
+  return NextResponse.redirect(url, 301);
+}
+
 export async function middleware(request: NextRequest) {
+  const wwwRedirect = redirectWwwToApex(request);
+  if (wwwRedirect) return wwwRedirect;
+
   const method = request.method.toUpperCase();
   const isSafeMethod = method === "GET" || method === "HEAD" || method === "OPTIONS";
   const pathname = request.nextUrl.pathname;

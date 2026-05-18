@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { fetchApi } from "@/lib/api-client";
+import { getSiteUrl } from "@/lib/site-url";
 
 type Model = {
   id: string;
@@ -12,7 +13,7 @@ type ModelsResponse = {
 };
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
+  const baseUrl = getSiteUrl();
 
   const staticPages: MetadataRoute.Sitemap = [
     {

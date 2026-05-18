@@ -84,6 +84,8 @@
   },
   "models": {
     "title": "Twórcy",
+    "seoHomeTitle": "Przeglądaj premium twórców i ekskluzywne treści",
+    "seoHomeDescription": "Odkrywaj ekskluzywne zdjęcia i filmy od topowych twórców na Dyskiof. Przeszukuj katalog, odblokuj dostęp kredytami i korzystaj z bezpiecznej, natychmiastowej dostawy.",
     "allModels": "Wszystkie modele",
     "searchPlaceholder": "Szukaj po nazwie…",
     "searchLabel": "Szukaj twórców po nazwie",

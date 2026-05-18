@@ -1,6 +1,27 @@
+import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { ModelsGrid } from "@/components/user/models-grid";
 import { HomeSideRail } from "@/components/layout/home-side-rail";
 import { fetchApi } from "@/lib/api-client";
+import { getSiteUrl } from "@/lib/site-url";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("models");
+  const siteUrl = getSiteUrl();
+  const title = t("seoHomeTitle");
+  const description = t("seoHomeDescription");
+
+  return {
+    title,
+    description,
+    alternates: { canonical: siteUrl },
+    openGraph: {
+      title,
+      description,
+      url: siteUrl,
+    },
+  };
+}
 
 type Model = {
   id: string;
@@ -56,6 +77,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
 }
 
 export default async function HomePage() {
+  const t = await getTranslations("models");
   const [
     modelsData,
     featuredModelsData,
@@ -101,6 +123,7 @@ export default async function HomePage() {
         <div className="flex items-start gap-4 lg:gap-5">
           {me && <HomeSideRail isAdmin={me.role === "ADMIN"} />}
           <div className="min-w-0 flex-1">
+            <h1 className="sr-only">{t("seoHomeTitle")}</h1>
             <ModelsGrid
               initialModels={modelsData.models.map((m) => ({
                 id: m.id,

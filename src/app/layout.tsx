@@ -16,6 +16,7 @@ import { ReferralProgramNudge } from "@/components/growth/referral-program-nudge
 import { PostAuthGuideAutostart } from "@/components/onboarding/post-auth-guide-autostart";
 import { ProductTourAutostart } from "@/components/onboarding/product-tour-autostart";
 import { FluidCanvasBackdrop } from "@/components/layout/fluid-canvas-backdrop";
+import { getSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 /** UI sans — not a “reflex” training default; clear weights for hierarchy */
@@ -34,7 +35,7 @@ const libreDisplay = Libre_Baskerville({
   weight: ["400", "700"],
 });
 
-const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://dyskiof.net").replace(/\/+$/, "");
+const siteUrl = getSiteUrl();
 
 export const metadata: Metadata = {
   title: {
@@ -44,13 +45,9 @@ export const metadata: Metadata = {
   description:
     "Browse exclusive premium content from top creators. Instant access, secure payments, and a curated library updated daily. Join Dyskiof today.",
   keywords: ["Dyskiof", "dyskiof.net", "premium content", "creators", "exclusive", "videos", "photos"],
-  metadataBase: new URL(baseUrl),
+  metadataBase: new URL(siteUrl),
   alternates: {
-    canonical: baseUrl,
-    languages: {
-      en: baseUrl,
-      pl: baseUrl,
-    },
+    canonical: "/",
   },
   openGraph: {
     type: "website",
@@ -59,8 +56,7 @@ export const metadata: Metadata = {
     description:
       "Browse exclusive premium content from top creators. Instant access, multiple payment methods.",
     locale: "en_US",
-    alternateLocale: ["pl_PL"],
-    url: baseUrl,
+    url: siteUrl,
     images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Dyskiof – Premium Content Platform" }],
   },
   twitter: {
@@ -108,11 +104,11 @@ export default async function RootLayout({
               "@context": "https://schema.org",
               "@type": "WebSite",
               name: "Dyskiof",
-              url: baseUrl,
+              url: siteUrl,
               description: "Browse exclusive premium content from top creators.",
               potentialAction: {
                 "@type": "SearchAction",
-                target: `${baseUrl}/?search={search_term_string}`,
+                target: `${siteUrl}/?search={search_term_string}`,
                 "query-input": "required name=search_term_string",
               },
             }),

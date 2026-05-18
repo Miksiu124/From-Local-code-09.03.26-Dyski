@@ -707,9 +707,9 @@ export function ModelsGrid({
                       {t("featured")}
                     </Badge>
                   </div>
-                  <h3 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-2 tracking-tight leading-[1.12]">
+                  <p className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-2 tracking-tight leading-[1.12]">
                     {heroModel.name}
-                  </h3>
+                  </p>
                   <p className="text-white/60 line-clamp-2 max-w-lg text-sm sm:text-base mb-4">
                     {heroModel.description || t("exclusiveContent", { name: heroModel.name })}
                   </p>

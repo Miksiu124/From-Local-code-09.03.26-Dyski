@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
     // Smaller client bundles: lucide barrel imports → per-icon modules (tree-shaking).
-    optimizePackageImports: ["lucide-react"],
+    optimizePackageImports: ["lucide-react", "framer-motion"],
   },
   images: {
     remotePatterns: [
